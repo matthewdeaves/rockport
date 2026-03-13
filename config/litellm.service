@@ -1,0 +1,16 @@
+[Unit]
+Description=LiteLLM Proxy
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/litellm --config /etc/litellm/config.yaml --host 127.0.0.1 --port 4000
+EnvironmentFile=/etc/litellm/env
+Restart=always
+RestartSec=5
+User=litellm
+Group=litellm
+
+[Install]
+WantedBy=multi-user.target

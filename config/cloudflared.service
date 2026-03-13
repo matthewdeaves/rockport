@@ -1,0 +1,15 @@
+[Unit]
+Description=Cloudflare Tunnel
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cloudflared tunnel run
+EnvironmentFile=/etc/cloudflared/env
+Restart=always
+RestartSec=5
+User=cloudflared
+Group=cloudflared
+
+[Install]
+WantedBy=multi-user.target

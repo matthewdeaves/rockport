@@ -1,0 +1,74 @@
+model_list:
+  # Anthropic models via Bedrock
+  # Opus 4.6
+  - model_name: claude-opus-4-6
+    litellm_params:
+      model: bedrock/eu.anthropic.claude-opus-4-6-v1
+      aws_region_name: eu-west-2
+
+  # Sonnet 4.6
+  - model_name: claude-sonnet-4-6
+    litellm_params:
+      model: bedrock/eu.anthropic.claude-sonnet-4-6
+      aws_region_name: eu-west-2
+
+  # Haiku 4.5 (no 4.6 version exists yet)
+  - model_name: claude-haiku-4-5-20251001
+    litellm_params:
+      model: bedrock/eu.anthropic.claude-haiku-4-5-20251001-v1:0
+      aws_region_name: eu-west-2
+
+  # Claude Code aliases — route old model IDs to latest 4.6 versions
+  - model_name: claude-sonnet-4-5-20250929
+    litellm_params:
+      model: bedrock/eu.anthropic.claude-sonnet-4-6
+      aws_region_name: eu-west-2
+
+  - model_name: claude-opus-4-5-20251101
+    litellm_params:
+      model: bedrock/eu.anthropic.claude-opus-4-6-v1
+      aws_region_name: eu-west-2
+
+  # DeepSeek via Bedrock
+  - model_name: deepseek-v3.2
+    litellm_params:
+      model: bedrock/deepseek.v3.2
+      aws_region_name: eu-west-2
+
+  # Qwen via Bedrock
+  - model_name: qwen3-coder-480b
+    litellm_params:
+      model: bedrock/qwen.qwen3-coder-480b-a35b-v1:0
+      aws_region_name: eu-west-2
+
+  # Kimi via Bedrock
+  - model_name: kimi-k2.5
+    litellm_params:
+      model: bedrock/moonshotai.kimi-k2.5
+      aws_region_name: eu-west-2
+
+  # Amazon Nova models via Bedrock
+  - model_name: nova-pro
+    litellm_params:
+      model: bedrock/amazon.nova-pro-v1:0
+      aws_region_name: eu-west-2
+
+  - model_name: nova-lite
+    litellm_params:
+      model: bedrock/amazon.nova-lite-v1:0
+      aws_region_name: eu-west-2
+
+  - model_name: nova-micro
+    litellm_params:
+      model: bedrock/amazon.nova-micro-v1:0
+      aws_region_name: eu-west-2
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+  max_budget: 10
+  budget_duration: 1d
+
+litellm_settings:
+  drop_params: true
+  disable_admin_ui: true

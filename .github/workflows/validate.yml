@@ -1,0 +1,37 @@
+name: Validate Terraform
+
+on:
+  push:
+    branches: [main]
+    paths: ["terraform/**", "config/**", "scripts/**"]
+  pull_request:
+    branches: [main]
+    paths: ["terraform/**", "config/**", "scripts/**"]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14"
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+        working-directory: terraform
+
+      - name: Terraform init
+        run: terraform init -backend=false
+        working-directory: terraform
+
+      - name: Terraform validate
+        run: terraform validate
+        working-directory: terraform
+
+      - name: Shell script lint
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          shellcheck scripts/*.sh tests/*.sh
