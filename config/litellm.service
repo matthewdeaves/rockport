@@ -11,6 +11,11 @@ Restart=always
 RestartSec=5
 User=litellm
 Group=litellm
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/etc/litellm /home/litellm
 
 [Install]
 WantedBy=multi-user.target

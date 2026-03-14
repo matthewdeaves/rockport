@@ -45,8 +45,11 @@ resource "aws_iam_role_policy" "bedrock_invoke" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = "bedrock:InvokeModel*"
+        Effect = "Allow"
+        Action = [
+          "bedrock:InvokeModel",
+          "bedrock:InvokeModelWithResponseStream"
+        ]
         Resource = "*"
       },
       {
@@ -73,7 +76,10 @@ resource "aws_iam_role_policy" "ssm_get_parameter" {
         "ssm:GetParameter",
         "ssm:GetParameters"
       ]
-      Resource = "arn:aws:ssm:${var.region}:*:parameter/rockport/*"
+      Resource = [
+          "arn:aws:ssm:${var.region}:*:parameter/rockport/master-key",
+          "arn:aws:ssm:${var.region}:*:parameter/rockport/tunnel-token"
+        ]
     }]
   })
 }
@@ -98,6 +104,7 @@ resource "aws_security_group" "rockport" {
 
 resource "aws_vpc_security_group_egress_rule" "all_outbound" {
   security_group_id = aws_security_group.rockport.id
+  description       = "All outbound — required for Bedrock API and Cloudflare tunnel"
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
 }
@@ -126,6 +133,14 @@ resource "aws_instance" "rockport" {
     volume_type = "gp3"
     volume_size = 20
     encrypted   = true
+  }
+
+  ebs_optimized = true
+
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
   }
 
   maintenance_options {

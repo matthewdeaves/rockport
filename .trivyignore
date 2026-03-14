@@ -1,0 +1,11 @@
+# Rockport Trivy ignores — intentional architecture decisions
+# Review periodically to ensure these are still valid
+
+# Egress to 0.0.0.0/0 required: instance needs outbound to Bedrock API + Cloudflare tunnel
+AVD-AWS-0104
+
+# CloudWatch log group KMS — default encryption sufficient for non-sensitive idle-check logs
+AVD-AWS-0017
+
+# Lambda X-Ray tracing — not worth the cost for a simple 5-min cron checker
+AVD-AWS-0066

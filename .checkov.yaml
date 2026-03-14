@@ -1,0 +1,37 @@
+# Rockport Checkov config — skip checks for intentional architecture decisions
+# Review periodically to ensure these are still valid
+
+framework: terraform
+
+skip-check:
+  # --- Lambda idle-shutdown: lightweight 5-min cron, not a production service ---
+  # Env vars are instance ID + timeout integer, not secrets
+  - CKV_AWS_173  # Lambda env var KMS encryption
+  # Only calls public AWS APIs (EC2, CloudWatch) — VPC would require NAT Gateway (~$32/mo)
+  - CKV_AWS_117  # Lambda in VPC
+  # Code is inline in .tf file — no supply chain risk to validate
+  - CKV_AWS_272  # Lambda code signing
+  # Single function, <1s runtime, 2 API calls — X-Ray adds cost for no debugging value
+  - CKV_AWS_50   # Lambda X-Ray tracing
+  # EventBridge retries on failure; non-critical function, next 5-min run self-heals
+  - CKV_AWS_116  # Lambda DLQ
+
+  # --- CloudWatch logs for idle-shutdown Lambda ---
+  # Logs contain "Idle: X bytes" / "Active: X bytes" — no sensitive data, no compliance reqs
+  - CKV_AWS_338  # CloudWatch log group 1-year retention (7 days is set)
+  # Already encrypted with AWS-managed key; CMK adds $1/mo for non-sensitive logs
+  - CKV_AWS_158  # CloudWatch log group KMS encryption
+
+  # --- IAM ---
+  # bedrock:InvokeModel routes to 5+ model providers with varying ARN formats;
+  # scoping to specific ARNs creates maintenance burden on every config change.
+  # Blast radius = model invocation costs, guarded by budget alarms.
+  - CKV_AWS_355  # IAM wildcard resource
+
+  # --- EC2 ---
+  # 5-min metric granularity sufficient; idle checker looks at 30-min windows
+  - CKV_AWS_126  # detailed monitoring (~$2/mo for no value)
+
+  # --- SSM ---
+  # SecureString encrypted with AWS-managed aws/ssm key; CMK adds $1/mo
+  - CKV_AWS_337  # SSM parameter KMS CMK

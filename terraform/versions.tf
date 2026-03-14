@@ -1,6 +1,12 @@
 terraform {
   required_version = ">= 1.14"
 
+  backend "s3" {
+    # Bucket/region/dynamodb_table are set via -backend-config in rockport.sh deploy
+    key     = "rockport/terraform.tfstate"
+    encrypt = true
+  }
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"

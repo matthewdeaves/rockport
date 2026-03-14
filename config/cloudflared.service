@@ -10,6 +10,11 @@ Restart=always
 RestartSec=5
 User=cloudflared
 Group=cloudflared
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/etc/cloudflared
 
 [Install]
 WantedBy=multi-user.target

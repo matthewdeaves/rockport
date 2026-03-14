@@ -1,4 +1,4 @@
-name: Validate Terraform
+name: Validate
 
 on:
   push:
@@ -35,3 +35,30 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y shellcheck
           shellcheck scripts/*.sh tests/*.sh
+
+  security-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trivy IaC scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: terraform/
+          exit-code: 1
+          severity: HIGH,CRITICAL
+          trivyignores: .trivyignore
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Checkov scan
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: terraform/
+          config_file: .checkov.yaml
+          output_format: cli

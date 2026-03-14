@@ -2,12 +2,21 @@
 set -euo pipefail
 
 MASTER_KEY_SSM_PATH="/rockport/master-key"
-TERRAFORM_DIR="$(cd "$(dirname "$0")/../terraform" && pwd)"
-CONFIG_DIR="$(cd "$(dirname "$0")/../config" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+TERRAFORM_DIR="$(cd "$SCRIPT_DIR/../terraform" && pwd)"
+CONFIG_DIR="$(cd "$SCRIPT_DIR/../config" && pwd)"
+ENV_FILE="$TERRAFORM_DIR/.env"
 CACHED_MASTER_KEY=""
 CACHED_REGION=""
 
 # --- Helper functions ---
+
+load_env() {
+  if [[ -f "$ENV_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+  fi
+}
 
 get_region() {
   if [[ -n "$CACHED_REGION" ]]; then
@@ -79,6 +88,61 @@ api_call() {
   fi
 }
 
+get_state_bucket() {
+  local region
+  region="$(get_region)"
+  local account_id
+  account_id=$(aws sts get-caller-identity --query Account --output text --region "$region")
+  echo "rockport-tfstate-${account_id}-${region}"
+}
+
+ensure_state_backend() {
+  local region bucket lock_table
+  region="$(get_region)"
+  bucket="$(get_state_bucket)"
+  lock_table="rockport-tfstate-lock"
+
+  # Create S3 bucket if it doesn't exist
+  if ! aws s3api head-bucket --bucket "$bucket" --region "$region" 2>/dev/null; then
+    echo "Creating state bucket: $bucket"
+    aws s3api create-bucket \
+      --bucket "$bucket" \
+      --region "$region" \
+      --create-bucket-configuration LocationConstraint="$region"
+
+    aws s3api put-bucket-versioning \
+      --bucket "$bucket" \
+      --region "$region" \
+      --versioning-configuration Status=Enabled
+
+    aws s3api put-bucket-encryption \
+      --bucket "$bucket" \
+      --region "$region" \
+      --server-side-encryption-configuration '{
+        "Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}, "BucketKeyEnabled": true}]
+      }'
+
+    aws s3api put-public-access-block \
+      --bucket "$bucket" \
+      --region "$region" \
+      --public-access-block-configuration \
+        BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+  fi
+
+  # Create DynamoDB lock table if it doesn't exist
+  if ! aws dynamodb describe-table --table-name "$lock_table" --region "$region" 2>/dev/null | grep -q ACTIVE; then
+    echo "Creating lock table: $lock_table"
+    aws dynamodb create-table \
+      --table-name "$lock_table" \
+      --attribute-definitions AttributeName=LockID,AttributeType=S \
+      --key-schema AttributeName=LockID,KeyType=HASH \
+      --billing-mode PAY_PER_REQUEST \
+      --region "$region"
+
+    aws dynamodb wait table-exists --table-name "$lock_table" --region "$region"
+  fi
+}
+
 # --- Subcommands ---
 
 cmd_init() {
@@ -105,11 +169,21 @@ cmd_init() {
   read -rp "Cloudflare Account ID: " cf_account_id
   [[ -z "$cf_account_id" ]] && { echo "Account ID is required."; exit 1; }
 
+  read -rp "Cloudflare API Token: " cf_api_token
+  [[ -z "$cf_api_token" ]] && { echo "API Token is required."; exit 1; }
+
   read -rp "Budget alert email: " email
   [[ -z "$email" ]] && { echo "Email is required."; exit 1; }
 
   local subdomain
   subdomain="${domain%%.*}"
+
+  # Save Cloudflare API token to .env (gitignored, sourced automatically)
+  cat > "$ENV_FILE" <<EOF
+export CLOUDFLARE_API_TOKEN="$cf_api_token"
+EOF
+  chmod 600 "$ENV_FILE"
+  echo "Written to terraform/.env"
 
   cat > "$TERRAFORM_DIR/terraform.tfvars" <<EOF
 region                = "$region"
@@ -138,15 +212,18 @@ EOF
   fi
 
   echo
+  echo "Creating Terraform state backend..."
+  ensure_state_backend
+
+  echo
   echo "Next steps:"
-  echo "  1. Export CLOUDFLARE_API_TOKEN"
-  echo "  2. Enable Bedrock model access in the AWS Console ($region)"
+  echo "  1. Enable Bedrock model access in the AWS Console ($region)"
   if [[ "$region" != eu-* ]]; then
-    echo "  3. Update model prefixes in config/litellm-config.yaml"
+    echo "  2. Update model prefixes in config/litellm-config.yaml"
     echo "     (remove 'eu.' prefix for non-EU regions)"
-    echo "  4. Run: ./scripts/rockport.sh deploy"
-  else
     echo "  3. Run: ./scripts/rockport.sh deploy"
+  else
+    echo "  2. Run: ./scripts/rockport.sh deploy"
   fi
 }
 
@@ -325,19 +402,38 @@ else:
 }
 
 cmd_config_push() {
-  local instance_id
+  local instance_id region
   instance_id="$(get_instance_id)"
+  region="$(get_region)"
   echo "Pushing config to instance $instance_id..."
 
-  # Base64-encode the config file for safe transport
+  # Use send-command instead of start-session to avoid config appearing in session history.
+  # The config is passed via stdin-style base64 in the command array, which SSM encrypts
+  # in transit and does not persist in session manager logs.
   local config_b64
   config_b64=$(base64 -w0 "$CONFIG_DIR/litellm-config.yaml")
 
-  aws ssm start-session \
-    --target "$instance_id" \
-    --region "$(get_region)" \
-    --document-name AWS-StartInteractiveCommand \
-    --parameters command="echo '$config_b64' | base64 -d | sudo tee /etc/litellm/config.yaml > /dev/null && sudo chown litellm:litellm /etc/litellm/config.yaml && sudo systemctl restart litellm && echo 'Config pushed and LiteLLM restarted'"
+  local command_id
+  command_id=$(aws ssm send-command \
+    --instance-ids "$instance_id" \
+    --region "$region" \
+    --document-name "AWS-RunShellScript" \
+    --parameters "commands=[\"echo '$config_b64' | base64 -d > /etc/litellm/config.yaml && chown litellm:litellm /etc/litellm/config.yaml && systemctl restart litellm && echo 'Config pushed and LiteLLM restarted'\"]" \
+    --query "Command.CommandId" \
+    --output text)
+
+  echo "Command sent (ID: $command_id). Waiting for result..."
+  aws ssm wait command-executed \
+    --command-id "$command_id" \
+    --instance-id "$instance_id" \
+    --region "$region" 2>/dev/null || true
+
+  aws ssm get-command-invocation \
+    --command-id "$command_id" \
+    --instance-id "$instance_id" \
+    --region "$region" \
+    --query "[Status, StandardOutputContent]" \
+    --output text
 }
 
 cmd_logs() {
@@ -352,9 +448,19 @@ cmd_logs() {
 }
 
 cmd_deploy() {
+  load_env
   echo "Deploying infrastructure..."
+  local region bucket
+  region="$(get_region)"
+  bucket="$(get_state_bucket)"
+
+  ensure_state_backend
+
   cd "$TERRAFORM_DIR"
-  terraform init -upgrade
+  terraform init -upgrade \
+    -backend-config="bucket=$bucket" \
+    -backend-config="region=$region" \
+    -backend-config="dynamodb_table=rockport-tfstate-lock"
   terraform apply
 
   echo
@@ -365,14 +471,25 @@ cmd_deploy() {
 }
 
 cmd_destroy() {
+  load_env
   echo "WARNING: This will destroy all Rockport infrastructure."
   read -rp "Type 'yes' to confirm: " confirm
   if [[ "$confirm" != "yes" ]]; then
     echo "Aborted."
     exit 1
   fi
+
+  local region
+  region="$(get_region)"
+
   cd "$TERRAFORM_DIR"
   terraform destroy
+
+  # Clean up SSM master key (created outside terraform by init)
+  echo "Cleaning up SSM master key..."
+  aws ssm delete-parameter \
+    --name "$MASTER_KEY_SSM_PATH" \
+    --region "$region" 2>/dev/null && echo "Master key deleted." || echo "Master key already removed."
 }
 
 cmd_upgrade() {

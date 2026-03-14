@@ -59,14 +59,15 @@ data "archive_file" "idle_shutdown" {
 }
 
 resource "aws_lambda_function" "idle_shutdown" {
-  count            = var.enable_idle_shutdown ? 1 : 0
-  function_name    = "rockport-idle-shutdown"
-  runtime          = "python3.12"
-  handler          = "index.handler"
-  timeout          = 30
-  filename         = data.archive_file.idle_shutdown[0].output_path
-  source_code_hash = data.archive_file.idle_shutdown[0].output_base64sha256
-  role             = aws_iam_role.idle_shutdown[0].arn
+  count                          = var.enable_idle_shutdown ? 1 : 0
+  function_name                  = "rockport-idle-shutdown"
+  runtime                        = "python3.12"
+  handler                        = "index.handler"
+  timeout                        = 30
+  reserved_concurrent_executions = 1
+  filename                       = data.archive_file.idle_shutdown[0].output_path
+  source_code_hash               = data.archive_file.idle_shutdown[0].output_base64sha256
+  role                           = aws_iam_role.idle_shutdown[0].arn
 
   environment {
     variables = {
@@ -122,7 +123,7 @@ resource "aws_iam_role_policy" "idle_shutdown" {
           "logs:CreateLogStream",
           "logs:PutLogEvents"
         ]
-        Resource = "arn:aws:logs:*:*:log-group:/aws/lambda/rockport-idle-shutdown:*"
+        Resource = "arn:aws:logs:${var.region}:*:log-group:/aws/lambda/rockport-idle-shutdown:*"
       }
     ]
   })

@@ -96,10 +96,53 @@ install_gh_cli() {
   esac
 }
 
+install_trivy() {
+  if command -v trivy &>/dev/null; then
+    echo "✓ Trivy already installed ($(trivy --version 2>&1 | head -1))"
+    return
+  fi
+  echo "Installing Trivy..."
+  case "$OS" in
+    Darwin)
+      install_brew
+      brew install trivy
+      ;;
+    Linux)
+      curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
+      ;;
+  esac
+}
+
+install_checkov() {
+  if command -v checkov &>/dev/null; then
+    echo "✓ Checkov already installed ($(checkov --version 2>&1))"
+    return
+  fi
+  echo "Installing Checkov..."
+  case "$OS" in
+    Darwin)
+      install_brew
+      brew install checkov
+      ;;
+    Linux)
+      if command -v pipx &>/dev/null; then
+        pipx install checkov
+      else
+        echo "Installing pipx first..."
+        sudo apt-get update && sudo apt-get install -y pipx
+        pipx ensurepath
+        pipx install checkov
+      fi
+      ;;
+  esac
+}
+
 install_aws_cli
 install_session_manager_plugin
 install_terraform
 install_gh_cli
+install_trivy
+install_checkov
 
 echo ""
 echo "=== Verify ==="
@@ -107,6 +150,8 @@ echo "AWS CLI:     $(aws --version 2>&1 | head -1)"
 echo "SSM Plugin:  $(session-manager-plugin --version 2>/dev/null || echo 'not found')"
 echo "Terraform:   $(terraform --version 2>/dev/null | head -1)"
 echo "GitHub CLI:  $(gh --version 2>/dev/null | head -1)"
+echo "Trivy:       $(trivy --version 2>&1 | head -1)"
+echo "Checkov:     $(checkov --version 2>/dev/null || echo 'not found')"
 
 echo ""
 echo "=== Next steps ==="
