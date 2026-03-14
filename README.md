@@ -118,6 +118,46 @@ To disable auto-stop, add to `terraform.tfvars`:
 enable_idle_shutdown = false
 ```
 
+## Security design
+
+Rockport is designed so that the proxy has no direct internet exposure. Every layer adds defense in depth:
+
+**Network isolation** — The EC2 instance has zero inbound security group rules. No SSH, no HTTP, nothing. All traffic reaches LiteLLM exclusively through Cloudflare Tunnel, which maintains an outbound-only connection to Cloudflare's edge.
+
+**Localhost-only binding** — LiteLLM listens on `127.0.0.1:4000`, not `0.0.0.0`. Even if the security group were misconfigured, the service would not accept external connections directly.
+
+**Admin UI disabled** — The LiteLLM admin dashboard (`/ui`) is disabled via `disable_admin_ui: true`. This eliminates the largest web attack surface: session management, SSO bypass, CSRF, and the additional frontend dependencies. All administration is done through the `rockport` CLI, which calls the API with the master key.
+
+**Key separation** — The master key (stored in SSM Parameter Store) is only used by the admin CLI. Users get virtual keys with per-key daily budgets and rate limits. Virtual keys can only call model endpoints — they cannot create other keys, view spend, or manage the proxy.
+
+**Secrets handling** — The master key and tunnel token are stored as SSM SecureString parameters (encrypted at rest with AWS KMS). The database password is generated on the instance during bootstrap, stored in SSM for recovery, and never appears in logs. Environment files are written with `umask 077` to prevent brief permission windows.
+
+**Systemd hardening** — Both LiteLLM and cloudflared run as dedicated non-root users with `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=yes`, and `PrivateTmp=yes`.
+
+**IMDSv2 enforced** — The instance metadata service requires session tokens (hop limit 1), preventing SSRF-based credential theft.
+
+**CI security scanning** — Every push runs Trivy (IaC misconfiguration) and Checkov (policy-as-code) against the Terraform. Skipped checks are documented with justifications in `.checkov.yaml`.
+
+### What's exposed
+
+Anyone who discovers the domain can reach the LiteLLM API through Cloudflare. Without a valid key, all requests return 401. The attack surface is:
+
+- Unauthenticated probing (health endpoint returns 401)
+- Brute-force key guessing (mitigated by key length — 48 hex characters)
+- Cloudflare-level DDoS (mitigated by Cloudflare's built-in protection)
+
+### Optional: Cloudflare Access for pre-authentication
+
+For an additional layer, you can put a Cloudflare Access application in front of the tunnel. This would require authentication (email OTP, SSO, or mTLS certificate) before traffic even reaches LiteLLM.
+
+**Email verification** — Cloudflare Access can gate the domain behind a one-time-password sent to allowed email addresses. Any request without a valid Cloudflare Access JWT is blocked at the edge before it reaches your instance. This is useful if you want to restrict access to a known set of people beyond just key auth. The downside is that Claude Code doesn't natively handle Cloudflare Access authentication, so you'd need to generate a service token and pass it as a header, or use `cloudflared access` to create a local tunnel on the client side.
+
+**mTLS (mutual TLS)** — Cloudflare can require client certificates signed by a CA you upload. Only clients presenting a valid certificate can establish a connection. This is the strongest option — even if someone discovers your domain and somehow obtains an API key, they still can't connect without the certificate. The trade-off is certificate distribution and rotation complexity.
+
+**Service tokens** — A simpler alternative: create a Cloudflare Access service token (client ID + secret) and configure Claude Code to send it as headers. This adds a second credential layer without the complexity of mTLS. Configure via Cloudflare Zero Trust dashboard > Access > Applications.
+
+For a personal or small-team proxy where the API keys are closely held, the current setup (key auth + Cloudflare DDoS protection + no inbound ports) is sufficient. Cloudflare Access adds value when you want to share access more broadly or need to satisfy compliance requirements.
+
 ## Smoke tests
 
 ```bash
@@ -130,8 +170,4 @@ enable_idle_shutdown = false
 ./scripts/rockport.sh destroy
 ```
 
-This removes all AWS resources and the Cloudflare Tunnel + DNS record. SSM parameters (`/rockport/master-key`) must be deleted separately if desired:
-
-```bash
-aws ssm delete-parameter --name "/rockport/master-key" --region <your-region>
-```
+This removes all AWS resources, Cloudflare Tunnel + DNS record, and SSM parameters (master key, database password).
