@@ -3,10 +3,11 @@ name: Validate
 on:
   push:
     branches: [main]
-    paths: ["terraform/**", "config/**", "scripts/**"]
+    paths: ["terraform/**", "config/**", "scripts/**", ".github/workflows/validate.yml", ".checkov.yaml", ".trivyignore"]
   pull_request:
     branches: [main]
-    paths: ["terraform/**", "config/**", "scripts/**"]
+    paths: ["terraform/**", "config/**", "scripts/**", ".github/workflows/validate.yml", ".checkov.yaml", ".trivyignore"]
+  workflow_dispatch:
 
 jobs:
   validate:
