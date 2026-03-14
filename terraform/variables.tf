@@ -64,13 +64,13 @@ variable "budget_alert_email" {
 variable "litellm_version" {
   description = "LiteLLM version to install"
   type        = string
-  default     = "1.82.1"
+  default     = "1.82.2"
 }
 
 variable "cloudflared_version" {
   description = "Cloudflared version to install (pinned for stability)"
   type        = string
-  default     = "2025.2.1"
+  default     = "2026.3.0"
 }
 
 variable "bedrock_daily_budget" {
