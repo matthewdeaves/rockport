@@ -76,6 +76,8 @@ resource "aws_lambda_function" "idle_shutdown" {
       IDLE_THRESHOLD_BYTES = tostring(var.idle_threshold_bytes)
     }
   }
+
+  tags = local.common_tags
 }
 
 resource "aws_iam_role" "idle_shutdown" {
@@ -134,6 +136,8 @@ resource "aws_cloudwatch_log_group" "idle_shutdown" {
   count             = var.enable_idle_shutdown ? 1 : 0
   name              = "/aws/lambda/rockport-idle-shutdown"
   retention_in_days = 30
+
+  tags = local.common_tags
 }
 
 resource "aws_cloudwatch_event_rule" "idle_check" {
@@ -141,6 +145,8 @@ resource "aws_cloudwatch_event_rule" "idle_check" {
   name                = "rockport-idle-check"
   description         = "Check for Rockport instance inactivity every 5 minutes"
   schedule_expression = "rate(5 minutes)"
+
+  tags = local.common_tags
 }
 
 resource "aws_cloudwatch_event_target" "idle_check" {

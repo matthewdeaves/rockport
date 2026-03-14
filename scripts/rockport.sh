@@ -421,16 +421,18 @@ cmd_key_create() {
   # Check for duplicate key name
   local existing
   existing=$(api_call GET "/key/list?return_full_object=true" 2>/dev/null || true)
-  if [[ -n "$existing" ]] && echo "$existing" | jq -e ".keys[]? | select(.key_alias == \"$name\")" > /dev/null 2>&1; then
+  if [[ -n "$existing" ]] && echo "$existing" | jq -e --arg n "$name" '.keys[]? | select(.key_alias == $n)' > /dev/null 2>&1; then
     echo "ERROR: A key with name '$name' already exists. Choose a different name." >&2
     return 1
   fi
 
-  local payload="{\"key_alias\": \"$name\""
+  local payload
   if [[ -n "$budget" ]]; then
-    payload+=", \"max_budget\": $budget, \"budget_duration\": \"1d\""
+    payload=$(jq -n --arg alias "$name" --argjson budget "$budget" \
+      '{key_alias: $alias, max_budget: $budget, budget_duration: "1d"}')
+  else
+    payload=$(jq -n --arg alias "$name" '{key_alias: $alias}')
   fi
-  payload+="}"
 
   echo "Creating key '$name'..."
   local response
@@ -477,8 +479,10 @@ cmd_key_list() {
 cmd_key_info() {
   check_dependencies
   local key="${1:?Usage: rockport key info <key>}"
+  local encoded_key
+  encoded_key=$(printf '%s' "$key" | jq -sRr @uri)
   local response
-  response=$(api_call GET "/key/info?key=$key")
+  response=$(api_call GET "/key/info?key=$encoded_key")
 
   echo "$response" | jq -r '
     (.info // .) as $i |
@@ -491,7 +495,9 @@ cmd_key_revoke() {
   check_dependencies
   local key="${1:?Usage: rockport key revoke <key>}"
   echo "Revoking key..."
-  api_call POST "/key/delete" "{\"keys\": [\"$key\"]}" | jq .
+  local payload
+  payload=$(jq -n --arg k "$key" '{keys: [$k]}')
+  api_call POST "/key/delete" "$payload" | jq .
 }
 
 cmd_models() {
@@ -549,7 +555,7 @@ cmd_config_push() {
   echo "Pushing config to instance $instance_id..."
 
   local config_b64
-  config_b64=$(base64 -w0 "$CONFIG_DIR/litellm-config.yaml")
+  config_b64=$(base64 "$CONFIG_DIR/litellm-config.yaml" | tr -d '\n')
 
   # Use JSON file for parameters to avoid shell injection via quoting issues
   local params_file

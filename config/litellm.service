@@ -18,7 +18,14 @@ NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/etc/litellm /home/litellm
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ReadWritePaths=/var/lib/litellm /home/litellm/.cache
+MemoryMax=1536M
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

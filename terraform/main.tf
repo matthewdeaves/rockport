@@ -1,3 +1,15 @@
+# Common tags for all resources
+
+locals {
+  common_tags = {
+    Project   = "rockport"
+    ManagedBy = "terraform"
+  }
+
+  # Bedrock regions: primary region + eu-west-2 for cross-region inference profiles
+  bedrock_regions = distinct([var.region, "eu-west-2"])
+}
+
 # Data sources
 
 data "aws_caller_identity" "current" {}
@@ -52,10 +64,12 @@ resource "aws_iam_role_policy" "bedrock_invoke" {
           "bedrock:InvokeModel",
           "bedrock:InvokeModelWithResponseStream"
         ]
-        Resource = [
-          "arn:aws:bedrock:*::foundation-model/*",
-          "arn:aws:bedrock:*:${data.aws_caller_identity.current.account_id}:inference-profile/*"
-        ]
+        Resource = flatten([
+          for r in local.bedrock_regions : [
+            "arn:aws:bedrock:${r}::foundation-model/*",
+            "arn:aws:bedrock:${r}:${data.aws_caller_identity.current.account_id}:inference-profile/*"
+          ]
+        ])
       },
       {
         Effect = "Allow"
@@ -152,9 +166,7 @@ resource "aws_instance" "rockport" {
     auto_recovery = "default"
   }
 
-  tags = {
-    Name      = "rockport"
-    Project   = "rockport"
-    ManagedBy = "terraform"
-  }
+  tags = merge(local.common_tags, {
+    Name = "rockport"
+  })
 }

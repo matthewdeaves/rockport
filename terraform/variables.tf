@@ -22,6 +22,7 @@ variable "domain" {
 variable "cloudflare_zone_id" {
   description = "Cloudflare Zone ID for the domain"
   type        = string
+  sensitive   = true
 
   validation {
     condition     = can(regex("^[0-9a-f]{32}$", var.cloudflare_zone_id))
@@ -32,6 +33,7 @@ variable "cloudflare_zone_id" {
 variable "cloudflare_account_id" {
   description = "Cloudflare Account ID"
   type        = string
+  sensitive   = true
 
   validation {
     condition     = can(regex("^[0-9a-f]{32}$", var.cloudflare_account_id))
@@ -54,6 +56,7 @@ variable "tunnel_subdomain" {
 variable "budget_alert_email" {
   description = "Email address for budget alerts"
   type        = string
+  sensitive   = true
 
   validation {
     condition     = can(regex("^[^@]+@[^@]+\\.[^@]+$", var.budget_alert_email))

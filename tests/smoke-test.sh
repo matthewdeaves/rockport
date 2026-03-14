@@ -11,10 +11,10 @@ check() {
   local result="$2"
   if [[ "$result" == "0" ]]; then
     echo "  PASS: $name"
-    ((PASS++)) || true
+    PASS=$((PASS + 1))
   else
     echo "  FAIL: $name"
-    ((FAIL++)) || true
+    FAIL=$((FAIL + 1))
   fi
 }
 
@@ -25,27 +25,27 @@ echo
 # 1. Health endpoint (requires auth in LiteLLM with master key enabled)
 echo "1. Health check"
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/health" \
-  -H "Authorization: Bearer $VALID_KEY")
+  -H "Authorization: Bearer $VALID_KEY" --max-time 10)
 [[ "$HTTP_CODE" == "200" ]]; check "GET /health returns 200" "$?"
 
-HEALTH_BODY=$(curl -s "$BASE_URL/health" -H "Authorization: Bearer $VALID_KEY")
+HEALTH_BODY=$(curl -s "$BASE_URL/health" -H "Authorization: Bearer $VALID_KEY" --max-time 10)
 echo "$HEALTH_BODY" | grep -q "healthy"; check "Health response contains 'healthy'" "$?"
 
 # 2. Auth rejection with invalid key
 echo "2. Auth rejection"
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/v1/models" \
-  -H "Authorization: Bearer sk-invalid-key-12345")
+  -H "Authorization: Bearer sk-invalid-key-12345" --max-time 10)
 [[ "$HTTP_CODE" == "401" || "$HTTP_CODE" == "403" ]]; check "Invalid key rejected (401/403)" "$?"
 
 # 3. Auth success with valid key
 echo "3. Auth success"
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/v1/models" \
-  -H "Authorization: Bearer $VALID_KEY")
+  -H "Authorization: Bearer $VALID_KEY" --max-time 10)
 [[ "$HTTP_CODE" == "200" ]]; check "Valid key accepted (200)" "$?"
 
 # 4. Model list contains expected aliases
 echo "4. Model list"
-MODELS=$(curl -s "$BASE_URL/v1/models" -H "Authorization: Bearer $VALID_KEY")
+MODELS=$(curl -s "$BASE_URL/v1/models" -H "Authorization: Bearer $VALID_KEY" --max-time 10)
 echo "$MODELS" | grep -q "claude-sonnet-4-6"; check "Model list contains claude-sonnet-4-6" "$?"
 echo "$MODELS" | grep -q "nova-pro"; check "Model list contains nova-pro" "$?"
 

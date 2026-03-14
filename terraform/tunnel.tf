@@ -45,4 +45,6 @@ resource "aws_ssm_parameter" "tunnel_token" {
   name  = "/rockport/tunnel-token"
   type  = "SecureString"
   value = data.cloudflare_zero_trust_tunnel_cloudflared_token.rockport.token
+
+  tags = local.common_tags
 }

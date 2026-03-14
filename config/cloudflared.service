@@ -1,6 +1,7 @@
 [Unit]
 Description=Cloudflare Tunnel
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -14,7 +15,14 @@ NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
 ReadWritePaths=/etc/cloudflared
+MemoryMax=256M
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

@@ -44,6 +44,13 @@ jobs:
         run: terraform plan -no-color -out=tfplan
         working-directory: terraform
 
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ github.sha }}
+          path: terraform/tfplan
+          retention-days: 30
+
       - name: Comment plan on PR
         uses: actions/github-script@v8
         with:
@@ -59,6 +66,10 @@ jobs:
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
     outputs:
       tunnel_url: ${{ steps.output.outputs.tunnel_url }}
     steps:
@@ -77,8 +88,19 @@ jobs:
         run: terraform init
         working-directory: terraform
 
+      - name: Terraform plan
+        run: terraform plan -no-color -out=tfplan
+        working-directory: terraform
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ github.sha }}
+          path: terraform/tfplan
+          retention-days: 30
+
       - name: Terraform apply
-        run: terraform apply -auto-approve
+        run: terraform apply tfplan
         working-directory: terraform
 
       - name: Get outputs
@@ -100,7 +122,20 @@ jobs:
           aws-region: ${{ vars.AWS_REGION || 'eu-west-2' }}
 
       - name: Wait for bootstrap
-        run: sleep 120
+        run: |
+          URL="${{ needs.deploy.outputs.tunnel_url }}"
+          KEY=$(aws ssm get-parameter --name /rockport/master-key --with-decryption --query Parameter.Value --output text --region "$AWS_REGION")
+          echo "::add-mask::$KEY"
+          echo "Waiting for instance to become healthy..."
+          for i in $(seq 1 30); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL/health" -H "Authorization: Bearer $KEY" --max-time 5 2>/dev/null || true)
+            if [[ "$HTTP_CODE" == "200" ]]; then
+              echo "Instance healthy after $((i * 10)) seconds"
+              break
+            fi
+            echo "Attempt $i/30: HTTP $HTTP_CODE — retrying in 10s..."
+            sleep 10
+          done
 
       - name: Get master key
         id: key

@@ -71,4 +71,6 @@ resource "aws_cloudwatch_metric_alarm" "auto_recovery" {
   alarm_actions = [
     "arn:aws:automate:${var.region}:ec2:recover"
   ]
+
+  tags = local.common_tags
 }
