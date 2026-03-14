@@ -14,6 +14,27 @@ LiteLLM proxy on EC2 that gives Claude Code access to any Bedrock model through 
 - Daily Bedrock budget alerts + monthly overall AWS budget alerts
 - `rockport` CLI for key management, logs, deploys, start/stop
 
+## Prerequisites
+
+Before you start, you need:
+
+1. **An AWS account** with an IAM user that has admin access (or root credentials for first-time setup)
+2. **A Cloudflare account** with a domain — you'll create an API token and a tunnel
+3. **Bedrock model access** enabled in your chosen AWS region
+
+### Cloudflare API token
+
+Create a token at https://dash.cloudflare.com/profile/api-tokens with these permissions:
+- **Zone / DNS / Edit**
+- **Account / Cloudflare Tunnel / Edit**
+- **Account / Zero Trust / Edit**
+
+You'll also need your Cloudflare **Zone ID** and **Account ID** (found on the domain overview page).
+
+### Bedrock model access
+
+Go to AWS Console > Bedrock > Model access (in your chosen region) and request access to the models you want. At minimum enable Claude Sonnet and Claude Haiku. Model access can take a few minutes to activate.
+
 ## Setup
 
 ### 1. Install tools
@@ -22,56 +43,68 @@ LiteLLM proxy on EC2 that gives Claude Code access to any Bedrock model through 
 ./scripts/setup.sh
 ```
 
-Or install manually: AWS CLI v2, Session Manager plugin, Terraform >= 1.14, jq, GitHub CLI.
+This installs AWS CLI v2, Session Manager plugin, Terraform, jq, and GitHub CLI. Or install them manually.
 
 ### 2. Configure AWS credentials
 
+You need working AWS credentials before running `init`. How you do this depends on your situation:
+
+**Fresh AWS account (no IAM users yet):**
+
+Use your root account access keys temporarily. Go to AWS Console > IAM > Security credentials > Create access key, then:
+
 ```bash
 aws configure
-# AWS Access Key ID: <your-key>
-# AWS Secret Access Key: <your-secret>
+# AWS Access Key ID: <root-access-key>
+# AWS Secret Access Key: <root-secret-key>
 # Default region name: eu-west-2
-# Default output format: json
 ```
 
-### 3. Enable Bedrock model access
+The `init` command will create a dedicated `rockport-deployer` IAM user with scoped permissions and configure a `rockport` AWS CLI profile automatically. After init completes, you can delete the root access keys — all subsequent commands use the `rockport` profile.
 
-Go to AWS Console > Bedrock > Model access (in your chosen region) and enable the models you want. At minimum enable Claude Sonnet and Claude Haiku.
-
-### 4. Set Cloudflare credentials
-
-Create a Cloudflare API token at https://dash.cloudflare.com/profile/api-tokens with these permissions:
-- **Zone / DNS / Edit**
-- **Account / Cloudflare Tunnel / Edit**
-- **Account / Zero Trust / Edit**
+**Existing AWS account with an admin IAM user:**
 
 ```bash
-export CLOUDFLARE_API_TOKEN="<your-token>"
+aws configure
+# AWS Access Key ID: <your-admin-key>
+# AWS Secret Access Key: <your-admin-secret>
+# Default region name: eu-west-2
 ```
 
-### 5. Initialize
+Again, `init` will create the `rockport-deployer` user and `rockport` CLI profile. Your admin user only needs to be used for this one-time setup.
+
+### 3. Initialize
 
 ```bash
 ./scripts/rockport.sh init
 ```
 
-This prompts for your domain, Cloudflare IDs, region, and email. It creates `terraform/terraform.tfvars` and stores a master key in SSM.
+This is an interactive setup that:
+- Prompts for your AWS region, domain, Cloudflare IDs, and budget alert email
+- Creates a scoped `RockportDeployerAccess` IAM policy (least-privilege — no wildcard permissions)
+- Creates a `rockport-deployer` IAM user and configures a `rockport` AWS CLI profile
+- Generates a master API key and stores it in SSM Parameter Store
+- Creates an S3 bucket for Terraform state
 
-### 6. Deploy
+All subsequent `rockport.sh` commands automatically use the `rockport` AWS CLI profile — no need to export credentials.
+
+If you already have a `terraform.tfvars` from a previous setup, init will ask whether to keep it and just ensure the IAM policy, master key, and state bucket exist.
+
+### 4. Deploy
 
 ```bash
 ./scripts/rockport.sh deploy
 ```
 
-Takes ~2 minutes for Terraform, then ~5 minutes for the instance to bootstrap.
+Takes ~2 minutes for Terraform, then ~5 minutes for the EC2 instance to bootstrap (installs PostgreSQL, LiteLLM, cloudflared).
 
-### 7. Verify and configure Claude Code
+### 5. Verify and configure Claude Code
 
 ```bash
-# Wait for bootstrap, then:
+# Wait for bootstrap (~5 min), then check health:
 ./scripts/rockport.sh status
 
-# Generate a key and configure Claude Code:
+# Generate a key and get Claude Code config:
 ./scripts/rockport.sh setup-claude
 
 # Copy the generated settings file:

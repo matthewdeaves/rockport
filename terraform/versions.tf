@@ -1,8 +1,8 @@
 terraform {
-  required_version = ">= 1.14"
+  required_version = ">= 1.5"
 
   backend "s3" {
-    # Bucket/region/dynamodb_table are set via -backend-config in rockport.sh deploy
+    # Bucket/region/use_lockfile are set via -backend-config in rockport.sh deploy
     key     = "rockport/terraform.tfstate"
     encrypt = true
   }

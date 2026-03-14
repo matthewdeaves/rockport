@@ -9,6 +9,11 @@ ENV_FILE="$TERRAFORM_DIR/.env"
 CACHED_MASTER_KEY=""
 CACHED_REGION=""
 
+# Use the rockport AWS profile if it exists and no profile is already set
+if [[ -z "${AWS_PROFILE:-}" ]] && aws configure list-profiles 2>/dev/null | grep -q '^rockport$'; then
+  export AWS_PROFILE=rockport
+fi
+
 # --- Helper functions ---
 
 check_dependencies() {
@@ -129,19 +134,90 @@ get_state_bucket() {
   echo "rockport-tfstate-${account_id}-${region}"
 }
 
+ensure_deployer_access() {
+  local deployer_user="rockport-deployer"
+  local policy_name="RockportDeployerAccess"
+  local policy_file="$TERRAFORM_DIR/rockport-deployer-policy.json"
+  local account_id
+  account_id=$(aws sts get-caller-identity --query Account --output text)
+  local policy_arn="arn:aws:iam::${account_id}:policy/${policy_name}"
+
+  # Create or update the IAM policy
+  if aws iam get-policy --policy-arn "$policy_arn" &>/dev/null; then
+    local versions
+    versions=$(aws iam list-policy-versions --policy-arn "$policy_arn" --query 'Versions[?!IsDefaultVersion].VersionId' --output text)
+    for v in $versions; do
+      aws iam delete-policy-version --policy-arn "$policy_arn" --version-id "$v" 2>/dev/null || true
+    done
+    aws iam create-policy-version \
+      --policy-arn "$policy_arn" \
+      --policy-document "file://$policy_file" \
+      --set-as-default >/dev/null
+    echo "  IAM policy ........... updated ($policy_name)"
+  else
+    aws iam create-policy \
+      --policy-name "$policy_name" \
+      --policy-document "file://$policy_file" >/dev/null
+    echo "  IAM policy ........... created ($policy_name)"
+  fi
+
+  # Create the deployer user if it doesn't exist
+  if aws iam get-user --user-name "$deployer_user" &>/dev/null; then
+    echo "  IAM user ............. ok ($deployer_user)"
+  else
+    aws iam create-user --user-name "$deployer_user" >/dev/null
+    echo "  IAM user ............. created ($deployer_user)"
+  fi
+
+  # Attach the policy to the deployer user
+  if aws iam list-attached-user-policies --user-name "$deployer_user" \
+    --query "AttachedPolicies[?PolicyArn=='$policy_arn']" --output text 2>/dev/null | grep -q "$policy_name"; then
+    echo "  Policy attachment .... ok (already on $deployer_user)"
+  else
+    aws iam attach-user-policy --user-name "$deployer_user" --policy-arn "$policy_arn"
+    echo "  Policy attachment .... attached to $deployer_user"
+  fi
+
+  # Check if the deployer user has access keys — if not, create them
+  local existing_keys
+  existing_keys=$(aws iam list-access-keys --user-name "$deployer_user" --query 'length(AccessKeyMetadata)' --output text)
+
+  if [[ "$existing_keys" -gt 0 ]]; then
+    echo "  Access keys .......... ok (already configured)"
+  else
+    local key_output
+    key_output=$(aws iam create-access-key --user-name "$deployer_user" --output json)
+    local access_key secret_key
+    access_key=$(echo "$key_output" | jq -r '.AccessKey.AccessKeyId')
+    secret_key=$(echo "$key_output" | jq -r '.AccessKey.SecretAccessKey')
+
+    local region
+    region="$(get_region)"
+
+    # Configure the AWS CLI profile automatically
+    aws configure set aws_access_key_id "$access_key" --profile rockport
+    aws configure set aws_secret_access_key "$secret_key" --profile rockport
+    aws configure set region "$region" --profile rockport
+    aws configure set output json --profile rockport
+    export AWS_PROFILE=rockport
+
+    echo "  Access keys .......... created (profile 'rockport' configured)"
+  fi
+}
+
 ensure_state_backend() {
-  local region bucket lock_table
+  local region bucket
   region="$(get_region)"
   bucket="$(get_state_bucket)"
-  lock_table="rockport-tfstate-lock"
 
   # Create S3 bucket if it doesn't exist
-  if ! aws s3api head-bucket --bucket "$bucket" --region "$region" 2>/dev/null; then
-    echo "Creating state bucket: $bucket"
+  if aws s3api head-bucket --bucket "$bucket" --region "$region" >/dev/null 2>&1; then
+    echo "  State bucket ......... ok ($bucket)"
+  else
     aws s3api create-bucket \
       --bucket "$bucket" \
       --region "$region" \
-      --create-bucket-configuration LocationConstraint="$region" || {
+      --create-bucket-configuration LocationConstraint="$region" >/dev/null || {
       echo "ERROR: Failed to create S3 state bucket '$bucket'" >&2
       return 1
     }
@@ -163,22 +239,8 @@ ensure_state_backend() {
       --region "$region" \
       --public-access-block-configuration \
         BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
-  fi
 
-  # Create DynamoDB lock table if it doesn't exist
-  if ! aws dynamodb describe-table --table-name "$lock_table" --region "$region" 2>/dev/null | grep -q ACTIVE; then
-    echo "Creating lock table: $lock_table"
-    aws dynamodb create-table \
-      --table-name "$lock_table" \
-      --attribute-definitions AttributeName=LockID,AttributeType=S \
-      --key-schema AttributeName=LockID,KeyType=HASH \
-      --billing-mode PAY_PER_REQUEST \
-      --region "$region" || {
-      echo "ERROR: Failed to create DynamoDB lock table '$lock_table'" >&2
-      return 1
-    }
-
-    aws dynamodb wait table-exists --table-name "$lock_table" --region "$region"
+    echo "  State bucket ......... created ($bucket)"
   fi
 }
 
@@ -195,6 +257,40 @@ cmd_init() {
       exit 1
     fi
   done
+
+  if [[ -f "$TERRAFORM_DIR/terraform.tfvars" ]]; then
+    echo "Existing terraform.tfvars found."
+    read -rp "Overwrite? [y/N]: " overwrite
+    if [[ "$overwrite" != [yY] ]]; then
+      load_env
+      local region
+      region="$(get_region)"
+
+      echo
+      echo "Checking prerequisites..."
+      ensure_deployer_access
+
+      if aws ssm get-parameter --name "$MASTER_KEY_SSM_PATH" --region "$region" &>/dev/null 2>&1; then
+        echo "  Master key ........... ok (exists in SSM)"
+      else
+        local master_key
+        master_key="sk-$(openssl rand -hex 24)"
+        aws ssm put-parameter \
+          --name "$MASTER_KEY_SSM_PATH" \
+          --value "$master_key" \
+          --type SecureString \
+          --region "$region"
+        echo "  Master key ........... created in SSM"
+      fi
+
+      ensure_state_backend
+      echo "  Config ............... ok (using existing terraform.tfvars)"
+
+      echo
+      echo "All prerequisites met. Run: ./scripts/rockport.sh deploy"
+      return 0
+    fi
+  fi
 
   read -rp "AWS region [eu-west-2]: " region
   region="${region:-eu-west-2}"
@@ -251,12 +347,13 @@ budget_alert_email    = "$email"
 EOF
 
   echo
-  echo "Written to terraform/terraform.tfvars"
+  echo "Setting up prerequisites..."
+  echo "  Config ............... written (terraform.tfvars + .env)"
 
-  echo
-  echo "Checking for master key in SSM..."
+  ensure_deployer_access
+
   if aws ssm get-parameter --name "$MASTER_KEY_SSM_PATH" --region "$region" &>/dev/null 2>&1; then
-    echo "Master key already exists in SSM."
+    echo "  Master key ........... ok (exists in SSM)"
   else
     local master_key
     master_key="sk-$(openssl rand -hex 24)"
@@ -265,15 +362,13 @@ EOF
       --value "$master_key" \
       --type SecureString \
       --region "$region"
-    echo "Master key created in SSM."
+    echo "  Master key ........... created in SSM"
   fi
 
-  echo
-  echo "Creating Terraform state backend..."
   ensure_state_backend
 
   echo
-  echo "Next steps:"
+  echo "Setup complete. Next steps:"
   echo "  1. Enable Bedrock model access in the AWS Console ($region)"
   if [[ "$region" != eu-* ]]; then
     echo "  2. Update model prefixes in config/litellm-config.yaml"
@@ -518,7 +613,7 @@ cmd_deploy() {
   terraform init -upgrade \
     -backend-config="bucket=$bucket" \
     -backend-config="region=$region" \
-    -backend-config="dynamodb_table=rockport-tfstate-lock"
+    -backend-config="use_lockfile=true"
   terraform apply
 
   echo
@@ -541,7 +636,20 @@ cmd_destroy() {
   local region
   region="$(get_region)"
 
+  local bucket
+  bucket="$(get_state_bucket)"
+
+  # If the state bucket doesn't exist, there's nothing to destroy
+  if ! aws s3api head-bucket --bucket "$bucket" --region "$region" 2>/dev/null; then
+    echo "No infrastructure found (state bucket '$bucket' does not exist). Nothing to destroy."
+    return 0
+  fi
+
   cd "$TERRAFORM_DIR"
+  terraform init \
+    -backend-config="bucket=$bucket" \
+    -backend-config="region=$region" \
+    -backend-config="use_lockfile=true"
   terraform destroy
 
   # Clean up SSM parameters (created outside terraform by init/bootstrap)
