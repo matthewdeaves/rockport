@@ -143,7 +143,7 @@ Rockport is designed so that the proxy has no direct internet exposure. Every la
 Anyone who discovers the domain can reach the LiteLLM API through Cloudflare. Without a valid key, all requests return 401. The attack surface is:
 
 - Unauthenticated probing (health endpoint returns 401)
-- Brute-force key guessing (mitigated by key length — 48 hex characters)
+- Brute-force key guessing (mitigated by key length — master key is `sk-` + 48 hex characters; virtual keys use LiteLLM's default token format)
 - Cloudflare-level DDoS (mitigated by Cloudflare's built-in protection)
 
 ### Optional: Cloudflare Access for pre-authentication

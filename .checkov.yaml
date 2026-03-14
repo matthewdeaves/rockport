@@ -18,7 +18,7 @@ skip-check:
 
   # --- CloudWatch logs for idle-shutdown Lambda ---
   # Logs contain "Idle: X bytes" / "Active: X bytes" — no sensitive data, no compliance reqs
-  - CKV_AWS_338  # CloudWatch log group 1-year retention (7 days is set)
+  - CKV_AWS_338  # CloudWatch log group 1-year retention (30 days is set)
   # Already encrypted with AWS-managed key; CMK adds $1/mo for non-sensitive logs
   - CKV_AWS_158  # CloudWatch log group KMS encryption
 
