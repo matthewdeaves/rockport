@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2154  # Variables are injected by Terraform templatefile()
 set -euo pipefail
 
 LOG_FILE="/var/log/rockport-bootstrap.log"

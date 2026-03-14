@@ -202,7 +202,8 @@ EOF
   if aws ssm get-parameter --name "$MASTER_KEY_SSM_PATH" --region "$region" &>/dev/null 2>&1; then
     echo "Master key already exists in SSM."
   else
-    local master_key="sk-$(openssl rand -hex 24)"
+    local master_key
+    master_key="sk-$(openssl rand -hex 24)"
     aws ssm put-parameter \
       --name "$MASTER_KEY_SSM_PATH" \
       --value "$master_key" \
