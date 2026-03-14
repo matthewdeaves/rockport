@@ -8,6 +8,11 @@ output "tunnel_url" {
   value       = "https://${var.domain}"
 }
 
+output "region" {
+  description = "AWS region"
+  value       = var.region
+}
+
 output "ssm_connect_command" {
   description = "Command to connect to the instance via SSM"
   value       = "aws ssm start-session --target ${aws_instance.rockport.id} --region ${var.region}"

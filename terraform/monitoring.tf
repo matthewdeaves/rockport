@@ -2,7 +2,7 @@
 resource "aws_budgets_budget" "bedrock_daily" {
   name         = "rockport-bedrock-daily"
   budget_type  = "COST"
-  limit_amount = "10"
+  limit_amount = tostring(var.bedrock_daily_budget)
   limit_unit   = "USD"
   time_unit    = "DAILY"
 
@@ -12,18 +12,43 @@ resource "aws_budgets_budget" "bedrock_daily" {
   }
 
   notification {
-    comparison_operator       = "GREATER_THAN"
-    threshold                 = 80
-    threshold_type            = "PERCENTAGE"
-    notification_type         = "ACTUAL"
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 80
+    threshold_type             = "PERCENTAGE"
+    notification_type          = "ACTUAL"
     subscriber_email_addresses = [var.budget_alert_email]
   }
 
   notification {
-    comparison_operator       = "GREATER_THAN"
-    threshold                 = 100
-    threshold_type            = "PERCENTAGE"
-    notification_type         = "ACTUAL"
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 100
+    threshold_type             = "PERCENTAGE"
+    notification_type          = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+}
+
+# Overall monthly AWS budget (EC2, EBS, Bedrock, data transfer, etc.)
+resource "aws_budgets_budget" "monthly_total" {
+  name         = "rockport-monthly-total"
+  budget_type  = "COST"
+  limit_amount = tostring(var.monthly_budget)
+  limit_unit   = "USD"
+  time_unit    = "MONTHLY"
+
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 80
+    threshold_type             = "PERCENTAGE"
+    notification_type          = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 100
+    threshold_type             = "PERCENTAGE"
+    notification_type          = "ACTUAL"
     subscriber_email_addresses = [var.budget_alert_email]
   }
 }

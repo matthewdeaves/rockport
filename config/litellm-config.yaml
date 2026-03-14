@@ -72,3 +72,10 @@ general_settings:
 litellm_settings:
   drop_params: true
   disable_admin_ui: true
+  default_max_internal_user_budget: 5
+  default_internal_user_budget_duration: 1d
+
+# Rate limits per key (requests/tokens per minute)
+default_key_generate_params:
+  rpm_limit: 60
+  tpm_limit: 1000000

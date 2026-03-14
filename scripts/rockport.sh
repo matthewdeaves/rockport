@@ -1,13 +1,39 @@
 #!/bin/bash
 set -euo pipefail
 
-REGION="eu-west-2"
 MASTER_KEY_SSM_PATH="/rockport/master-key"
 TERRAFORM_DIR="$(cd "$(dirname "$0")/../terraform" && pwd)"
 CONFIG_DIR="$(cd "$(dirname "$0")/../config" && pwd)"
 CACHED_MASTER_KEY=""
+CACHED_REGION=""
 
 # --- Helper functions ---
+
+get_region() {
+  if [[ -n "$CACHED_REGION" ]]; then
+    echo "$CACHED_REGION"
+    return
+  fi
+  # Try terraform.tfvars first (no terraform state needed)
+  if [[ -f "$TERRAFORM_DIR/terraform.tfvars" ]]; then
+    local r
+    r=$(grep -oP 'region\s*=\s*"\K[^"]+' "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null) && {
+      CACHED_REGION="$r"
+      echo "$r"
+      return
+    }
+  fi
+  # Try terraform output
+  local r
+  r=$(cd "$TERRAFORM_DIR" && terraform output -raw region 2>/dev/null) && {
+    CACHED_REGION="$r"
+    echo "$r"
+    return
+  }
+  # Default
+  CACHED_REGION="eu-west-2"
+  echo "$CACHED_REGION"
+}
 
 get_master_key() {
   if [[ -n "$CACHED_MASTER_KEY" ]]; then
@@ -19,7 +45,7 @@ get_master_key() {
     --with-decryption \
     --query "Parameter.Value" \
     --output text \
-    --region "$REGION")
+    --region "$(get_region)")
   echo "$CACHED_MASTER_KEY"
 }
 
@@ -55,6 +81,75 @@ api_call() {
 
 # --- Subcommands ---
 
+cmd_init() {
+  echo "Rockport Setup"
+  echo "=============="
+  echo
+
+  for cmd in aws terraform; do
+    if ! command -v "$cmd" &>/dev/null; then
+      echo "ERROR: $cmd not found. Run ./scripts/setup.sh first."
+      exit 1
+    fi
+  done
+
+  read -rp "AWS region [eu-west-2]: " region
+  region="${region:-eu-west-2}"
+
+  read -rp "Domain (e.g. llm.example.com): " domain
+  [[ -z "$domain" ]] && { echo "Domain is required."; exit 1; }
+
+  read -rp "Cloudflare Zone ID: " cf_zone_id
+  [[ -z "$cf_zone_id" ]] && { echo "Zone ID is required."; exit 1; }
+
+  read -rp "Cloudflare Account ID: " cf_account_id
+  [[ -z "$cf_account_id" ]] && { echo "Account ID is required."; exit 1; }
+
+  read -rp "Budget alert email: " email
+  [[ -z "$email" ]] && { echo "Email is required."; exit 1; }
+
+  local subdomain
+  subdomain="${domain%%.*}"
+
+  cat > "$TERRAFORM_DIR/terraform.tfvars" <<EOF
+region                = "$region"
+domain                = "$domain"
+tunnel_subdomain      = "$subdomain"
+cloudflare_zone_id    = "$cf_zone_id"
+cloudflare_account_id = "$cf_account_id"
+budget_alert_email    = "$email"
+EOF
+
+  echo
+  echo "Written to terraform/terraform.tfvars"
+
+  echo
+  echo "Checking for master key in SSM..."
+  if aws ssm get-parameter --name "$MASTER_KEY_SSM_PATH" --region "$region" &>/dev/null 2>&1; then
+    echo "Master key already exists in SSM."
+  else
+    local master_key="sk-$(openssl rand -hex 24)"
+    aws ssm put-parameter \
+      --name "$MASTER_KEY_SSM_PATH" \
+      --value "$master_key" \
+      --type SecureString \
+      --region "$region"
+    echo "Master key created in SSM."
+  fi
+
+  echo
+  echo "Next steps:"
+  echo "  1. Export CLOUDFLARE_API_TOKEN"
+  echo "  2. Enable Bedrock model access in the AWS Console ($region)"
+  if [[ "$region" != eu-* ]]; then
+    echo "  3. Update model prefixes in config/litellm-config.yaml"
+    echo "     (remove 'eu.' prefix for non-EU regions)"
+    echo "  4. Run: ./scripts/rockport.sh deploy"
+  else
+    echo "  3. Run: ./scripts/rockport.sh deploy"
+  fi
+}
+
 cmd_status() {
   local url
   url="$(get_tunnel_url)"
@@ -75,46 +170,94 @@ if u:
 }
 
 cmd_key_create() {
-  local name="${1:?Usage: rockport key create <name>}"
+  local name="${1:?Usage: rockport key create <name> [--budget <amount>]}"
+  shift
+  local budget=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --budget) budget="${2:?--budget requires a dollar amount}"; shift 2 ;;
+      *) echo "Unknown option: $1"; exit 1 ;;
+    esac
+  done
+
+  local payload="{\"key_alias\": \"$name\""
+  if [[ -n "$budget" ]]; then
+    payload+=", \"max_budget\": $budget, \"budget_duration\": \"1d\""
+  fi
+  payload+="}"
+
   echo "Creating key '$name'..."
-  api_call POST "/key/generate" "{\"key_name\": \"$name\"}" | python3 -c "
+  local response
+  response=$(api_call POST "/key/generate" "$payload")
+
+  local key
+  key=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('key',''))")
+
+  echo "$response" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
-print(f\"Key:  {d.get('key','?')}\")
-print(f\"Name: {d.get('key_name','?')}\")
-print(f\"ID:   {d.get('token','?')}\")
+print(f\"Key:    {d.get('key','?')}\")
+print(f\"Name:   {d.get('key_alias','?')}\")
+print(f\"ID:     {d.get('token','?')}\")
+budget=d.get('max_budget')
+if budget: print(f\"Budget: \${budget}/day\")
 "
+
+  # Generate settings file for this key
+  if [[ -n "$key" ]]; then
+    local url
+    url="$(get_tunnel_url)"
+    local settings_file="$CONFIG_DIR/claude-code-settings-${name}.json"
+    cat > "$settings_file" <<EOF
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "$url",
+    "ANTHROPIC_AUTH_TOKEN": "$key"
+  }
+}
+EOF
+    echo
+    echo "Settings file: $settings_file"
+    echo "Copy to ~/.claude/settings.json to use with Claude Code"
+  fi
 }
 
 cmd_key_list() {
   echo "Listing keys..."
-  api_call GET "/key/list" | python3 -c "
+  api_call GET "/key/list?return_full_object=true" | python3 -c "
 import sys,json
 data=json.load(sys.stdin)
-keys=data if isinstance(data,list) else data.get('keys',data.get('data',[]))
+keys=data.get('keys',[]) if isinstance(data,dict) else data
 if not keys:
   print('  No keys found')
   sys.exit()
 for k in keys:
-  name=k.get('key_name','unnamed')
+  if isinstance(k,str): continue
+  name=k.get('key_alias') or k.get('key_name','unnamed')
   token=k.get('token','?')[:8]+'...'
   spend=k.get('spend',0) or 0
-  print(f'  {name:<20} {token}  \${spend:.4f}')
+  budget=k.get('max_budget')
+  limit=f'  (limit: \${budget}/day)' if budget else ''
+  print(f'  {name:<20} {token}  \${spend:.4f}{limit}')
 "
 }
 
 cmd_key_info() {
   local key="${1:?Usage: rockport key info <key>}"
-  api_call POST "/key/info" "{\"key\": \"$key\"}" | python3 -c "
+  api_call GET "/key/info?key=$key" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
 info=d.get('info',d)
-print(f\"Name:      {info.get('key_name','?')}\")
-print(f\"Token:     {info.get('token','?')}\")
+name=info.get('key_alias') or info.get('key_name','?')
+print(f\"Name:      {name}\")
 print(f\"Spend:     \${info.get('spend',0) or 0:.4f}\")
 print(f\"Max Budget:{' $'+str(info.get('max_budget')) if info.get('max_budget') else ' unlimited'}\")
 print(f\"Created:   {info.get('created_at','?')}\")
 print(f\"Expires:   {info.get('expires','never')}\")
+rpm=info.get('rpm_limit')
+tpm=info.get('tpm_limit')
+if rpm: print(f\"RPM Limit: {rpm}\")
+if tpm: print(f\"TPM Limit: {tpm}\")
 "
 }
 
@@ -137,8 +280,32 @@ print(f'\n{len(models)} models available')
 }
 
 cmd_spend() {
-  echo "Global spend..."
-  api_call GET "/global/spend" | python3 -c "
+  local subcmd="${1:-}"
+
+  case "$subcmd" in
+    keys)
+      echo "Spend by key..."
+      api_call GET "/key/list?return_full_object=true" | python3 -c "
+import sys,json
+data=json.load(sys.stdin)
+keys=data.get('keys',[]) if isinstance(data,dict) else data
+keys=[k for k in keys if isinstance(k,dict)]
+if not keys:
+  print('  No keys found')
+  sys.exit()
+keys.sort(key=lambda k: k.get('spend',0) or 0, reverse=True)
+total=0
+for k in keys:
+  name=k.get('key_alias') or k.get('key_name','unnamed')
+  spend=k.get('spend',0) or 0
+  total+=spend
+  print(f'  {name:<20} \${spend:.4f}')
+print(f'\n  Total: \${total:.4f}')
+"
+      ;;
+    *)
+      echo "Global spend..."
+      api_call GET "/global/spend" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
 if isinstance(d, list):
@@ -153,6 +320,8 @@ else:
   spend=d.get('spend',0) or 0
   print(f'Total spend: \${spend:.4f}')
 " 2>/dev/null || echo "Could not fetch spend data"
+      ;;
+  esac
 }
 
 cmd_config_push() {
@@ -166,7 +335,7 @@ cmd_config_push() {
 
   aws ssm start-session \
     --target "$instance_id" \
-    --region "$REGION" \
+    --region "$(get_region)" \
     --document-name AWS-StartInteractiveCommand \
     --parameters command="echo '$config_b64' | base64 -d | sudo tee /etc/litellm/config.yaml > /dev/null && sudo chown litellm:litellm /etc/litellm/config.yaml && sudo systemctl restart litellm && echo 'Config pushed and LiteLLM restarted'"
 }
@@ -177,7 +346,7 @@ cmd_logs() {
   echo "Connecting to instance $instance_id..."
   aws ssm start-session \
     --target "$instance_id" \
-    --region "$REGION" \
+    --region "$(get_region)" \
     --document-name AWS-StartInteractiveCommand \
     --parameters command="journalctl -u litellm -n 100 -f"
 }
@@ -187,6 +356,12 @@ cmd_deploy() {
   cd "$TERRAFORM_DIR"
   terraform init -upgrade
   terraform apply
+
+  echo
+  echo "Deploy complete. Next steps:"
+  echo "  ./scripts/rockport.sh status              # Verify health (wait ~5min for bootstrap)"
+  echo "  ./scripts/rockport.sh key create <name>   # Create an API key"
+  echo "  ./scripts/rockport.sh setup-claude         # Configure Claude Code"
 }
 
 cmd_destroy() {
@@ -206,9 +381,45 @@ cmd_upgrade() {
   echo "Restarting LiteLLM on instance $instance_id..."
   aws ssm start-session \
     --target "$instance_id" \
-    --region "$REGION" \
+    --region "$(get_region)" \
     --document-name AWS-StartInteractiveCommand \
     --parameters command="sudo systemctl restart litellm && echo 'LiteLLM restarted successfully'"
+}
+
+cmd_start() {
+  local instance_id region
+  instance_id="$(get_instance_id)"
+  region="$(get_region)"
+  echo "Starting instance $instance_id..."
+  aws ec2 start-instances --instance-ids "$instance_id" --region "$region" > /dev/null
+  echo "Waiting for running state..."
+  aws ec2 wait instance-running --instance-ids "$instance_id" --region "$region"
+  echo "Instance running. Services will be ready in ~60 seconds."
+}
+
+cmd_stop() {
+  local instance_id region
+  instance_id="$(get_instance_id)"
+  region="$(get_region)"
+  echo "Stopping instance $instance_id..."
+  aws ec2 stop-instances --instance-ids "$instance_id" --region "$region" > /dev/null
+  echo "Instance stopping."
+}
+
+cmd_setup_claude() {
+  local key_name
+  read -rp "Key name [claude-code]: " key_name
+  key_name="${key_name:-claude-code}"
+
+  # Delegates to key create which generates the settings file
+  cmd_key_create "$key_name"
+
+  local settings_file="$CONFIG_DIR/claude-code-settings-${key_name}.json"
+  if [[ -f "$settings_file" ]]; then
+    echo
+    echo "To configure Claude Code, copy the settings file:"
+    echo "  cp $settings_file ~/.claude/settings.json"
+  fi
 }
 
 # --- Main ---
@@ -218,26 +429,31 @@ usage() {
 Usage: rockport <command> [args]
 
 Commands:
+  init                Interactive setup — creates terraform.tfvars and master key
+  deploy              Run terraform apply
   status              Check service health and model list
   models              List available models
-  key create <name>   Create a new API key
+  key create <name>   Create a new API key [--budget <amount>]
   key list            List all API keys with spend
   key info <key>      Show key details and spend
   key revoke <key>    Revoke an API key
-  spend               Show global spend summary
+  spend [keys]        Show global spend (or breakdown by key)
   config push         Push local config to instance and restart
   logs                Stream LiteLLM logs (via SSM)
-  deploy              Run terraform apply
-  destroy             Run terraform destroy (with confirmation)
   upgrade             Restart LiteLLM service
+  start               Start a stopped instance
+  stop                Stop the instance
+  setup-claude        Create key and show Claude Code config
+  destroy             Run terraform destroy (with confirmation)
 EOF
 }
 
 case "${1:-}" in
+  init)     cmd_init ;;
   status)   cmd_status ;;
   key)
     case "${2:-}" in
-      create) cmd_key_create "${3:-}" ;;
+      create) cmd_key_create "${@:3}" ;;
       list)   cmd_key_list ;;
       info)   cmd_key_info "${3:-}" ;;
       revoke) cmd_key_revoke "${3:-}" ;;
@@ -245,16 +461,19 @@ case "${1:-}" in
     esac
     ;;
   models)   cmd_models ;;
-  spend)    cmd_spend ;;
+  spend)    cmd_spend "${2:-}" ;;
   config)
     case "${2:-}" in
       push) cmd_config_push ;;
       *)    usage; exit 1 ;;
     esac
     ;;
-  logs)     cmd_logs ;;
-  deploy)   cmd_deploy ;;
-  destroy)  cmd_destroy ;;
-  upgrade)  cmd_upgrade ;;
-  *)        usage; exit 1 ;;
+  logs)         cmd_logs ;;
+  deploy)       cmd_deploy ;;
+  destroy)      cmd_destroy ;;
+  upgrade)      cmd_upgrade ;;
+  start)        cmd_start ;;
+  stop)         cmd_stop ;;
+  setup-claude) cmd_setup_claude ;;
+  *)            usage; exit 1 ;;
 esac

@@ -11,10 +11,10 @@ check() {
   local result="$2"
   if [[ "$result" == "0" ]]; then
     echo "  PASS: $name"
-    ((PASS++))
+    ((PASS++)) || true
   else
     echo "  FAIL: $name"
-    ((FAIL++))
+    ((FAIL++)) || true
   fi
 }
 
@@ -22,12 +22,13 @@ echo "=== Rockport Smoke Tests ==="
 echo "Target: $BASE_URL"
 echo
 
-# 1. Health endpoint
+# 1. Health endpoint (requires auth in LiteLLM with master key enabled)
 echo "1. Health check"
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/health")
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/health" \
+  -H "Authorization: Bearer $VALID_KEY")
 [[ "$HTTP_CODE" == "200" ]]; check "GET /health returns 200" "$?"
 
-HEALTH_BODY=$(curl -s "$BASE_URL/health")
+HEALTH_BODY=$(curl -s "$BASE_URL/health" -H "Authorization: Bearer $VALID_KEY")
 echo "$HEALTH_BODY" | grep -q "healthy"; check "Health response contains 'healthy'" "$?"
 
 # 2. Auth rejection with invalid key
@@ -50,13 +51,12 @@ echo "$MODELS" | grep -q "nova-pro"; check "Model list contains nova-pro" "$?"
 
 # 5. Streamed response
 echo "5. Streaming"
-STREAM_RESPONSE=$(curl -s -N -X POST "$BASE_URL/v1/messages" \
-  -H "x-api-key: $VALID_KEY" \
+STREAM_RESPONSE=$(curl -s -X POST "$BASE_URL/v1/chat/completions" \
+  -H "Authorization: Bearer $VALID_KEY" \
   -H "Content-Type: application/json" \
-  -H "anthropic-version: 2023-06-01" \
   -d '{"model":"claude-sonnet-4-6","max_tokens":10,"messages":[{"role":"user","content":"Say hi"}],"stream":true}' \
-  --max-time 30 2>/dev/null | head -5)
-echo "$STREAM_RESPONSE" | grep -q "event:"; check "Streaming response received" "$?"
+  --max-time 30 2>/dev/null)
+echo "$STREAM_RESPONSE" | grep -q "data:"; check "Streaming response received" "$?"
 
 # Summary
 echo

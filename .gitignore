@@ -10,6 +10,9 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 
+# Lambda build artifacts
+*.zip
+
 # Keep lock file
 !.terraform.lock.hcl
 
@@ -23,6 +26,9 @@ Thumbs.db
 *~
 .vscode/
 .idea/
+
+# Generated settings files
+config/claude-code-settings-*.json
 
 # Secrets
 .env*

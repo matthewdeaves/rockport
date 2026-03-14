@@ -9,7 +9,7 @@ on:
     paths: ["terraform/**", "config/**", "scripts/**"]
 
 env:
-  AWS_REGION: eu-west-2
+  AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-2' }}
   TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
   TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -29,7 +29,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: eu-west-2
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-2' }}
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -59,6 +59,8 @@ jobs:
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    outputs:
+      tunnel_url: ${{ steps.output.outputs.tunnel_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -66,7 +68,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: eu-west-2
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-2' }}
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -80,6 +82,13 @@ jobs:
         run: terraform apply -auto-approve
         working-directory: terraform
 
+      - name: Get outputs
+        id: output
+        run: |
+          URL=$(terraform output -raw tunnel_url)
+          echo "tunnel_url=$URL" >> "$GITHUB_OUTPUT"
+        working-directory: terraform
+
   smoke-test:
     needs: deploy
     runs-on: ubuntu-latest
@@ -90,7 +99,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: eu-west-2
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-2' }}
 
       - name: Wait for bootstrap
         run: sleep 120
@@ -98,11 +107,11 @@ jobs:
       - name: Get master key
         id: key
         run: |
-          KEY=$(aws ssm get-parameter --name /rockport/master-key --with-decryption --query Parameter.Value --output text --region eu-west-2)
+          KEY=$(aws ssm get-parameter --name /rockport/master-key --with-decryption --query Parameter.Value --output text --region "$AWS_REGION")
           echo "::add-mask::$KEY"
           echo "master_key=$KEY" >> "$GITHUB_OUTPUT"
 
       - name: Run smoke tests
         run: |
           chmod +x tests/smoke-test.sh
-          ./tests/smoke-test.sh https://llm.matthewdeaves.com "${{ steps.key.outputs.master_key }}"
+          ./tests/smoke-test.sh "${{ needs.deploy.outputs.tunnel_url }}" "${{ steps.key.outputs.master_key }}"

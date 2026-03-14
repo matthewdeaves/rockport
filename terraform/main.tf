@@ -105,17 +105,18 @@ resource "aws_vpc_security_group_egress_rule" "all_outbound" {
 # EC2 instance
 
 resource "aws_instance" "rockport" {
-  ami                  = data.aws_ssm_parameter.al2023_ami.value
-  instance_type        = var.instance_type
-  iam_instance_profile = aws_iam_instance_profile.rockport.name
-  subnet_id            = data.aws_subnets.default.ids[0]
+  ami                    = data.aws_ssm_parameter.al2023_ami.value
+  instance_type          = var.instance_type
+  iam_instance_profile   = aws_iam_instance_profile.rockport.name
+  subnet_id              = data.aws_subnets.default.ids[0]
   vpc_security_group_ids = [aws_security_group.rockport.id]
 
   user_data = templatefile("${path.module}/../scripts/bootstrap.sh", {
     region                = var.region
     master_key_ssm_path   = "/rockport/master-key"
     tunnel_token_ssm_path = aws_ssm_parameter.tunnel_token.name
-    litellm_version       = "1.82.1"
+    litellm_version       = var.litellm_version
+    cloudflared_version   = var.cloudflared_version
     litellm_config        = file("${path.module}/../config/litellm-config.yaml")
     litellm_service       = file("${path.module}/../config/litellm.service")
     cloudflared_service   = file("${path.module}/../config/cloudflared.service")

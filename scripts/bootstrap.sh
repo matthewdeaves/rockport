@@ -9,6 +9,7 @@ REGION="${region}"
 MASTER_KEY_SSM_PATH="${master_key_ssm_path}"
 TUNNEL_TOKEN_SSM_PATH="${tunnel_token_ssm_path}"
 LITELLM_VERSION="${litellm_version}"
+CLOUDFLARED_VERSION="${cloudflared_version}"
 
 # --- Swap ---
 echo "Creating swap..."
@@ -111,7 +112,7 @@ LITELLMSVC
 
 # --- Cloudflared ---
 echo "Installing cloudflared..."
-curl -fsSL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64" \
+curl -fsSL "https://github.com/cloudflare/cloudflared/releases/download/$CLOUDFLARED_VERSION/cloudflared-linux-amd64" \
   -o /usr/local/bin/cloudflared
 chmod +x /usr/local/bin/cloudflared
 
