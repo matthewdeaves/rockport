@@ -23,10 +23,10 @@ skip-check:
   - CKV_AWS_158  # CloudWatch log group KMS encryption
 
   # --- IAM ---
-  # bedrock:InvokeModel routes to 5+ model providers with varying ARN formats;
-  # scoping to specific ARNs creates maintenance burden on every config change.
-  # Blast radius = model invocation costs, guarded by budget alarms.
-  - CKV_AWS_355  # IAM wildcard resource
+  # ec2:DescribeInstances and cloudwatch:GetMetricStatistics require Resource: "*"
+  # (AWS does not support resource-level permissions for these actions).
+  # aws-marketplace:ViewSubscriptions also requires wildcard.
+  - CKV_AWS_355  # IAM wildcard resource (required for describe/list actions)
 
   # --- EC2 ---
   # 5-min metric granularity sufficient; idle checker looks at 30-min windows

@@ -52,29 +52,44 @@ systemctl daemon-reload
 systemctl enable postgresql
 systemctl start postgresql
 
-# Create litellm database and user
-DB_PASSWORD=$(openssl rand -hex 16)
-sudo -u postgres psql -c "CREATE USER litellm_user WITH PASSWORD '$DB_PASSWORD'"
-sudo -u postgres psql -c "CREATE DATABASE litellm OWNER litellm_user;"
-sudo -u postgres psql -d litellm -c "GRANT ALL ON SCHEMA public TO litellm_user;"
+# Create litellm database and user — suppress secrets from log
+echo "Creating database and user..."
+{
+  DB_PASSWORD=$(openssl rand -hex 16)
+  sudo -u postgres psql -c "CREATE USER litellm_user WITH PASSWORD '$DB_PASSWORD'"
+  sudo -u postgres psql -c "CREATE DATABASE litellm OWNER litellm_user;"
+  sudo -u postgres psql -d litellm -c "GRANT ALL ON SCHEMA public TO litellm_user;"
 
-DATABASE_URL="postgresql://litellm_user:$DB_PASSWORD@localhost:5432/litellm"
+  DATABASE_URL="postgresql://litellm_user:$DB_PASSWORD@localhost:5432/litellm"
 
-# --- Fetch secrets from SSM ---
+  # Store DB password in SSM for recovery
+  aws ssm put-parameter \
+    --name "/rockport/db-password" \
+    --value "$DB_PASSWORD" \
+    --type SecureString \
+    --overwrite \
+    --region "$REGION"
+} > /dev/null 2>&1
+echo "Database and user created. Password stored in SSM."
+
+# --- Fetch secrets from SSM — suppress values from log ---
 echo "Fetching secrets from SSM..."
-MASTER_KEY=$(aws ssm get-parameter \
-  --name "$MASTER_KEY_SSM_PATH" \
-  --with-decryption \
-  --query "Parameter.Value" \
-  --output text \
-  --region "$REGION")
+{
+  MASTER_KEY=$(aws ssm get-parameter \
+    --name "$MASTER_KEY_SSM_PATH" \
+    --with-decryption \
+    --query "Parameter.Value" \
+    --output text \
+    --region "$REGION")
 
-TUNNEL_TOKEN=$(aws ssm get-parameter \
-  --name "$TUNNEL_TOKEN_SSM_PATH" \
-  --with-decryption \
-  --query "Parameter.Value" \
-  --output text \
-  --region "$REGION")
+  TUNNEL_TOKEN=$(aws ssm get-parameter \
+    --name "$TUNNEL_TOKEN_SSM_PATH" \
+    --with-decryption \
+    --query "Parameter.Value" \
+    --output text \
+    --region "$REGION")
+} > /dev/null 2>&1
+echo "Secrets fetched from SSM."
 
 # --- LiteLLM ---
 echo "Installing LiteLLM..."
@@ -98,12 +113,14 @@ ${litellm_config}
 LITELLMCONF
 chown -R litellm:litellm /etc/litellm
 
-# Env file
-cat > /etc/litellm/env <<EOF
+# Env file — written inside subshell with restrictive umask to prevent brief exposure
+(
+  umask 077
+  cat > /etc/litellm/env <<ENVEOF
 DATABASE_URL=$DATABASE_URL
 LITELLM_MASTER_KEY=$MASTER_KEY
-EOF
-chmod 600 /etc/litellm/env
+ENVEOF
+)
 chown litellm:litellm /etc/litellm/env
 
 # Systemd unit
@@ -114,18 +131,33 @@ LITELLMSVC
 # --- Cloudflared ---
 echo "Installing cloudflared..."
 curl -fsSL "https://github.com/cloudflare/cloudflared/releases/download/$CLOUDFLARED_VERSION/cloudflared-linux-amd64" \
-  -o /usr/local/bin/cloudflared
+  -o /tmp/cloudflared
+curl -fsSL "https://github.com/cloudflare/cloudflared/releases/download/$CLOUDFLARED_VERSION/cloudflared-linux-amd64.sha256" \
+  -o /tmp/cloudflared.sha256
+
+# Verify checksum
+expected_hash=$(awk '{print $1}' /tmp/cloudflared.sha256)
+actual_hash=$(sha256sum /tmp/cloudflared | awk '{print $1}')
+if [[ "$expected_hash" != "$actual_hash" ]]; then
+  echo "FATAL: cloudflared checksum mismatch! Expected=$expected_hash Actual=$actual_hash"
+  exit 1
+fi
+mv /tmp/cloudflared /usr/local/bin/cloudflared
 chmod +x /usr/local/bin/cloudflared
+rm -f /tmp/cloudflared.sha256
+echo "cloudflared installed and verified."
 
 # Create cloudflared user
 useradd --system --no-create-home --shell /usr/sbin/nologin cloudflared
 
-# Env file
-mkdir -p /etc/cloudflared
-cat > /etc/cloudflared/env <<EOF
+# Env file — restrictive umask
+(
+  umask 077
+  mkdir -p /etc/cloudflared
+  cat > /etc/cloudflared/env <<ENVEOF
 TUNNEL_TOKEN=$TUNNEL_TOKEN
-EOF
-chmod 600 /etc/cloudflared/env
+ENVEOF
+)
 chown cloudflared:cloudflared /etc/cloudflared/env
 
 # Systemd unit

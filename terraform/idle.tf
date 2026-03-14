@@ -3,7 +3,7 @@
 data "archive_file" "idle_shutdown" {
   count       = var.enable_idle_shutdown ? 1 : 0
   type        = "zip"
-  output_path = "${path.module}/idle-shutdown.zip"
+  output_path = "${path.module}/.build/idle-shutdown.zip"
 
   source {
     content  = <<-PYTHON
@@ -44,7 +44,7 @@ data "archive_file" "idle_shutdown" {
         # cloudflared keepalives: ~6KB/min = ~180KB/30min
         # A single LLM request: typically 50KB-5MB+
         # 500KB threshold distinguishes idle from active use
-        threshold = 500_000
+        threshold = int(os.environ.get('IDLE_THRESHOLD_BYTES', '500000'))
 
         if total_bytes < threshold:
             print(f'Idle: {total_bytes} bytes in {idle_minutes}min, stopping')
@@ -64,7 +64,7 @@ resource "aws_lambda_function" "idle_shutdown" {
   runtime                        = "python3.12"
   handler                        = "index.handler"
   timeout                        = 30
-  reserved_concurrent_executions = 1
+  reserved_concurrent_executions = 2
   filename                       = data.archive_file.idle_shutdown[0].output_path
   source_code_hash               = data.archive_file.idle_shutdown[0].output_base64sha256
   role                           = aws_iam_role.idle_shutdown[0].arn
@@ -73,6 +73,7 @@ resource "aws_lambda_function" "idle_shutdown" {
     variables = {
       INSTANCE_ID          = aws_instance.rockport.id
       IDLE_TIMEOUT_MINUTES = tostring(var.idle_timeout_minutes)
+      IDLE_THRESHOLD_BYTES = tostring(var.idle_threshold_bytes)
     }
   }
 }
@@ -132,7 +133,7 @@ resource "aws_iam_role_policy" "idle_shutdown" {
 resource "aws_cloudwatch_log_group" "idle_shutdown" {
   count             = var.enable_idle_shutdown ? 1 : 0
   name              = "/aws/lambda/rockport-idle-shutdown"
-  retention_in_days = 7
+  retention_in_days = 30
 }
 
 resource "aws_cloudwatch_event_rule" "idle_check" {

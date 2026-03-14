@@ -1,5 +1,7 @@
 # Data sources
 
+data "aws_caller_identity" "current" {}
+
 data "aws_vpc" "default" {
   default = true
 }
@@ -50,13 +52,15 @@ resource "aws_iam_role_policy" "bedrock_invoke" {
           "bedrock:InvokeModel",
           "bedrock:InvokeModelWithResponseStream"
         ]
-        Resource = "*"
+        Resource = [
+          "arn:aws:bedrock:*::foundation-model/*",
+          "arn:aws:bedrock:*:${data.aws_caller_identity.current.account_id}:inference-profile/*"
+        ]
       },
       {
         Effect = "Allow"
         Action = [
-          "aws-marketplace:ViewSubscriptions",
-          "aws-marketplace:Subscribe"
+          "aws-marketplace:ViewSubscriptions"
         ]
         Resource = "*"
       }
@@ -77,8 +81,9 @@ resource "aws_iam_role_policy" "ssm_get_parameter" {
         "ssm:GetParameters"
       ]
       Resource = [
-        "arn:aws:ssm:${var.region}:*:parameter/rockport/master-key",
-        "arn:aws:ssm:${var.region}:*:parameter/rockport/tunnel-token"
+        "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/rockport/master-key",
+        "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/rockport/tunnel-token",
+        "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/rockport/db-password"
       ]
     }]
   })
@@ -148,6 +153,8 @@ resource "aws_instance" "rockport" {
   }
 
   tags = {
-    Name = "rockport"
+    Name      = "rockport"
+    Project   = "rockport"
+    ManagedBy = "terraform"
   }
 }
