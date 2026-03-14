@@ -5,11 +5,18 @@ LiteLLM proxy on EC2 behind Cloudflare Tunnel, routing Claude Code to Bedrock mo
 ## Project Structure
 
 ```
-terraform/          # All infrastructure (EC2, IAM, SG, tunnel, snapshots, monitoring, idle shutdown)
-config/             # LiteLLM config, systemd units (settings files generated per key)
-scripts/bootstrap.sh  # EC2 user_data — installs PostgreSQL, LiteLLM, cloudflared
-scripts/rockport.sh   # Admin CLI (init, keys, status, spend, logs, deploy, start/stop)
-tests/smoke-test.sh   # Post-deploy verification
+terraform/              # All infrastructure (EC2, IAM, SG, tunnel, snapshots, monitoring, idle shutdown)
+terraform/.build/       # Lambda zip artifacts (gitignored)
+config/                 # LiteLLM config, systemd units, PostgreSQL tuning
+  litellm-config.yaml   #   Model definitions, budget, rate limits
+  litellm.service       #   Systemd unit for LiteLLM proxy
+  cloudflared.service   #   Systemd unit for Cloudflare Tunnel
+  postgresql-tuning.conf #  PostgreSQL memory tuning for t3.small
+scripts/bootstrap.sh    # EC2 user_data — installs PostgreSQL, LiteLLM, cloudflared
+scripts/rockport.sh     # Admin CLI (init, keys, status, spend, logs, deploy, start/stop)
+tests/smoke-test.sh     # Post-deploy verification
+.github/workflows/      # CI/CD — validate (fmt, lint, security scan) + deploy (plan/apply/smoke)
+.checkov.yaml           # Checkov skip list with justifications
 ```
 
 ## Key Commands
@@ -17,7 +24,7 @@ tests/smoke-test.sh   # Post-deploy verification
 ```bash
 ./scripts/rockport.sh init          # Interactive setup — creates tfvars + SSM master key
 ./scripts/rockport.sh deploy        # terraform init + apply
-./scripts/rockport.sh destroy       # terraform destroy (confirms)
+./scripts/rockport.sh destroy       # terraform destroy (confirms, cleans up SSM params)
 ./scripts/rockport.sh status        # Health + model list
 ./scripts/rockport.sh start         # Start a stopped instance
 ./scripts/rockport.sh stop          # Stop the instance
@@ -43,3 +50,7 @@ tests/smoke-test.sh   # Post-deploy verification
 - Instance auto-stops after 30min of inactivity by default (Lambda checks NetworkIn metrics)
 - Region is read from `terraform.tfvars` by rockport.sh — no hardcoded region in the CLI
 - cloudflared version is pinned via `cloudflared_version` variable for stability
+- The admin CLI requires `aws`, `terraform`, and `jq` — run `./scripts/setup.sh` to install all tools
+- Three SSM parameters are managed: `/rockport/master-key` (by init), `/rockport/tunnel-token` (by Terraform), `/rockport/db-password` (by bootstrap)
+- CI/CD uses GitHub OIDC for AWS authentication — set the `AWS_ROLE_ARN` secret in GitHub to the IAM role ARN
+- The LiteLLM admin UI is intentionally disabled (`disable_admin_ui: true`) — all admin is via the CLI

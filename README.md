@@ -22,7 +22,7 @@ LiteLLM proxy on EC2 that gives Claude Code access to any Bedrock model through 
 ./scripts/setup.sh
 ```
 
-Or install manually: AWS CLI v2, Session Manager plugin, Terraform >= 1.14, GitHub CLI.
+Or install manually: AWS CLI v2, Session Manager plugin, Terraform >= 1.14, jq, GitHub CLI.
 
 ### 2. Configure AWS credentials
 
@@ -117,6 +117,50 @@ To disable auto-stop, add to `terraform.tfvars`:
 ```hcl
 enable_idle_shutdown = false
 ```
+
+## Configuration
+
+All settings are in `terraform/terraform.tfvars`. These variables have defaults and can be overridden:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `region` | `eu-west-2` | AWS region |
+| `instance_type` | `t3.small` | EC2 instance type |
+| `litellm_version` | `1.82.2` | LiteLLM version to install |
+| `cloudflared_version` | `2026.3.0` | Cloudflared version (pinned for stability) |
+| `bedrock_daily_budget` | `10` | Daily Bedrock spend alert threshold (USD) |
+| `monthly_budget` | `30` | Monthly overall AWS budget alert threshold (USD) |
+| `enable_idle_shutdown` | `true` | Auto-stop instance after inactivity |
+| `idle_timeout_minutes` | `30` | Minutes of inactivity before auto-stop |
+| `idle_threshold_bytes` | `500000` | Network bytes below which instance is considered idle |
+
+Model configuration is in `config/litellm-config.yaml`. After editing, push changes to the running instance:
+
+```bash
+./scripts/rockport.sh config push
+```
+
+Budget and rate limit defaults are also in `litellm-config.yaml`:
+- Global budget: `$10/day`
+- Per-key default budget: `$5/day`
+- Rate limits: `60 RPM`, `200K TPM` per key
+
+## CI/CD
+
+Two GitHub Actions workflows run on push to `main`:
+
+**Validate** (`validate.yml`) — runs on every push and PR:
+- `terraform fmt -check` and `terraform validate`
+- ShellCheck on all `.sh` files
+- Trivy IaC security scan
+- Checkov policy-as-code scan
+
+**Deploy** (`deploy.yml`) — runs on push to `main` (paths: `terraform/`, `config/`, `scripts/`):
+- `terraform plan` on PRs (comments the plan on the PR)
+- `terraform apply -auto-approve` on merge to `main`
+- Smoke tests after deploy
+
+CI uses GitHub OIDC for AWS authentication. Set `AWS_ROLE_ARN` in GitHub repository secrets to an IAM role with OIDC trust policy. Also set `CLOUDFLARE_ZONE_ID`, `CLOUDFLARE_ACCOUNT_ID`, and `CLOUDFLARE_API_TOKEN` as secrets.
 
 ## Security design
 
