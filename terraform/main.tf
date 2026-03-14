@@ -77,9 +77,9 @@ resource "aws_iam_role_policy" "ssm_get_parameter" {
         "ssm:GetParameters"
       ]
       Resource = [
-          "arn:aws:ssm:${var.region}:*:parameter/rockport/master-key",
-          "arn:aws:ssm:${var.region}:*:parameter/rockport/tunnel-token"
-        ]
+        "arn:aws:ssm:${var.region}:*:parameter/rockport/master-key",
+        "arn:aws:ssm:${var.region}:*:parameter/rockport/tunnel-token"
+      ]
     }]
   })
 }
