@@ -255,17 +255,7 @@ A Cloudflare WAF allowlist restricts the proxy to only the paths Claude Code and
 - Brute-force key guessing (mitigated by key length — master key is `sk-` + 48 hex characters; virtual keys use LiteLLM's default token format)
 - Cloudflare-level DDoS (mitigated by Cloudflare's built-in protection)
 
-### Optional: Cloudflare Access for pre-authentication
-
-For an additional layer, you can put a Cloudflare Access application in front of the tunnel. This would require authentication (email OTP, SSO, or mTLS certificate) before traffic even reaches LiteLLM.
-
-**Email verification** — Cloudflare Access can gate the domain behind a one-time-password sent to allowed email addresses. Any request without a valid Cloudflare Access JWT is blocked at the edge before it reaches your instance. This is useful if you want to restrict access to a known set of people beyond just key auth. The downside is that Claude Code doesn't natively handle Cloudflare Access authentication, so you'd need to generate a service token and pass it as a header, or use `cloudflared access` to create a local tunnel on the client side.
-
-**mTLS (mutual TLS)** — Cloudflare can require client certificates signed by a CA you upload. Only clients presenting a valid certificate can establish a connection. This is the strongest option — even if someone discovers your domain and somehow obtains an API key, they still can't connect without the certificate. The trade-off is certificate distribution and rotation complexity.
-
-**Service tokens** — A simpler alternative: create a Cloudflare Access service token (client ID + secret) and configure Claude Code to send it as headers. This adds a second credential layer without the complexity of mTLS. Configure via Cloudflare Zero Trust dashboard > Access > Applications.
-
-For a personal or small-team proxy where the API keys are closely held, the current setup (key auth + Cloudflare DDoS protection + no inbound ports) is sufficient. Cloudflare Access adds value when you want to share access more broadly or need to satisfy compliance requirements.
+See [docs/future-ideas.md](docs/future-ideas.md) for additional hardening options like Cloudflare Access pre-authentication.
 
 ## Smoke tests
 
