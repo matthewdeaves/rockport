@@ -8,6 +8,11 @@ CONFIG_DIR="$(cd "$SCRIPT_DIR/../config" && pwd)" || { echo "ERROR: config/ dire
 ENV_FILE="$TERRAFORM_DIR/.env"
 CACHED_MASTER_KEY=""
 CACHED_REGION=""
+CACHED_INSTANCE_ID=""
+CACHED_TUNNEL_URL=""
+
+# Anthropic model names for Claude Code key restrictions
+CLAUDE_MODELS='["claude-opus-4-6","claude-sonnet-4-6","claude-haiku-4-5-20251001","claude-sonnet-4-5-20250929","claude-opus-4-5-20251101"]'
 
 # Use the rockport AWS profile if it exists and no profile is already set
 if [[ -z "${AWS_PROFILE:-}" ]] && aws configure list-profiles 2>/dev/null | grep -q '^rockport$'; then
@@ -37,24 +42,21 @@ get_region() {
     echo "$CACHED_REGION"
     return
   fi
-  # Try terraform.tfvars first (no terraform state needed)
   if [[ -f "$TERRAFORM_DIR/terraform.tfvars" ]]; then
     local r
-    r=$(grep -oP 'region\s*=\s*"\K[^"]+' "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null) && {
+    r=$(sed -n 's/^region[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null) && [[ -n "$r" ]] && {
       CACHED_REGION="$r"
       echo "$r"
       return
     }
   fi
-  # Try terraform output
   local r
   r=$(cd "$TERRAFORM_DIR" && terraform output -raw region 2>/dev/null) && {
     CACHED_REGION="$r"
     echo "$r"
     return
   }
-  # Default — warn user
-  echo "WARNING: Could not determine region from terraform. Using default: eu-west-2" >&2
+  echo "WARNING: Could not determine region. Using default: eu-west-2" >&2
   CACHED_REGION="eu-west-2"
   echo "$CACHED_REGION"
 }
@@ -77,21 +79,103 @@ get_master_key() {
 }
 
 get_tunnel_url() {
-  local result
-  result=$(cd "$TERRAFORM_DIR" && terraform output -raw tunnel_url 2>&1) || {
+  if [[ -n "$CACHED_TUNNEL_URL" ]]; then
+    echo "$CACHED_TUNNEL_URL"
+    return
+  fi
+  CACHED_TUNNEL_URL=$(cd "$TERRAFORM_DIR" && terraform output -raw tunnel_url 2>&1) || {
     echo "ERROR: Failed to get tunnel_url from terraform. Run './scripts/rockport.sh deploy' first." >&2
     return 1
   }
-  echo "$result"
+  echo "$CACHED_TUNNEL_URL"
 }
 
 get_instance_id() {
-  local result
-  result=$(cd "$TERRAFORM_DIR" && terraform output -raw instance_id 2>&1) || {
+  if [[ -n "$CACHED_INSTANCE_ID" ]]; then
+    echo "$CACHED_INSTANCE_ID"
+    return
+  fi
+  CACHED_INSTANCE_ID=$(cd "$TERRAFORM_DIR" && terraform output -raw instance_id 2>&1) || {
     echo "ERROR: Failed to get instance_id from terraform. Run './scripts/rockport.sh deploy' first." >&2
     return 1
   }
-  echo "$result"
+  echo "$CACHED_INSTANCE_ID"
+}
+
+# Run a command on the instance via SSM and return stdout.
+# Usage: ssm_run <command_string> [timeout_seconds]
+ssm_run() {
+  local cmd_string="$1"
+  local timeout="${2:-30}"
+  local instance_id region cmd_id
+  instance_id="$(get_instance_id)"
+  region="$(get_region)"
+
+  cmd_id=$(aws ssm send-command \
+    --instance-ids "$instance_id" \
+    --document-name "AWS-RunShellScript" \
+    --parameters "{\"commands\":[\"$cmd_string\"]}" \
+    --timeout-seconds "$timeout" \
+    --region "$region" \
+    --query 'Command.CommandId' \
+    --output text) || {
+    echo "ERROR: Failed to send command via SSM" >&2
+    return 1
+  }
+
+  # Poll for completion
+  local elapsed=0
+  while [[ $elapsed -lt $timeout ]]; do
+    local status
+    status=$(aws ssm get-command-invocation \
+      --command-id "$cmd_id" \
+      --instance-id "$instance_id" \
+      --region "$region" \
+      --query 'Status' \
+      --output text 2>/dev/null) || true
+    case "$status" in
+      Success)
+        aws ssm get-command-invocation \
+          --command-id "$cmd_id" \
+          --instance-id "$instance_id" \
+          --region "$region" \
+          --query 'StandardOutputContent' \
+          --output text
+        return 0
+        ;;
+      Failed|TimedOut|Cancelled)
+        echo "ERROR: Command $status" >&2
+        aws ssm get-command-invocation \
+          --command-id "$cmd_id" \
+          --instance-id "$instance_id" \
+          --region "$region" \
+          --query 'StandardErrorContent' \
+          --output text >&2
+        return 1
+        ;;
+    esac
+    sleep 3
+    elapsed=$((elapsed + 3))
+  done
+  echo "ERROR: Timed out waiting for command result" >&2
+  return 1
+}
+
+# Ensure the master key exists in SSM. Creates one if missing.
+ensure_master_key() {
+  local region="$1"
+  if aws ssm get-parameter --name "$MASTER_KEY_SSM_PATH" --region "$region" &>/dev/null 2>&1; then
+    echo "  Master key ........... ok (exists in SSM)"
+  else
+    local master_key
+    master_key="sk-$(openssl rand -hex 24)"
+    aws ssm put-parameter \
+      --name "$MASTER_KEY_SSM_PATH" \
+      --value "$master_key" \
+      --type SecureString \
+      --region "$region" >/dev/null
+    echo "  Master key ........... created in SSM"
+  fi
 }
 
 api_call() {
@@ -111,10 +195,12 @@ api_call() {
     http_code=$(curl -s -w "%{http_code}" -o "$tmpfile" -X "$method" "$url" \
       -H "Authorization: Bearer $key" \
       -H "Content-Type: application/json" \
-      -d "$data")
+      -d "$data" \
+      --max-time 30)
   else
     http_code=$(curl -s -w "%{http_code}" -o "$tmpfile" -X "$method" "$url" \
-      -H "Authorization: Bearer $key")
+      -H "Authorization: Bearer $key" \
+      --max-time 30)
   fi
 
   if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
@@ -142,7 +228,6 @@ ensure_deployer_access() {
   account_id=$(aws sts get-caller-identity --query Account --output text)
   local policy_arn="arn:aws:iam::${account_id}:policy/${policy_name}"
 
-  # Create or update the IAM policy
   if aws iam get-policy --policy-arn "$policy_arn" &>/dev/null; then
     local versions
     versions=$(aws iam list-policy-versions --policy-arn "$policy_arn" --query 'Versions[?!IsDefaultVersion].VersionId' --output text)
@@ -161,7 +246,6 @@ ensure_deployer_access() {
     echo "  IAM policy ........... created ($policy_name)"
   fi
 
-  # Create the deployer user if it doesn't exist
   if aws iam get-user --user-name "$deployer_user" &>/dev/null; then
     echo "  IAM user ............. ok ($deployer_user)"
   else
@@ -169,7 +253,6 @@ ensure_deployer_access() {
     echo "  IAM user ............. created ($deployer_user)"
   fi
 
-  # Attach the policy to the deployer user
   if aws iam list-attached-user-policies --user-name "$deployer_user" \
     --query "AttachedPolicies[?PolicyArn=='$policy_arn']" --output text 2>/dev/null | grep -q "$policy_name"; then
     echo "  Policy attachment .... ok (already on $deployer_user)"
@@ -178,7 +261,6 @@ ensure_deployer_access() {
     echo "  Policy attachment .... attached to $deployer_user"
   fi
 
-  # Check if the deployer user has access keys — if not, create them
   local existing_keys
   existing_keys=$(aws iam list-access-keys --user-name "$deployer_user" --query 'length(AccessKeyMetadata)' --output text)
 
@@ -194,7 +276,6 @@ ensure_deployer_access() {
     local region
     region="$(get_region)"
 
-    # Configure the AWS CLI profile automatically
     aws configure set aws_access_key_id "$access_key" --profile rockport
     aws configure set aws_secret_access_key "$secret_key" --profile rockport
     aws configure set region "$region" --profile rockport
@@ -210,7 +291,6 @@ ensure_state_backend() {
   region="$(get_region)"
   bucket="$(get_state_bucket)"
 
-  # Create S3 bucket if it doesn't exist
   if aws s3api head-bucket --bucket "$bucket" --region "$region" >/dev/null 2>&1; then
     echo "  State bucket ......... ok ($bucket)"
   else
@@ -244,6 +324,30 @@ ensure_state_backend() {
   fi
 }
 
+# Wait for the health endpoint to respond (200 or 401 means service is up).
+wait_for_health() {
+  local url="$1"
+  local timeout="${2:-120}"
+  local elapsed=0
+
+  while [[ $elapsed -lt $timeout ]]; do
+    local code
+    code=$(curl -s -o /dev/null -w "%{http_code}" "$url/health" --max-time 5 2>/dev/null) || true
+    # 200 = healthy, 401 = auth required but service is up — both mean ready
+    if [[ "$code" == "200" || "$code" == "401" ]]; then
+      echo "Services healthy. Rockport is ready."
+      return 0
+    fi
+    sleep 5
+    elapsed=$((elapsed + 5))
+    printf "\r  Waiting for services... %ds" "$elapsed"
+  done
+  echo
+  echo "WARNING: Health check did not respond within ${timeout}s."
+  echo "Services may still be starting. Check with: rockport status"
+  return 1
+}
+
 # --- Subcommands ---
 
 cmd_init() {
@@ -269,20 +373,7 @@ cmd_init() {
       echo
       echo "Checking prerequisites..."
       ensure_deployer_access
-
-      if aws ssm get-parameter --name "$MASTER_KEY_SSM_PATH" --region "$region" &>/dev/null 2>&1; then
-        echo "  Master key ........... ok (exists in SSM)"
-      else
-        local master_key
-        master_key="sk-$(openssl rand -hex 24)"
-        aws ssm put-parameter \
-          --name "$MASTER_KEY_SSM_PATH" \
-          --value "$master_key" \
-          --type SecureString \
-          --region "$region"
-        echo "  Master key ........... created in SSM"
-      fi
-
+      ensure_master_key "$region"
       ensure_state_backend
       echo "  Config ............... ok (using existing terraform.tfvars)"
 
@@ -328,7 +419,6 @@ cmd_init() {
   local subdomain
   subdomain="${domain%%.*}"
 
-  # Save Cloudflare API token to .env (gitignored, sourced automatically)
   (
     umask 077
     cat > "$ENV_FILE" <<EOF
@@ -351,25 +441,13 @@ EOF
   echo "  Config ............... written (terraform.tfvars + .env)"
 
   ensure_deployer_access
-
-  if aws ssm get-parameter --name "$MASTER_KEY_SSM_PATH" --region "$region" &>/dev/null 2>&1; then
-    echo "  Master key ........... ok (exists in SSM)"
-  else
-    local master_key
-    master_key="sk-$(openssl rand -hex 24)"
-    aws ssm put-parameter \
-      --name "$MASTER_KEY_SSM_PATH" \
-      --value "$master_key" \
-      --type SecureString \
-      --region "$region"
-    echo "  Master key ........... created in SSM"
-  fi
-
+  ensure_master_key "$region"
   ensure_state_backend
 
   echo
   echo "Setup complete. Next steps:"
   echo "  1. Enable Bedrock model access in the AWS Console ($region)"
+  echo "     For image generation, also enable models in us-west-2"
   if [[ "$region" != eu-* ]]; then
     echo "  2. Update model prefixes in config/litellm-config.yaml"
     echo "     (remove 'eu.' prefix for non-EU regions)"
@@ -377,29 +455,31 @@ EOF
   else
     echo "  2. Run: ./scripts/rockport.sh deploy"
   fi
+  echo
+  echo "Tip: Add a quick-start alias to your shell profile:"
+  echo "  echo 'alias rockport-start=\"$SCRIPT_DIR/rockport.sh start\"' >> ~/.bashrc"
 }
 
 cmd_status() {
-  check_dependencies
   local url
   url="$(get_tunnel_url)"
   echo "Checking health at $url..."
   local response
-  response=$(api_call GET "/health") || { echo "Could not reach health endpoint"; return 1; }
+  response=$(api_call GET "/health") || { echo "Could not reach health endpoint."; return 1; }
 
-  local healthy unhealthy count
+  local healthy unhealthy h_count u_count
   healthy=$(echo "$response" | jq -r '.healthy_endpoints[]?.model // empty')
   unhealthy=$(echo "$response" | jq -r '.unhealthy_endpoints[]?.model // empty')
 
-  count=$(echo "$healthy" | grep -c . 2>/dev/null || true)
-  echo "Healthy ($count):"
+  h_count=$(echo "$healthy" | grep -c . 2>/dev/null || true)
+  echo "Healthy ($h_count):"
   echo "$healthy" | while IFS= read -r m; do
     [[ -n "$m" ]] && echo "  ✓ $m"
   done
 
   if [[ -n "$unhealthy" ]]; then
-    count=$(echo "$unhealthy" | grep -c . 2>/dev/null || true)
-    echo "Unhealthy ($count):"
+    u_count=$(echo "$unhealthy" | grep -c . 2>/dev/null || true)
+    echo "Unhealthy ($u_count):"
     echo "$unhealthy" | while IFS= read -r m; do
       [[ -n "$m" ]] && echo "  ✗ $m"
     done
@@ -407,14 +487,15 @@ cmd_status() {
 }
 
 cmd_key_create() {
-  check_dependencies
-  local name="${1:?Usage: rockport key create <name> [--budget <amount>]}"
+  local name="${1:?Usage: rockport key create <name> [--budget <amount>] [--claude-only]}"
   shift
   local budget=""
+  local claude_only=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --budget) budget="${2:?--budget requires a dollar amount}"; shift 2 ;;
-      *) echo "Unknown option: $1. See: rockport key create <name> [--budget <amount>]"; exit 1 ;;
+      --claude-only) claude_only=true; shift ;;
+      *) echo "Unknown option: $1"; echo "Usage: rockport key create <name> [--budget <amount>] [--claude-only]"; exit 1 ;;
     esac
   done
 
@@ -427,11 +508,15 @@ cmd_key_create() {
   fi
 
   local payload
+  payload=$(jq -n --arg alias "$name" '{key_alias: $alias}')
+
   if [[ -n "$budget" ]]; then
-    payload=$(jq -n --arg alias "$name" --argjson budget "$budget" \
-      '{key_alias: $alias, max_budget: $budget, budget_duration: "1d"}')
-  else
-    payload=$(jq -n --arg alias "$name" '{key_alias: $alias}')
+    payload=$(echo "$payload" | jq --argjson budget "$budget" '. + {max_budget: $budget, budget_duration: "1d"}')
+  fi
+
+  if [[ "$claude_only" == "true" ]]; then
+    payload=$(echo "$payload" | jq --argjson models "$CLAUDE_MODELS" '. + {models: $models}')
+    echo "Restricting key to Anthropic models only."
   fi
 
   echo "Creating key '$name'..."
@@ -441,7 +526,12 @@ cmd_key_create() {
   local key
   key=$(echo "$response" | jq -r '.key // empty')
 
-  echo "$response" | jq -r '"Key:    \(.key // "?")\nName:   \(.key_alias // "?")\nID:     \(.token // "?")" + (if .max_budget then "\nBudget: $\(.max_budget)/day" else "" end)'
+  echo "$response" | jq -r '
+    "Key:    \(.key // "?")",
+    "Name:   \(.key_alias // "?")",
+    "ID:     \(.token // "?")"
+    + (if .max_budget then "\nBudget: $\(.max_budget)/day" else "" end)
+    + (if .models and (.models | length) > 0 then "\nModels: \(.models | join(", "))" else "\nModels: all" end)'
 
   # Generate settings file for this key
   if [[ -n "$key" ]]; then
@@ -463,21 +553,23 @@ EOF
 }
 
 cmd_key_list() {
-  check_dependencies
   echo "Listing keys..."
   local response
   response=$(api_call GET "/key/list?return_full_object=true")
 
   echo "$response" | jq -r '
-    (.keys // .) as $keys |
-    if ($keys | length) == 0 then "  No keys found"
-    else $keys[] | select(type == "object") |
-      "\((.key_alias // .key_name // "unnamed") | . + (" " * (20 - length)))\(.token[:8])...  $\(.spend // 0 | tostring | .[0:6])\(if .max_budget then "  (limit: $\(.max_budget)/day)" else "" end)"
+    (.keys // .) | map(select(type == "object")) |
+    if length == 0 then "  No keys found."
+    else .[] |
+      (.key_alias // .key_name // "unnamed") as $name |
+      ($name | if length > 24 then .[0:24] else . + (" " * (24 - length)) end) as $padded |
+      "  \($padded)  \(.token[:8])...  $\(.spend // 0 | . * 100 | round / 100)" +
+      (if .max_budget then "  (limit: $\(.max_budget)/day)" else "" end) +
+      (if .models and (.models | length) > 0 then "  [restricted]" else "" end)
     end'
 }
 
 cmd_key_info() {
-  check_dependencies
   local key="${1:?Usage: rockport key info <key>}"
   local encoded_key
   encoded_key=$(printf '%s' "$key" | jq -sRr @uri)
@@ -486,22 +578,32 @@ cmd_key_info() {
 
   echo "$response" | jq -r '
     (.info // .) as $i |
-    "Name:      \($i.key_alias // $i.key_name // "?")\nSpend:     $\($i.spend // 0)\nMax Budget:\(if $i.max_budget then " $\($i.max_budget)" else " unlimited" end)\nCreated:   \($i.created_at // "?")\nExpires:   \($i.expires // "never")" +
-    (if $i.rpm_limit then "\nRPM Limit: \($i.rpm_limit)" else "" end) +
-    (if $i.tpm_limit then "\nTPM Limit: \($i.tpm_limit)" else "" end)'
+    "Name:      \($i.key_alias // $i.key_name // "?")",
+    "Spend:     $\($i.spend // 0 | . * 100 | round / 100)",
+    "Max Budget:\(if $i.max_budget then " $\($i.max_budget)/day" else " unlimited" end)",
+    "RPM Limit: \($i.rpm_limit // "default")",
+    "TPM Limit: \($i.tpm_limit // "default")",
+    "Models:    \(if $i.models and ($i.models | length) > 0 then ($i.models | join(", ")) else "all" end)",
+    "Created:   \($i.created_at // "?")",
+    "Expires:   \($i.expires // "never")"'
 }
 
 cmd_key_revoke() {
-  check_dependencies
   local key="${1:?Usage: rockport key revoke <key>}"
   echo "Revoking key..."
   local payload
   payload=$(jq -n --arg k "$key" '{keys: [$k]}')
-  api_call POST "/key/delete" "$payload" | jq .
+  local response
+  response=$(api_call POST "/key/delete" "$payload")
+  echo "$response" | jq -r '
+    if .deleted_keys and (.deleted_keys | length) > 0 then
+      "Revoked: \(.deleted_keys | join(", "))"
+    else
+      "No keys were revoked."
+    end'
 }
 
 cmd_models() {
-  check_dependencies
   echo "Listing models..."
   local response
   response=$(api_call GET "/v1/models")
@@ -512,52 +614,78 @@ cmd_models() {
 }
 
 cmd_spend() {
-  check_dependencies
   local subcmd="${1:-}"
 
   case "$subcmd" in
     keys)
-      echo "Spend by key..."
       local response
       response=$(api_call GET "/key/list?return_full_object=true")
 
       echo "$response" | jq -r '
         (.keys // .) | map(select(type == "object")) |
-        if length == 0 then "  No keys found"
-        else sort_by(.spend // 0) | reverse | . as $keys |
-          ($keys[] | "  \((.key_alias // .key_name // "unnamed") | . + (" " * (20 - length)))$\(.spend // 0 | tostring | .[0:6])"),
-          "",
-          "  Total: $\($keys | map(.spend // 0) | add | tostring | .[0:6])"
+        if length == 0 then "  No keys found."
+        else
+          "Spend by Key (current budget period)",
+          "─────────────────────────────────────────",
+          (sort_by(.spend // 0) | reverse | . as $keys |
+            ($keys[] |
+              (.key_alias // .key_name // "unnamed") as $name |
+              ($name | if length > 24 then .[0:24] else .[0:24] + (" " * ([24 - length, 0] | max)) end) as $padded |
+              "  \($padded)  $\(.spend // 0 | . * 100 | round / 100)" +
+              (if .max_budget then "  / $\(.max_budget)/day" else "" end)
+            ),
+            "",
+            "  Total:                            $\($keys | map(.spend // 0) | add | . * 100 | round / 100)"
+          )
         end'
       ;;
     *)
-      echo "Global spend..."
-      local response
-      response=$(api_call GET "/global/spend") || { echo "Could not fetch spend data"; return 1; }
+      # Default: combined summary
+      echo "Rockport Spend Summary"
+      echo "═══════════════════════════════════════════════"
+      echo
 
-      echo "$response" | jq -r '
-        if type == "array" then
-          "Total spend: $\(map(.spend // 0) | add)" +
-          (map(select(.api_key)) | if length > 0 then
-            "\n" + (map("  \((.key_name // "?") | . + (" " * (20 - length)))$\(.spend // 0)") | join("\n"))
-          else "" end)
-        else "Total spend: $\(.spend // 0)"
-        end'
+      local global
+      global=$(api_call GET "/global/spend") || { echo "Could not fetch spend data."; return 1; }
+      local total_spend
+      total_spend=$(echo "$global" | jq -r 'if type == "array" then (map(.spend // 0) | add) else (.spend // 0) end | . * 100 | round / 100')
+      echo "All-time spend:  \$$total_spend"
+      echo
+
+      local keys
+      keys=$(api_call GET "/key/list?return_full_object=true" 2>/dev/null) || true
+
+      if [[ -n "$keys" ]]; then
+        echo "$keys" | jq -r '
+          (.keys // .) | map(select(type == "object")) |
+          if length == 0 then empty
+          else
+            "By Key (current budget period):",
+            "───────────────────────────────────────────────",
+            (sort_by(.spend // 0) | reverse | .[] |
+              (.key_alias // .key_name // "unnamed") as $name |
+              ($name | if length > 24 then .[0:24] else .[0:24] + (" " * ([24 - length, 0] | max)) end) as $padded |
+              "  \($padded)  $\(.spend // 0 | . * 100 | round / 100)" +
+              (if .max_budget then "  / $\(.max_budget)/day" else "" end)
+            ),
+            ""
+          end'
+      fi
+
+      echo "Run 'rockport spend keys' for key-only view."
       ;;
   esac
 }
 
 cmd_config_push() {
-  check_dependencies
-  local instance_id region
+  local instance_id
   instance_id="$(get_instance_id)"
-  region="$(get_region)"
   echo "Pushing config to instance $instance_id..."
 
   local config_b64
   config_b64=$(base64 "$CONFIG_DIR/litellm-config.yaml" | tr -d '\n')
 
-  # Use JSON file for parameters to avoid shell injection via quoting issues
+  # Use JSON file for parameters to avoid shell quoting issues
   local params_file
   params_file=$(mktemp)
   trap 'rm -f "$params_file"' RETURN
@@ -565,7 +693,10 @@ cmd_config_push() {
     '{"commands":["echo \($b64) | base64 -d > /etc/litellm/config.yaml && chown litellm:litellm /etc/litellm/config.yaml && systemctl restart litellm && echo Config pushed and LiteLLM restarted"]}' \
     > "$params_file"
 
-  local command_id
+  local instance_id region command_id
+  instance_id="$(get_instance_id)"
+  region="$(get_region)"
+
   command_id=$(aws ssm send-command \
     --instance-ids "$instance_id" \
     --region "$region" \
@@ -577,7 +708,7 @@ cmd_config_push() {
     return 1
   }
 
-  echo "Command sent (ID: $command_id). Waiting for result..."
+  echo "Waiting for restart..."
   if ! aws ssm wait command-executed \
     --command-id "$command_id" \
     --instance-id "$instance_id" \
@@ -585,16 +716,17 @@ cmd_config_push() {
     echo "WARNING: Wait timed out or command may have failed" >&2
   fi
 
-  aws ssm get-command-invocation \
+  local result
+  result=$(aws ssm get-command-invocation \
     --command-id "$command_id" \
     --instance-id "$instance_id" \
     --region "$region" \
-    --query "[Status, StandardOutputContent]" \
-    --output text
+    --query "StandardOutputContent" \
+    --output text)
+  echo "$result"
 }
 
 cmd_logs() {
-  check_dependencies
   local instance_id
   instance_id="$(get_instance_id)"
   echo "Connecting to instance $instance_id..."
@@ -602,17 +734,17 @@ cmd_logs() {
     --target "$instance_id" \
     --region "$(get_region)" \
     --document-name AWS-StartInteractiveCommand \
-    --parameters command="journalctl -u litellm -n 100 -f"
+    --parameters '{"command":["journalctl -u litellm -n 100 -f"]}'
 }
 
 cmd_deploy() {
-  check_dependencies
   load_env
   echo "Deploying infrastructure..."
   local region bucket
   region="$(get_region)"
   bucket="$(get_state_bucket)"
 
+  ensure_master_key "$region"
   ensure_state_backend
 
   cd "$TERRAFORM_DIR"
@@ -630,7 +762,6 @@ cmd_deploy() {
 }
 
 cmd_destroy() {
-  check_dependencies
   load_env
   echo "WARNING: This will destroy all Rockport infrastructure."
   read -rp "Type 'yes' to confirm: " confirm
@@ -639,13 +770,10 @@ cmd_destroy() {
     exit 1
   fi
 
-  local region
+  local region bucket
   region="$(get_region)"
-
-  local bucket
   bucket="$(get_state_bucket)"
 
-  # If the state bucket doesn't exist, there's nothing to destroy
   if ! aws s3api head-bucket --bucket "$bucket" --region "$region" 2>/dev/null; then
     echo "No infrastructure found (state bucket '$bucket' does not exist). Nothing to destroy."
     return 0
@@ -658,58 +786,75 @@ cmd_destroy() {
     -backend-config="use_lockfile=true"
   terraform destroy
 
-  # Clean up SSM parameters (created outside terraform by init/bootstrap)
   echo "Cleaning up SSM parameters..."
   aws ssm delete-parameter \
     --name "$MASTER_KEY_SSM_PATH" \
-    --region "$region" 2>/dev/null && echo "Master key deleted." || echo "Master key already removed."
+    --region "$region" 2>/dev/null && echo "  Master key deleted." || echo "  Master key already removed."
   aws ssm delete-parameter \
     --name "/rockport/db-password" \
-    --region "$region" 2>/dev/null && echo "DB password deleted." || echo "DB password already removed."
+    --region "$region" 2>/dev/null && echo "  DB password deleted." || echo "  DB password already removed."
 }
 
 cmd_upgrade() {
-  check_dependencies
   local instance_id
   instance_id="$(get_instance_id)"
   echo "Restarting LiteLLM on instance $instance_id..."
-  aws ssm start-session \
-    --target "$instance_id" \
-    --region "$(get_region)" \
-    --document-name AWS-StartInteractiveCommand \
-    --parameters command="sudo systemctl restart litellm && echo 'LiteLLM restarted successfully'"
+  local result
+  result=$(ssm_run "sudo systemctl restart litellm && echo LiteLLM restarted successfully" 30)
+  echo "$result"
 }
 
 cmd_start() {
-  check_dependencies
   local instance_id region
   instance_id="$(get_instance_id)"
   region="$(get_region)"
+
+  local state
+  state=$(aws ec2 describe-instances --instance-ids "$instance_id" --region "$region" \
+    --query 'Reservations[0].Instances[0].State.Name' --output text)
+
+  if [[ "$state" == "running" ]]; then
+    echo "Instance $instance_id is already running."
+    wait_for_health "$(get_tunnel_url)" 30
+    return
+  fi
+
   echo "Starting instance $instance_id..."
   aws ec2 start-instances --instance-ids "$instance_id" --region "$region" > /dev/null
   echo "Waiting for running state..."
   aws ec2 wait instance-running --instance-ids "$instance_id" --region "$region"
-  echo "Instance running. Services will be ready in ~60 seconds."
+  echo "Instance running. Waiting for services..."
+
+  wait_for_health "$(get_tunnel_url)" 120
 }
 
 cmd_stop() {
-  check_dependencies
   local instance_id region
   instance_id="$(get_instance_id)"
   region="$(get_region)"
+
+  local state
+  state=$(aws ec2 describe-instances --instance-ids "$instance_id" --region "$region" \
+    --query 'Reservations[0].Instances[0].State.Name' --output text)
+
+  if [[ "$state" == "stopped" ]]; then
+    echo "Instance $instance_id is already stopped."
+    return
+  fi
+
   echo "Stopping instance $instance_id..."
   aws ec2 stop-instances --instance-ids "$instance_id" --region "$region" > /dev/null
-  echo "Instance stopping."
+  echo "Waiting for stopped state..."
+  aws ec2 wait instance-stopped --instance-ids "$instance_id" --region "$region"
+  echo "Instance stopped."
 }
 
 cmd_setup_claude() {
-  check_dependencies
   local key_name
   read -rp "Key name [claude-code]: " key_name
   key_name="${key_name:-claude-code}"
 
-  # Delegates to key create which generates the settings file
-  cmd_key_create "$key_name"
+  cmd_key_create "$key_name" --claude-only
 
   local settings_file="$CONFIG_DIR/claude-code-settings-${key_name}.json"
   if [[ -f "$settings_file" ]]; then
@@ -730,20 +875,24 @@ Commands:
   deploy              Run terraform apply
   status              Check service health and model list
   models              List available models
-  key create <name>   Create a new API key [--budget <amount>]
+  key create <name>   Create a new API key [--budget <amount>] [--claude-only]
   key list            List all API keys with spend
   key info <key>      Show key details and spend
   key revoke <key>    Revoke an API key
-  spend [keys]        Show global spend (or breakdown by key)
+  spend               Summary: all-time total + current period by key
+  spend keys          Spend breakdown by key (current budget period)
   config push         Push local config to instance and restart
   logs                Stream LiteLLM logs (via SSM)
   upgrade             Restart LiteLLM service
-  start               Start a stopped instance
-  stop                Stop the instance
+  start               Start a stopped instance (waits for healthy)
+  stop                Stop the instance (waits for stopped)
   setup-claude        Create key and show Claude Code config
   destroy             Run terraform destroy (with confirmation)
 EOF
 }
+
+# All commands need these tools
+check_dependencies
 
 case "${1:-}" in
   init)     cmd_init ;;
@@ -758,7 +907,7 @@ case "${1:-}" in
     esac
     ;;
   models)   cmd_models ;;
-  spend)    cmd_spend "${2:-}" ;;
+  spend)    cmd_spend "${@:2}" ;;
   config)
     case "${2:-}" in
       push) cmd_config_push ;;
@@ -772,5 +921,6 @@ case "${1:-}" in
   start)        cmd_start ;;
   stop)         cmd_stop ;;
   setup-claude) cmd_setup_claude ;;
-  *)            usage; exit 1 ;;
+  -h|--help|"") usage ;;
+  *)            echo "Unknown command: $1"; echo; usage; exit 1 ;;
 esac

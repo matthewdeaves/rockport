@@ -67,7 +67,7 @@ install_terraform() {
       ;;
     Linux)
       local tf_version="1.14.7"
-      wget -q "https://releases.hashicorp.com/terraform/${tf_version}/terraform_${tf_version}_linux_amd64.zip" -O /tmp/terraform.zip
+      curl -fsSL "https://releases.hashicorp.com/terraform/${tf_version}/terraform_${tf_version}_linux_amd64.zip" -o /tmp/terraform.zip
       unzip -qo /tmp/terraform.zip -d /tmp
       sudo mv /tmp/terraform /usr/local/bin/
       rm /tmp/terraform.zip

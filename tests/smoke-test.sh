@@ -58,6 +58,20 @@ STREAM_RESPONSE=$(curl -s -X POST "$BASE_URL/v1/chat/completions" \
   --max-time 30 2>/dev/null)
 echo "$STREAM_RESPONSE" | grep -q "data:"; check "Streaming response received" "$?"
 
+# 6. Image generation (text-to-image)
+echo "6. Image generation"
+IMAGE_RESPONSE=$(curl -s -X POST "$BASE_URL/v1/images/generations" \
+  -H "Authorization: Bearer $VALID_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"nova-canvas","prompt":"a solid red circle on white background","n":1,"size":"512x512"}' \
+  --max-time 60 2>/dev/null)
+echo "$IMAGE_RESPONSE" | grep -q "b64_json"; check "Image generation returns b64_json" "$?"
+
+# 7. Model list contains image models
+echo "7. Image models in model list"
+echo "$MODELS" | grep -q "nova-canvas"; check "Model list contains nova-canvas" "$?"
+echo "$MODELS" | grep -q "titan-image-v2"; check "Model list contains titan-image-v2" "$?"
+
 # Summary
 echo
 echo "=== Results: $PASS passed, $FAIL failed ==="
