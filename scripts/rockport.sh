@@ -869,7 +869,7 @@ cmd_logs() {
     --target "$instance_id" \
     --region "$(get_region)" \
     --document-name AWS-StartInteractiveCommand \
-    --parameters '{"command":["journalctl -u litellm -n 100 -f"]}'
+    --parameters '{"command":["sudo journalctl -u litellm -n 100 -f"]}'
 }
 
 cmd_deploy() {
