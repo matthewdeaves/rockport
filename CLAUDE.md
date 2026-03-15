@@ -55,3 +55,6 @@ tests/smoke-test.sh     # Post-deploy verification
 - Three SSM parameters are managed: `/rockport/master-key` (by init), `/rockport/tunnel-token` (by Terraform), `/rockport/db-password` (by bootstrap)
 - CI/CD uses GitHub OIDC for AWS authentication — set the `AWS_ROLE_ARN` secret in GitHub to the IAM role ARN
 - The LiteLLM admin UI is intentionally disabled (`disable_admin_ui: true`) — all admin is via the CLI
+- Swagger/ReDoc docs disabled via `NO_DOCS=True` / `NO_REDOC=True` in the LiteLLM env file
+- Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code and the admin CLI
+- The Cloudflare API token (in `terraform/.env`, gitignored) needs Zone WAF Edit permission for the WAF rule

@@ -28,6 +28,9 @@ skip-check:
   # aws-marketplace:ViewSubscriptions also requires wildcard.
   - CKV_AWS_355  # IAM wildcard resource (required for describe/list actions)
 
+  # Triggered by EventBridge (max 1 every 5 min); concurrency limit adds no value
+  - CKV_AWS_115  # Lambda concurrent execution limit
+
   # --- EC2 ---
   # 5-min metric granularity sufficient; idle checker looks at 30-min windows
   - CKV_AWS_126  # detailed monitoring (~$2/mo for no value)

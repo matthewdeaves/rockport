@@ -174,6 +174,8 @@ chown -R litellm:litellm /etc/litellm
   cat > /etc/litellm/env <<ENVEOF
 DATABASE_URL=$DATABASE_URL
 LITELLM_MASTER_KEY=$MASTER_KEY
+NO_DOCS=True
+NO_REDOC=True
 ENVEOF
 )
 chown litellm:litellm /etc/litellm/env

@@ -26,6 +26,7 @@ Before you start, you need:
 
 Create a token at https://dash.cloudflare.com/profile/api-tokens with these permissions:
 - **Zone / DNS / Edit**
+- **Zone / Zone WAF / Edit**
 - **Account / Cloudflare Tunnel / Edit**
 - **Account / Zero Trust / Edit**
 
@@ -203,7 +204,7 @@ Rockport is designed so that the proxy has no direct internet exposure. Every la
 
 **Localhost-only binding** — LiteLLM listens on `127.0.0.1:4000`, not `0.0.0.0`. Even if the security group were misconfigured, the service would not accept external connections directly.
 
-**Admin UI disabled** — The LiteLLM admin dashboard is disabled via `disable_admin_ui: true`. Note: LiteLLM still serves static assets at `/ui` but the dashboard requires a valid key to function. All administration is done through the `rockport` CLI, which calls the API with the master key. For full `/ui` blocking, add a Cloudflare Access policy or tunnel ingress rule.
+**Admin UI disabled** — The LiteLLM admin dashboard is disabled via `disable_admin_ui: true` and Swagger/ReDoc docs are disabled via `NO_DOCS=True` / `NO_REDOC=True` environment variables. A Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code and the admin CLI — only `/v1/chat/completions`, `/v1/models`, `/v1/messages`, `/key/*`, `/health/*`, `/spend/*`, and a handful of other operational paths are reachable. Everything else (admin UI, OpenAPI schema, routes list, SSO, SCIM, debug endpoints, etc.) returns 403 at the Cloudflare edge.
 
 **Key separation** — The master key (stored in SSM Parameter Store) is only used by the admin CLI. Users get virtual keys with per-key daily budgets and rate limits. Virtual keys can only call model endpoints — they cannot create other keys, view spend, or manage the proxy.
 
@@ -217,9 +218,8 @@ Rockport is designed so that the proxy has no direct internet exposure. Every la
 
 ### What's exposed
 
-Anyone who discovers the domain can reach the LiteLLM API through Cloudflare. Without a valid key, all requests return 401. The attack surface is:
+A Cloudflare WAF allowlist restricts the proxy to only the paths Claude Code and the admin CLI need. All other paths (admin UI, API docs, debug endpoints, SCIM, SSO, etc.) are blocked with 403 at the edge. On the allowed paths, all requests without a valid key return 401. The remaining attack surface is:
 
-- Unauthenticated probing (health endpoint returns 401)
 - Brute-force key guessing (mitigated by key length — master key is `sk-` + 48 hex characters; virtual keys use LiteLLM's default token format)
 - Cloudflare-level DDoS (mitigated by Cloudflare's built-in protection)
 
