@@ -1,0 +1,385 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 960" width="1800" height="960" font-family="'Courier New', Courier, monospace">
+  <defs>
+    <marker id="ah" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#8b949e"/>
+    </marker>
+    <marker id="ah-green" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#3fb950"/>
+    </marker>
+    <marker id="ah-red" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#f85149"/>
+    </marker>
+    <marker id="ah-orange" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#f78166"/>
+    </marker>
+    <marker id="ah-blue" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#58a6ff"/>
+    </marker>
+    <marker id="ah-purple" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#d2a8ff"/>
+    </marker>
+    <marker id="ah-yellow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#e3b341"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1800" height="960" fill="#0d1117"/>
+
+  <!-- Title -->
+  <text x="900" y="26" text-anchor="middle" fill="#8b949e" font-size="13" font-weight="bold" letter-spacing="2">PROJECT ROCKPORT — REQUEST DATA FLOW</text>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- SWIM LANE COLUMNS -->
+  <!-- Col 1: CLIENT          x=10  w=155 -->
+  <!-- Col 2: CLOUDFLARE EDGE x=170 w=185 -->
+  <!-- Col 3: CF TUNNEL       x=360 w=150 -->
+  <!-- Col 4: cloudflared     x=515 w=130 -->
+  <!-- Col 5: LITELLM PROXY   x=650 w=530 -->
+  <!-- Col 6: BEDROCK         x=1185 w=175 -->
+  <!-- Col 7: ERRORS          x=1365 w=425 -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+
+  <!-- Lane backgrounds -->
+  <rect x="10"   y="38" width="155" height="840" rx="0" fill="#0d1f38" opacity="0.3"/>
+  <rect x="170"  y="38" width="185" height="840" rx="0" fill="#261510" opacity="0.4"/>
+  <rect x="360"  y="38" width="150" height="840" rx="0" fill="#261510" opacity="0.25"/>
+  <rect x="515"  y="38" width="130" height="840" rx="0" fill="#1a1327" opacity="0.35"/>
+  <rect x="650"  y="38" width="530" height="840" rx="0" fill="#0f2018" opacity="0.35"/>
+  <rect x="1185" y="38" width="175" height="840" rx="0" fill="#0d1a12" opacity="0.4"/>
+  <rect x="1365" y="38" width="425" height="840" rx="0" fill="#1a0808" opacity="0.4"/>
+
+  <!-- Lane header bars -->
+  <rect x="10"   y="38" width="155" height="28" fill="#0d1f38"/>
+  <rect x="170"  y="38" width="185" height="28" fill="#261510"/>
+  <rect x="360"  y="38" width="150" height="28" fill="#261510"/>
+  <rect x="515"  y="38" width="130" height="28" fill="#1a1327"/>
+  <rect x="650"  y="38" width="530" height="28" fill="#0f2018"/>
+  <rect x="1185" y="38" width="175" height="28" fill="#0d1a12"/>
+  <rect x="1365" y="38" width="425" height="28" fill="#2a0a0a"/>
+
+  <!-- Lane header text -->
+  <text x="87"   y="57" text-anchor="middle" fill="#58a6ff"  font-size="9" font-weight="bold" letter-spacing="1">CLIENT</text>
+  <text x="262"  y="57" text-anchor="middle" fill="#f78166"  font-size="9" font-weight="bold" letter-spacing="1">CLOUDFLARE EDGE</text>
+  <text x="435"  y="57" text-anchor="middle" fill="#f78166"  font-size="9" font-weight="bold" letter-spacing="1">CF TUNNEL</text>
+  <text x="580"  y="57" text-anchor="middle" fill="#d2a8ff"  font-size="9" font-weight="bold" letter-spacing="1">cloudflared</text>
+  <text x="915"  y="57" text-anchor="middle" fill="#3fb950"  font-size="9" font-weight="bold" letter-spacing="1">EC2 · LITELLM PROXY</text>
+  <text x="1272" y="57" text-anchor="middle" fill="#3fb950"  font-size="9" font-weight="bold" letter-spacing="1">BEDROCK</text>
+  <text x="1577" y="57" text-anchor="middle" fill="#f85149"  font-size="9" font-weight="bold" letter-spacing="1">ERROR / REJECTION PATHS</text>
+
+  <!-- Lane separator lines -->
+  <line x1="165"  y1="38" x2="165"  y2="878" stroke="#30363d" stroke-width="1"/>
+  <line x1="355"  y1="38" x2="355"  y2="878" stroke="#30363d" stroke-width="1"/>
+  <line x1="510"  y1="38" x2="510"  y2="878" stroke="#30363d" stroke-width="1"/>
+  <line x1="645"  y1="38" x2="645"  y2="878" stroke="#30363d" stroke-width="1"/>
+  <line x1="1180" y1="38" x2="1180" y2="878" stroke="#30363d" stroke-width="1"/>
+  <line x1="1360" y1="38" x2="1360" y2="878" stroke="#30363d" stroke-width="1"/>
+
+  <!-- Outer border -->
+  <rect x="10" y="38" width="1780" height="840" rx="4" fill="none" stroke="#30363d" stroke-width="1.5"/>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- STEP 1: CLIENT REQUEST (y=76) -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- Step badge -->
+  <circle cx="30" cy="88" r="12" fill="#58a6ff"/>
+  <text x="30" y="93" text-anchor="middle" fill="#0d1117" font-size="10" font-weight="bold">1</text>
+
+  <rect x="20" y="104" width="136" height="90" rx="4" fill="#0d1f38" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="88" y="122" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="bold">Client Request</text>
+  <text x="88" y="140" text-anchor="middle" fill="#8b949e" font-size="9">llm.example.com</text>
+  <text x="88" y="155" text-anchor="middle" fill="#8b949e" font-size="9">Authorization:</text>
+  <text x="88" y="169" text-anchor="middle" fill="#8b949e" font-size="9">Bearer sk-...</text>
+  <text x="88" y="184" text-anchor="middle" fill="#8b949e" font-size="8">HTTPS POST /v1/messages</text>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- STEP 2: CLOUDFLARE EDGE (y=76) -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <circle cx="190" cy="88" r="12" fill="#f78166"/>
+  <text x="190" y="93" text-anchor="middle" fill="#0d1117" font-size="10" font-weight="bold">2</text>
+
+  <rect x="178" y="104" width="162" height="54" rx="4" fill="#261510" stroke="#f78166" stroke-width="1.5"/>
+  <text x="259" y="122" text-anchor="middle" fill="#f78166" font-size="10" font-weight="bold">TLS Termination</text>
+  <text x="259" y="138" text-anchor="middle" fill="#8b949e" font-size="9">HSTS enforced</text>
+  <text x="259" y="152" text-anchor="middle" fill="#8b949e" font-size="9">HTTPS redirect</text>
+
+  <rect x="178" y="166" width="162" height="60" rx="4" fill="#261510" stroke="#f78166" stroke-width="1.5"/>
+  <text x="259" y="184" text-anchor="middle" fill="#f78166" font-size="10" font-weight="bold">WAF Path Check</text>
+  <text x="259" y="200" text-anchor="middle" fill="#8b949e" font-size="9">evaluate request path</text>
+  <text x="259" y="214" text-anchor="middle" fill="#8b949e" font-size="9">against allowlist rules</text>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- STEP 3: CF TUNNEL (y=76) -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <circle cx="380" cy="88" r="12" fill="#f78166"/>
+  <text x="380" y="93" text-anchor="middle" fill="#0d1117" font-size="10" font-weight="bold">3</text>
+
+  <rect x="368" y="104" width="126" height="70" rx="4" fill="#261510" stroke="#f78166" stroke-width="1.5"/>
+  <text x="431" y="122" text-anchor="middle" fill="#f78166" font-size="10" font-weight="bold">Zero Trust</text>
+  <text x="431" y="136" text-anchor="middle" fill="#f78166" font-size="10" font-weight="bold">Tunnel</text>
+  <text x="431" y="153" text-anchor="middle" fill="#8b949e" font-size="9">route to EC2</text>
+  <text x="431" y="167" text-anchor="middle" fill="#8b949e" font-size="9">via QUIC (no inbound)</text>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- STEP 4: cloudflared (y=76) -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <circle cx="535" cy="88" r="12" fill="#d2a8ff"/>
+  <text x="535" y="93" text-anchor="middle" fill="#0d1117" font-size="10" font-weight="bold">4</text>
+
+  <rect x="523" y="104" width="108" height="70" rx="4" fill="#1a1327" stroke="#d2a8ff" stroke-width="1.5"/>
+  <text x="577" y="122" text-anchor="middle" fill="#d2a8ff" font-size="10" font-weight="bold">cloudflared</text>
+  <text x="577" y="140" text-anchor="middle" fill="#8b949e" font-size="9">recv via tunnel</text>
+  <text x="577" y="155" text-anchor="middle" fill="#8b949e" font-size="9">forward to</text>
+  <text x="577" y="169" text-anchor="middle" fill="#8b949e" font-size="9">localhost:4000</text>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- STEP 5: LITELLM PROXY — sub-steps stacked vertically -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <circle cx="670" cy="88" r="12" fill="#3fb950"/>
+  <text x="670" y="93" text-anchor="middle" fill="#0d1117" font-size="10" font-weight="bold">5</text>
+  <text x="915" y="93" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="bold">LiteLLM Proxy Processing</text>
+
+  <!-- 5a: Key Format Validation  y=104..168 -->
+  <rect x="658" y="104" width="508" height="64" rx="4" fill="#111827" stroke="#3fb950" stroke-width="1"/>
+  <text x="668" y="120" fill="#3fb950" font-size="9" font-weight="bold">a.  Key Format Validation</text>
+  <text x="668" y="136" fill="#8b949e" font-size="9">API key must begin with  sk-</text>
+  <!-- error badge -->
+  <rect x="1060" y="110" width="96" height="24" rx="3" fill="#2a0808" stroke="#f85149" stroke-width="1"/>
+  <text x="1108" y="126" text-anchor="middle" fill="#f85149" font-size="9" font-weight="bold">→ 401 Invalid Key</text>
+  <text x="668" y="156" fill="#8b949e" font-size="8">fails → reject immediately, response not forwarded to tunnel</text>
+
+  <!-- 5b: Key Lookup  y=176..260 -->
+  <rect x="658" y="176" width="508" height="84" rx="4" fill="#111827" stroke="#3fb950" stroke-width="1"/>
+  <text x="668" y="192" fill="#3fb950" font-size="9" font-weight="bold">b.  Key Lookup in Database</text>
+  <text x="668" y="208" fill="#8b949e" font-size="9">hash key → query PostgreSQL  LiteLLM_VerificationTokenTable</text>
+  <!-- PG badge -->
+  <rect x="668" y="218" width="140" height="22" rx="3" fill="#1a1a0a" stroke="#e3b341" stroke-width="1"/>
+  <text x="738" y="233" text-anchor="middle" fill="#e3b341" font-size="9">PostgreSQL :5432</text>
+  <!-- error badge -->
+  <rect x="1060" y="218" width="96" height="22" rx="3" fill="#2a0808" stroke="#f85149" stroke-width="1"/>
+  <text x="1108" y="233" text-anchor="middle" fill="#f85149" font-size="9" font-weight="bold">→ 401 Unauthorized</text>
+  <text x="668" y="250" fill="#8b949e" font-size="8">key not found or revoked → reject</text>
+
+  <!-- 5c: Model Restriction  y=268..344 -->
+  <rect x="658" y="268" width="508" height="76" rx="4" fill="#111827" stroke="#3fb950" stroke-width="1"/>
+  <text x="668" y="284" fill="#3fb950" font-size="9" font-weight="bold">c.  Model Restriction Check</text>
+  <text x="668" y="300" fill="#8b949e" font-size="9">per-key model allowlist · claude-only keys blocked from image gen models</text>
+  <!-- error badge -->
+  <rect x="1060" y="286" width="96" height="22" rx="3" fill="#2a0808" stroke="#f85149" stroke-width="1"/>
+  <text x="1108" y="301" text-anchor="middle" fill="#f85149" font-size="9" font-weight="bold">→ 403 Forbidden</text>
+  <text x="668" y="334" fill="#8b949e" font-size="8">model not on key's allowlist → reject</text>
+
+  <!-- 5d: Rate Limit  y=352..428 -->
+  <rect x="658" y="352" width="508" height="76" rx="4" fill="#111827" stroke="#3fb950" stroke-width="1"/>
+  <text x="668" y="368" fill="#3fb950" font-size="9" font-weight="bold">d.  Rate Limit Check</text>
+  <text x="668" y="384" fill="#8b949e" font-size="9">60 RPM  /  200K TPM default per key  ·  checked in-memory</text>
+  <!-- error badge -->
+  <rect x="1060" y="370" width="96" height="22" rx="3" fill="#1a1200" stroke="#e3b341" stroke-width="1"/>
+  <text x="1108" y="385" text-anchor="middle" fill="#e3b341" font-size="9" font-weight="bold">→ 429 Rate Limit</text>
+  <text x="668" y="418" fill="#8b949e" font-size="8">window exceeded → reject with Retry-After header</text>
+
+  <!-- 5e: Budget Check  y=436..512 -->
+  <rect x="658" y="436" width="508" height="76" rx="4" fill="#111827" stroke="#3fb950" stroke-width="1"/>
+  <text x="668" y="452" fill="#3fb950" font-size="9" font-weight="bold">e.  Per-Key Budget Check</text>
+  <text x="668" y="468" fill="#8b949e" font-size="9">$5/day default budget if configured  ·  spend read from PostgreSQL</text>
+  <!-- error badge -->
+  <rect x="1060" y="454" width="96" height="22" rx="3" fill="#1a1200" stroke="#e3b341" stroke-width="1"/>
+  <text x="1108" y="469" text-anchor="middle" fill="#e3b341" font-size="9" font-weight="bold">→ 400 Over Budget</text>
+  <text x="668" y="502" fill="#8b949e" font-size="8">daily spend limit reached → reject</text>
+
+  <!-- 5f: Model Routing  y=520..596 -->
+  <rect x="658" y="520" width="508" height="76" rx="4" fill="#111827" stroke="#3fb950" stroke-width="1"/>
+  <text x="668" y="536" fill="#3fb950" font-size="9" font-weight="bold">f.  Model Routing</text>
+  <text x="668" y="552" fill="#8b949e" font-size="9">map model name → Bedrock ARN + region</text>
+  <text x="668" y="568" fill="#8b949e" font-size="9">eu.* prefix for EU  ·  us-east-1 / us-west-2 for image models</text>
+  <text x="668" y="584" fill="#8b949e" font-size="8">attach IAM role credentials · forward to Bedrock endpoint</text>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- STEP 6: BEDROCK -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <circle cx="1205" cy="88" r="12" fill="#3fb950"/>
+  <text x="1205" y="93" text-anchor="middle" fill="#0d1117" font-size="10" font-weight="bold">6</text>
+
+  <rect x="1193" y="104" width="148" height="100" rx="4" fill="#0d1a12" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="1267" y="124" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="bold">AWS Bedrock</text>
+  <text x="1267" y="142" text-anchor="middle" fill="#8b949e" font-size="9">InvokeModel call</text>
+  <text x="1267" y="158" text-anchor="middle" fill="#8b949e" font-size="9">IAM role credentials</text>
+  <text x="1267" y="174" text-anchor="middle" fill="#8b949e" font-size="9">process + stream</text>
+  <text x="1267" y="190" text-anchor="middle" fill="#8b949e" font-size="9">response tokens</text>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- ERROR BOXES (right column) -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+
+  <!-- WAF 403 (aligns with step 2 WAF box) -->
+  <rect x="1373" y="170" width="404" height="56" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
+  <text x="1380" y="188" fill="#f85149" font-size="10" font-weight="bold">Step 2: WAF Block → 403 Forbidden</text>
+  <text x="1380" y="206" fill="#8b949e" font-size="9">path not on allowlist · response returned to client immediately</text>
+  <text x="1380" y="218" fill="#8b949e" font-size="8">request does not reach tunnel or EC2</text>
+
+  <!-- 5a 401 -->
+  <rect x="1373" y="238" width="404" height="52" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
+  <text x="1380" y="256" fill="#f85149" font-size="10" font-weight="bold">Step 5a: Invalid Key → 401</text>
+  <text x="1380" y="272" fill="#8b949e" font-size="9">key does not start with  sk-</text>
+  <text x="1380" y="284" fill="#8b949e" font-size="8">rejected before any DB lookup</text>
+
+  <!-- 5b 401 -->
+  <rect x="1373" y="304" width="404" height="52" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
+  <text x="1380" y="322" fill="#f85149" font-size="10" font-weight="bold">Step 5b: Key Not Found → 401</text>
+  <text x="1380" y="338" fill="#8b949e" font-size="9">hashed key absent or revoked in PostgreSQL</text>
+  <text x="1380" y="350" fill="#8b949e" font-size="8">spend not logged for rejected requests</text>
+
+  <!-- 5c 403 -->
+  <rect x="1373" y="370" width="404" height="52" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
+  <text x="1380" y="388" fill="#f85149" font-size="10" font-weight="bold">Step 5c: Model Denied → 403</text>
+  <text x="1380" y="404" fill="#8b949e" font-size="9">key restricted to specific model subset</text>
+  <text x="1380" y="416" fill="#8b949e" font-size="8">e.g. claude-only key used with nova-canvas</text>
+
+  <!-- 5d 429 -->
+  <rect x="1373" y="436" width="404" height="52" rx="4" fill="#1a1200" stroke="#e3b341" stroke-width="1.5"/>
+  <text x="1380" y="454" fill="#e3b341" font-size="10" font-weight="bold">Step 5d: Rate Limited → 429</text>
+  <text x="1380" y="470" fill="#8b949e" font-size="9">60 RPM or 200K TPM window exceeded</text>
+  <text x="1380" y="482" fill="#8b949e" font-size="8">Retry-After header returned to client</text>
+
+  <!-- 5e 400 -->
+  <rect x="1373" y="502" width="404" height="52" rx="4" fill="#1a1200" stroke="#e3b341" stroke-width="1.5"/>
+  <text x="1380" y="520" fill="#e3b341" font-size="10" font-weight="bold">Step 5e: Budget Exceeded → 400</text>
+  <text x="1380" y="536" fill="#8b949e" font-size="9">daily spend limit reached for this key</text>
+  <text x="1380" y="548" fill="#8b949e" font-size="8">budget resets at midnight UTC</text>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- STEP 7: RESPONSE PATH (bottom bar) -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <circle cx="670" cy="630" r="12" fill="#3fb950"/>
+  <text x="670" y="635" text-anchor="middle" fill="#0d1117" font-size="10" font-weight="bold">7</text>
+
+  <rect x="10" y="648" width="1350" height="82" rx="4" fill="#0d1a12" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="685" y="666" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="bold">Response Path (success)</text>
+
+  <!-- Response step boxes -->
+  <!-- Bedrock -->
+  <rect x="20" y="674" width="186" height="48" rx="3" fill="#0f2018" stroke="#3fb950" stroke-width="1"/>
+  <text x="113" y="694" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="bold">Bedrock</text>
+  <text x="113" y="710" text-anchor="middle" fill="#8b949e" font-size="8">streams tokens</text>
+
+  <line x1="206" y1="698" x2="226" y2="698" stroke="#3fb950" stroke-width="1.5" marker-end="url(#ah-green)"/>
+
+  <!-- LiteLLM -->
+  <rect x="228" y="674" width="186" height="48" rx="3" fill="#0f2018" stroke="#3fb950" stroke-width="1"/>
+  <text x="321" y="694" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="bold">LiteLLM</text>
+  <text x="321" y="710" text-anchor="middle" fill="#8b949e" font-size="8">logs spend → PostgreSQL</text>
+
+  <line x1="414" y1="698" x2="434" y2="698" stroke="#3fb950" stroke-width="1.5" marker-end="url(#ah-green)"/>
+
+  <!-- cloudflared -->
+  <rect x="436" y="674" width="186" height="48" rx="3" fill="#1a1327" stroke="#d2a8ff" stroke-width="1"/>
+  <text x="529" y="694" text-anchor="middle" fill="#d2a8ff" font-size="10" font-weight="bold">cloudflared</text>
+  <text x="529" y="710" text-anchor="middle" fill="#8b949e" font-size="8">passes back via tunnel</text>
+
+  <line x1="622" y1="698" x2="642" y2="698" stroke="#3fb950" stroke-width="1.5" marker-end="url(#ah-green)"/>
+
+  <!-- CF Tunnel -->
+  <rect x="644" y="674" width="186" height="48" rx="3" fill="#261510" stroke="#f78166" stroke-width="1"/>
+  <text x="737" y="694" text-anchor="middle" fill="#f78166" font-size="10" font-weight="bold">CF Tunnel</text>
+  <text x="737" y="710" text-anchor="middle" fill="#8b949e" font-size="8">routes back to client</text>
+
+  <line x1="830" y1="698" x2="850" y2="698" stroke="#3fb950" stroke-width="1.5" marker-end="url(#ah-green)"/>
+
+  <!-- CF Edge -->
+  <rect x="852" y="674" width="186" height="48" rx="3" fill="#261510" stroke="#f78166" stroke-width="1"/>
+  <text x="945" y="694" text-anchor="middle" fill="#f78166" font-size="10" font-weight="bold">Cloudflare Edge</text>
+  <text x="945" y="710" text-anchor="middle" fill="#8b949e" font-size="8">TLS · HSTS headers</text>
+
+  <line x1="1038" y1="698" x2="1058" y2="698" stroke="#3fb950" stroke-width="1.5" marker-end="url(#ah-green)"/>
+
+  <!-- Client receives -->
+  <rect x="1060" y="674" width="192" height="48" rx="3" fill="#0d1f38" stroke="#58a6ff" stroke-width="1"/>
+  <text x="1156" y="694" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="bold">Client</text>
+  <text x="1156" y="710" text-anchor="middle" fill="#8b949e" font-size="8">200 OK · tokens received</text>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- MAIN FLOW ARROWS (request path, top) -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+
+  <!-- 1→2: Client → CF Edge -->
+  <line x1="156" y1="149" x2="178" y2="130" stroke="#58a6ff" stroke-width="2" marker-end="url(#ah-blue)"/>
+  <text x="168" y="144" text-anchor="middle" fill="#58a6ff" font-size="8">HTTPS</text>
+
+  <!-- 2→3: CF Edge → CF Tunnel -->
+  <line x1="340" y1="240" x2="368" y2="140" stroke="#f78166" stroke-width="2" marker-end="url(#ah-orange)"/>
+  <text x="358" y="200" fill="#f78166" font-size="8">route</text>
+
+  <!-- 3→4: CF Tunnel → cloudflared -->
+  <line x1="494" y1="139" x2="523" y2="139" stroke="#f78166" stroke-width="2" marker-end="url(#ah-orange)"/>
+  <text x="508" y="134" text-anchor="middle" fill="#f78166" font-size="8">QUIC</text>
+
+  <!-- 4→5: cloudflared → LiteLLM -->
+  <line x1="631" y1="139" x2="658" y2="136" stroke="#d2a8ff" stroke-width="2" marker-end="url(#ah-purple)"/>
+  <text x="644" y="132" text-anchor="middle" fill="#d2a8ff" font-size="8">:4000</text>
+
+  <!-- 5f→6: LiteLLM → Bedrock -->
+  <line x1="1166" y1="558" x2="1193" y2="154" stroke="#3fb950" stroke-width="2" marker-end="url(#ah-green)"/>
+  <text x="1196" y="380" fill="#3fb950" font-size="8">HTTPS</text>
+  <text x="1196" y="394" fill="#3fb950" font-size="8">IAM auth</text>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- ERROR ARROWS -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+
+  <!-- WAF → Error -->
+  <line x1="1156" y1="197" x2="1373" y2="197" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
+
+  <!-- 5a → Error -->
+  <line x1="1156" y1="122" x2="1373" y2="264" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
+
+  <!-- 5b → Error -->
+  <line x1="1156" y1="230" x2="1373" y2="330" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
+
+  <!-- 5c → Error -->
+  <line x1="1156" y1="306" x2="1373" y2="396" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
+
+  <!-- 5d → Error -->
+  <line x1="1156" y1="390" x2="1373" y2="462" stroke="#e3b341" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-yellow)"/>
+
+  <!-- 5e → Error -->
+  <line x1="1156" y1="474" x2="1373" y2="528" stroke="#e3b341" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-yellow)"/>
+
+  <!-- Bedrock → response path -->
+  <path d="M 1267 204 Q 1267 640 1156 698" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="4,3" fill="none" marker-end="url(#ah-green)"/>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- LEGEND -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <rect x="10" y="752" width="1350" height="72" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="22" y="770" fill="#8b949e" font-size="9" font-weight="bold" letter-spacing="1">COLOUR KEY</text>
+
+  <rect x="22" y="778" width="10" height="10" rx="2" fill="#58a6ff"/>
+  <text x="38" y="787" fill="#e6edf3" font-size="9">Client / AWS</text>
+
+  <rect x="140" y="778" width="10" height="10" rx="2" fill="#f78166"/>
+  <text x="156" y="787" fill="#e6edf3" font-size="9">Cloudflare</text>
+
+  <rect x="250" y="778" width="10" height="10" rx="2" fill="#d2a8ff"/>
+  <text x="266" y="787" fill="#e6edf3" font-size="9">EC2 internal</text>
+
+  <rect x="370" y="778" width="10" height="10" rx="2" fill="#3fb950"/>
+  <text x="386" y="787" fill="#e6edf3" font-size="9">Success / Bedrock</text>
+
+  <rect x="510" y="778" width="10" height="10" rx="2" fill="#f85149"/>
+  <text x="526" y="787" fill="#e6edf3" font-size="9">Hard rejection (4xx)</text>
+
+  <rect x="670" y="778" width="10" height="10" rx="2" fill="#e3b341"/>
+  <text x="686" y="787" fill="#e6edf3" font-size="9">Soft limit (429/400)</text>
+
+  <rect x="830" y="778" width="10" height="10" rx="2" fill="#e3b341"/>
+  <text x="846" y="787" fill="#e6edf3" font-size="9">PostgreSQL</text>
+
+  <line x1="1000" y1="783" x2="1040" y2="783" stroke="#3fb950" stroke-width="2"/>
+  <text x="1048" y="787" fill="#e6edf3" font-size="9">request / response</text>
+
+  <line x1="1160" y1="783" x2="1200" y2="783" stroke="#8b949e" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="1208" y="787" fill="#e6edf3" font-size="9">error / control</text>
+
+  <!-- Footer -->
+  <text x="900" y="950" text-anchor="middle" fill="#8b949e" font-size="9" opacity="0.5">rockport · request data flow · cloudflare tunnel · litellm proxy · aws bedrock</text>
+</svg>
