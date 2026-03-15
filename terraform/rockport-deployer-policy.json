@@ -32,7 +32,9 @@
         "ec2:AuthorizeSecurityGroupIngress",
         "ec2:RevokeSecurityGroupEgress",
         "ec2:RevokeSecurityGroupIngress",
-        "ec2:ModifySecurityGroupRules"
+        "ec2:ModifySecurityGroupRules",
+        "ec2:DescribeInstanceAttribute",
+        "ec2:DescribeInstanceCreditSpecifications"
       ],
       "Resource": "*"
     },
@@ -102,11 +104,16 @@
         "ssm:GetParameters",
         "ssm:PutParameter",
         "ssm:DeleteParameter",
-        "ssm:DescribeParameters",
         "ssm:AddTagsToResource",
         "ssm:ListTagsForResource"
       ],
       "Resource": "arn:aws:ssm:*:*:parameter/rockport/*"
+    },
+    {
+      "Sid": "SSMDescribeParameters",
+      "Effect": "Allow",
+      "Action": "ssm:DescribeParameters",
+      "Resource": "*"
     },
     {
       "Sid": "SSMPublicParameters",
@@ -140,8 +147,14 @@
         "lambda:AddPermission",
         "lambda:RemovePermission",
         "lambda:GetPolicy",
+        "lambda:ListVersionsByFunction",
+        "lambda:PutFunctionConcurrency",
+        "lambda:DeleteFunctionConcurrency",
+        "lambda:GetFunctionCodeSigningConfig",
+        "lambda:InvokeFunction",
+        "lambda:ListTags",
         "lambda:TagResource",
-        "lambda:ListVersionsByFunction"
+        "lambda:UntagResource"
       ],
       "Resource": "arn:aws:lambda:*:*:function:rockport-*"
     },
@@ -151,12 +164,17 @@
       "Action": [
         "logs:CreateLogGroup",
         "logs:DeleteLogGroup",
-        "logs:DescribeLogGroups",
         "logs:PutRetentionPolicy",
         "logs:ListTagsForResource",
         "logs:TagResource"
       ],
       "Resource": "arn:aws:logs:*:*:log-group:/aws/lambda/rockport-*"
+    },
+    {
+      "Sid": "CloudWatchLogsDescribe",
+      "Effect": "Allow",
+      "Action": "logs:DescribeLogGroups",
+      "Resource": "*"
     },
     {
       "Sid": "EventBridge",
@@ -180,7 +198,9 @@
         "cloudwatch:PutMetricAlarm",
         "cloudwatch:DescribeAlarms",
         "cloudwatch:DeleteAlarms",
-        "cloudwatch:GetMetricStatistics"
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:ListTagsForResource",
+        "cloudwatch:TagResource"
       ],
       "Resource": "*"
     },
@@ -192,7 +212,9 @@
         "budgets:DescribeBudget",
         "budgets:ModifyBudget",
         "budgets:DeleteBudget",
-        "budgets:ViewBudget"
+        "budgets:ViewBudget",
+        "budgets:ListTagsForResource",
+        "budgets:TagResource"
       ],
       "Resource": "*"
     },
@@ -202,8 +224,11 @@
       "Action": [
         "dlm:CreateLifecyclePolicy",
         "dlm:GetLifecyclePolicy",
+        "dlm:GetLifecyclePolicies",
         "dlm:UpdateLifecyclePolicy",
-        "dlm:DeleteLifecyclePolicy"
+        "dlm:DeleteLifecyclePolicy",
+        "dlm:ListTagsForResource",
+        "dlm:TagResource"
       ],
       "Resource": "*"
     },

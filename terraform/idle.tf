@@ -20,13 +20,20 @@ data "archive_file" "idle_shutdown" {
 
         # Skip if instance is not running
         resp = ec2.describe_instances(InstanceIds=[instance_id])
-        state = resp['Reservations'][0]['Instances'][0]['State']['Name']
+        inst = resp['Reservations'][0]['Instances'][0]
+        state = inst['State']['Name']
         if state != 'running':
             print(f'Instance {instance_id} is {state}, skipping')
             return {'status': state}
 
-        # Check NetworkIn over the idle period
+        # Grace period: skip if instance launched/started less than 10 minutes ago
+        # This prevents killing the instance during bootstrap or post-start recovery
         now = datetime.now(timezone.utc)
+        launch_time = inst['LaunchTime']
+        uptime_minutes = (now - launch_time).total_seconds() / 60
+        if uptime_minutes < 10:
+            print(f'Instance uptime {uptime_minutes:.0f}min < 10min grace period, skipping')
+            return {'status': 'grace_period', 'uptime_minutes': int(uptime_minutes)}
         start = now - timedelta(minutes=idle_minutes)
 
         metrics = cw.get_metric_statistics(
@@ -63,8 +70,7 @@ resource "aws_lambda_function" "idle_shutdown" {
   function_name                  = "rockport-idle-shutdown"
   runtime                        = "python3.12"
   handler                        = "index.handler"
-  timeout                        = 30
-  reserved_concurrent_executions = 2
+  timeout = 30
   filename                       = data.archive_file.idle_shutdown[0].output_path
   source_code_hash               = data.archive_file.idle_shutdown[0].output_base64sha256
   role                           = aws_iam_role.idle_shutdown[0].arn

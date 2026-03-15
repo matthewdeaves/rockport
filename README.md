@@ -10,7 +10,7 @@ LiteLLM proxy on EC2 that gives Claude Code access to any Bedrock model through 
 - Zero inbound security group rules — all traffic flows through Cloudflare Tunnel
 - Daily EBS snapshots with 7-day retention
 - Auto-recovery on system failure
-- Auto-stop after 30 minutes of inactivity (saves costs when idle)
+- Auto-stop after 30 minutes of inactivity (with 10-minute grace period after boot)
 - Daily Bedrock budget alerts + monthly overall AWS budget alerts
 - `rockport` CLI for key management, logs, deploys, start/stop
 
@@ -203,13 +203,13 @@ Rockport is designed so that the proxy has no direct internet exposure. Every la
 
 **Localhost-only binding** — LiteLLM listens on `127.0.0.1:4000`, not `0.0.0.0`. Even if the security group were misconfigured, the service would not accept external connections directly.
 
-**Admin UI disabled** — The LiteLLM admin dashboard (`/ui`) is disabled via `disable_admin_ui: true`. This eliminates the largest web attack surface: session management, SSO bypass, CSRF, and the additional frontend dependencies. All administration is done through the `rockport` CLI, which calls the API with the master key.
+**Admin UI disabled** — The LiteLLM admin dashboard is disabled via `disable_admin_ui: true`. Note: LiteLLM still serves static assets at `/ui` but the dashboard requires a valid key to function. All administration is done through the `rockport` CLI, which calls the API with the master key. For full `/ui` blocking, add a Cloudflare Access policy or tunnel ingress rule.
 
 **Key separation** — The master key (stored in SSM Parameter Store) is only used by the admin CLI. Users get virtual keys with per-key daily budgets and rate limits. Virtual keys can only call model endpoints — they cannot create other keys, view spend, or manage the proxy.
 
 **Secrets handling** — The master key and tunnel token are stored as SSM SecureString parameters (encrypted at rest with AWS KMS). The database password is generated on the instance during bootstrap, stored in SSM for recovery, and never appears in logs. Environment files are written with `umask 077` to prevent brief permission windows.
 
-**Systemd hardening** — Both LiteLLM and cloudflared run as dedicated non-root users with `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=yes`, and `PrivateTmp=yes`.
+**Systemd hardening** — Both LiteLLM and cloudflared run as dedicated non-root users with `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`, and memory limits. The `litellm` user's home directory is `/var/lib/litellm` (not `/home/litellm`) so prisma cache is accessible under `ProtectHome=yes`.
 
 **IMDSv2 enforced** — The instance metadata service requires session tokens (hop limit 1), preventing SSRF-based credential theft.
 

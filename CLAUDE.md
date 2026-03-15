@@ -42,10 +42,11 @@ tests/smoke-test.sh     # Post-deploy verification
 
 ## Important Notes
 
-- `prisma generate` MUST run as the `litellm` user (not root) — it hardcodes `$HOME/.cache/` paths
+- `prisma generate` MUST run as the `litellm` user (not root) — it hardcodes `$HOME/.cache/` paths into the generated client
+- The `litellm` user's home is `/var/lib/litellm` (not `/home/litellm`) so prisma cache works with `ProtectHome=yes`
 - Terraform `user_data` only runs on first boot; use `config push` or `upgrade` for runtime changes
 - Claude Code sends old model IDs (e.g. `claude-sonnet-4-5-20250929`); aliases in litellm-config.yaml map these to latest 4.6 Bedrock models
-- Bedrock inference profiles need `eu.` prefix for cross-region models in eu-west-2
+- Bedrock inference profiles need `eu.` prefix for cross-region models; IAM policy covers all EU regions since the prefix can route to any of them
 - `ANTHROPIC_AUTH_TOKEN` (not `ANTHROPIC_API_KEY`) is the env var for Claude Code virtual keys
 - Instance auto-stops after 30min of inactivity by default (Lambda checks NetworkIn metrics)
 - Region is read from `terraform.tfvars` by rockport.sh — no hardcoded region in the CLI

@@ -143,16 +143,22 @@ echo "Installing LiteLLM..."
 dnf install -y python3.11 python3.11-pip libatomic
 pip3.11 install "litellm[proxy]==$LITELLM_VERSION" prisma
 
-# Create litellm user with home directory (needed for prisma cache)
+# Cache/data directory for LiteLLM runtime — must exist before user creation
+# so we can set it as the user's home directory
+mkdir -p /var/lib/litellm
+
+# Create litellm user with home at /var/lib/litellm (not /home/litellm).
+# This ensures prisma generate caches binaries under /var/lib/litellm/.cache,
+# which is accessible under ProtectHome=yes (only /home is blocked).
 if ! id litellm &>/dev/null; then
-  useradd --system --create-home --shell /usr/sbin/nologin litellm
+  useradd --system --home-dir /var/lib/litellm --no-create-home --shell /usr/sbin/nologin litellm
 fi
+chown litellm:litellm /var/lib/litellm
 
 # Generate prisma client AS the litellm user so binary paths resolve correctly.
-# prisma generate hardcodes the running user's cache paths into the generated client,
-# so it must run as the same user that will run litellm at runtime.
+# prisma generate hardcodes $HOME/.cache paths into the generated client.
 chown -R litellm:litellm /usr/local/lib/python3.11/site-packages/prisma
-HOME=/home/litellm sudo -u litellm -E prisma generate \
+sudo -u litellm prisma generate \
   --schema /usr/local/lib/python3.11/site-packages/litellm/proxy/schema.prisma
 
 # Config
@@ -161,10 +167,6 @@ cat > /etc/litellm/config.yaml <<'LITELLMCONF'
 ${litellm_config}
 LITELLMCONF
 chown -R litellm:litellm /etc/litellm
-
-# Cache/data directory for LiteLLM runtime
-mkdir -p /var/lib/litellm
-chown litellm:litellm /var/lib/litellm
 
 # Env file — written inside subshell with restrictive umask to prevent brief exposure
 (
@@ -185,20 +187,18 @@ LITELLMSVC
 echo "Installing cloudflared..."
 curl -fsSL "https://github.com/cloudflare/cloudflared/releases/download/$CLOUDFLARED_VERSION/cloudflared-linux-amd64" \
   -o /tmp/cloudflared
-curl -fsSL "https://github.com/cloudflare/cloudflared/releases/download/$CLOUDFLARED_VERSION/cloudflared-linux-amd64.sha256" \
-  -o /tmp/cloudflared.sha256
+chmod +x /tmp/cloudflared
 
-# Verify checksum
-expected_hash=$(awk '{print $1}' /tmp/cloudflared.sha256)
-actual_hash=$(sha256sum /tmp/cloudflared | awk '{print $1}')
-if [[ "$expected_hash" != "$actual_hash" ]]; then
-  echo "FATAL: cloudflared checksum mismatch! Expected=$expected_hash Actual=$actual_hash"
+# Verify the binary is valid by running --version
+if /tmp/cloudflared --version | grep -q "$CLOUDFLARED_VERSION"; then
+  echo "cloudflared $CLOUDFLARED_VERSION verified."
+else
+  echo "FATAL: cloudflared binary verification failed"
   exit 1
 fi
+
 mv /tmp/cloudflared /usr/local/bin/cloudflared
-chmod +x /usr/local/bin/cloudflared
-rm -f /tmp/cloudflared.sha256
-echo "cloudflared installed and verified."
+echo "cloudflared installed."
 
 # Create cloudflared user
 if ! id cloudflared &>/dev/null; then

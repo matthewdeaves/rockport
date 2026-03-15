@@ -6,8 +6,12 @@ locals {
     ManagedBy = "terraform"
   }
 
-  # Bedrock regions: primary region + eu-west-2 for cross-region inference profiles
-  bedrock_regions = distinct([var.region, "eu-west-2"])
+  # Bedrock regions: primary region + all EU regions for cross-region inference profiles.
+  # The eu. prefix on model IDs can route to any EU region.
+  bedrock_regions = distinct(concat(
+    [var.region],
+    ["eu-west-1", "eu-west-2", "eu-west-3", "eu-central-1", "eu-central-2", "eu-north-1", "eu-south-1", "eu-south-2"]
+  ))
 }
 
 # Data sources
@@ -92,7 +96,8 @@ resource "aws_iam_role_policy" "ssm_get_parameter" {
       Effect = "Allow"
       Action = [
         "ssm:GetParameter",
-        "ssm:GetParameters"
+        "ssm:GetParameters",
+        "ssm:PutParameter"
       ]
       Resource = [
         "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/rockport/master-key",
@@ -123,7 +128,7 @@ resource "aws_security_group" "rockport" {
 
 resource "aws_vpc_security_group_egress_rule" "all_outbound" {
   security_group_id = aws_security_group.rockport.id
-  description       = "All outbound — required for Bedrock API and Cloudflare tunnel"
+  description       = "All outbound - required for Bedrock API and Cloudflare tunnel"
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
 }

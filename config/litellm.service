@@ -7,6 +7,7 @@ Requires=postgresql.service
 Type=simple
 ExecStart=/usr/local/bin/litellm --config /etc/litellm/config.yaml --host 127.0.0.1 --port 4000
 EnvironmentFile=/etc/litellm/env
+Environment=HOME=/var/lib/litellm
 Restart=always
 RestartSec=5
 KillMode=mixed
@@ -21,7 +22,7 @@ ProtectHome=yes
 ProtectClock=yes
 ProtectHostname=yes
 ProtectKernelLogs=yes
-ReadWritePaths=/var/lib/litellm /home/litellm/.cache
+ReadWritePaths=/var/lib/litellm /usr/local/lib/python3.11/site-packages/litellm_proxy_extras/migrations
 MemoryMax=1536M
 LimitNOFILE=65536
 StandardOutput=journal
