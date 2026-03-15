@@ -207,6 +207,29 @@ curl -X POST https://<your-domain>/v1/images/generations \
 
 Response contains `data[0].b64_json` with the base64-encoded PNG. Keys created with `--claude-only` cannot access image models.
 
+#### Image-to-image (conditioned generation)
+
+Pass a source image to modify it with a text prompt. Use the same `/v1/images/generations` endpoint with model-specific parameters:
+
+**Nova Canvas** — pass `conditionImage` (base64) in `textToImageParams`:
+
+```bash
+curl -X POST https://<your-domain>/v1/images/generations \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "nova-canvas",
+    "prompt": "transform into a watercolor painting",
+    "size": "512x512",
+    "n": 1,
+    "textToImageParams": {"conditionImage": "<base64-encoded-image>"}
+  }'
+```
+
+Source images must be base64-encoded PNG or JPEG. Nova Canvas requires minimum 320px per side. SD3.5 Large also supports `mode: "image-to-image"` with an `image` and `strength` parameter, but always outputs 1024x1024 JPEG — Nova Canvas is recommended for image-to-image.
+
+**Note:** `/v1/images/edits` is not supported — LiteLLM 1.82.2 only supports that endpoint for Stability AI models, not Bedrock's Nova Canvas or Titan. Use `/v1/images/generations` with `conditionImage` instead.
+
 ## CI/CD
 
 Two GitHub Actions workflows run on push to `main`:
