@@ -12,7 +12,7 @@ LiteLLM proxy on EC2 that gives Claude Code access to any Bedrock model through 
 
 - Claude Code connects via `ANTHROPIC_BASE_URL` to your own proxy
 - Anthropic (Opus 4.6, Sonnet 4.6, Haiku 4.5), DeepSeek V3.2, Qwen3 Coder 480B, Kimi K2.5, Nova Pro/Lite/Micro on Bedrock
-- Image generation via OpenAI-compatible `/v1/images/generations` (Nova Canvas, Titan Image v2, SD3.5 Large)
+- Image generation and editing via OpenAI-compatible `/v1/images/generations` and `/v1/images/edits` (Nova Canvas, Titan Image v2, SD3.5 Large)
 - Virtual API keys with per-key budgets, rate limits, and model restrictions
 - Zero inbound security group rules — all traffic flows through Cloudflare Tunnel
 - Daily EBS snapshots with 7-day retention
@@ -134,6 +134,8 @@ Launch Claude Code. Default model routes to Opus 4.6.
 ./scripts/rockport.sh key revoke <key>              # Revoke a key
 ./scripts/rockport.sh spend                         # Global spend summary
 ./scripts/rockport.sh spend keys                    # Spend breakdown by key
+./scripts/rockport.sh monitor                       # Key status + recent requests
+./scripts/rockport.sh monitor --live                # Live dashboard (auto-refresh)
 ./scripts/rockport.sh config push                   # Push config to instance + restart
 ./scripts/rockport.sh logs                          # Stream LiteLLM logs
 ./scripts/rockport.sh upgrade                       # Restart LiteLLM (config changes)
@@ -230,7 +232,7 @@ Rockport is designed so that the proxy has no direct internet exposure. Every la
 
 **Localhost-only binding** — LiteLLM listens on `127.0.0.1:4000`, not `0.0.0.0`. Even if the security group were misconfigured, the service would not accept external connections directly.
 
-**Admin UI disabled** — The LiteLLM admin dashboard is disabled via `disable_admin_ui: true` and Swagger/ReDoc docs are disabled via `NO_DOCS=True` / `NO_REDOC=True` environment variables. A Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation, and the admin CLI — only `/v1/chat/completions`, `/v1/models`, `/v1/messages`, `/v1/images/generations`, `/key/*`, `/health/*`, `/spend/*`, and a handful of other operational paths are reachable. Everything else (admin UI, OpenAPI schema, routes list, SSO, SCIM, debug endpoints, etc.) returns 403 at the Cloudflare edge.
+**Admin UI disabled** — The LiteLLM admin dashboard is disabled via `disable_admin_ui: true` and Swagger/ReDoc docs are disabled via `NO_DOCS=True` / `NO_REDOC=True` environment variables. A Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation, and the admin CLI — only `/v1/chat/completions`, `/v1/models`, `/v1/messages`, `/v1/images/generations`, `/v1/images/edits`, `/key/*`, `/health/*`, `/spend/*`, and a handful of other operational paths are reachable. Everything else (admin UI, OpenAPI schema, routes list, SSO, SCIM, debug endpoints, etc.) returns 403 at the Cloudflare edge.
 
 **Key separation** — The master key (stored in SSM Parameter Store) is only used by the admin CLI. Users get virtual keys with per-key daily budgets and rate limits. Keys created with `--claude-only` (or via `setup-claude`) are restricted to Anthropic models only. Keys without this flag get access to all models including image generation. Virtual keys can only call model endpoints — they cannot create other keys, view spend, or manage the proxy.
 

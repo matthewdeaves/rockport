@@ -67,8 +67,17 @@ IMAGE_RESPONSE=$(curl -s -X POST "$BASE_URL/v1/images/generations" \
   --max-time 60 2>/dev/null)
 echo "$IMAGE_RESPONSE" | grep -q "b64_json"; check "Image generation returns b64_json" "$?"
 
-# 7. Model list contains image models
-echo "7. Image models in model list"
+# 7. Image edits endpoint reachable (WAF allows /v1/images/edits)
+echo "7. Image edits endpoint"
+EDIT_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/edits" \
+  -H "Authorization: Bearer $VALID_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{}' --max-time 10 2>/dev/null)
+# 400/422 = reached LiteLLM (bad request but not WAF blocked); 403 = WAF blocked
+[[ "$EDIT_CODE" != "403" ]]; check "Image edits endpoint not WAF-blocked (HTTP $EDIT_CODE)" "$?"
+
+# 8. Model list contains image models
+echo "8. Image models in model list"
 echo "$MODELS" | grep -q "nova-canvas"; check "Model list contains nova-canvas" "$?"
 echo "$MODELS" | grep -q "titan-image-v2"; check "Model list contains titan-image-v2" "$?"
 

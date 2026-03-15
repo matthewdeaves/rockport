@@ -35,6 +35,7 @@ tests/smoke-test.sh     # Post-deploy verification
 ./scripts/rockport.sh key revoke <k># Revoke key
 ./scripts/rockport.sh spend         # Global spend summary
 ./scripts/rockport.sh spend keys    # Spend breakdown by key
+./scripts/rockport.sh monitor       # Key status + recent requests [--live] [--interval N] [--count N]
 ./scripts/rockport.sh config push   # Push config to instance + restart
 ./scripts/rockport.sh logs          # Stream LiteLLM journal
 ./scripts/rockport.sh setup-claude  # Create Anthropic-only key + show Claude Code config
