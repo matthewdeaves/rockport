@@ -186,6 +186,25 @@ Budget and rate limit defaults are also in `litellm-config.yaml`:
 - Per-key default budget: `$5/day`
 - Rate limits: `60 RPM`, `200K TPM` per key
 
+### Image generation
+
+Image generation uses the OpenAI-compatible `/v1/images/generations` endpoint. Pass dimensions via the `size` parameter (e.g. `"1024x768"`).
+
+| Model | Dimensions | Constraint | Default |
+|-------|-----------|------------|---------|
+| Nova Canvas | 320–2048 per side | Must be divisible by 64, max 4.1MP total | 1024x1024 |
+| Titan Image v2 | Preset sizes | 256, 512, 768, 1024, 1152, 1408 combinations | 512x512 |
+| SD3.5 Large | Flexible | Max ~1MP total pixels | 1024x1024 |
+
+```bash
+curl -X POST https://<your-domain>/v1/images/generations \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"nova-canvas","prompt":"a mountain landscape","size":"1024x768","n":1}'
+```
+
+Response contains `data[0].b64_json` with the base64-encoded PNG. Keys created with `--claude-only` cannot access image models.
+
 ## CI/CD
 
 Two GitHub Actions workflows run on push to `main`:
