@@ -43,6 +43,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Gitleaks secrets scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Trivy IaC scan
         uses: aquasecurity/trivy-action@0.35.0
         with:

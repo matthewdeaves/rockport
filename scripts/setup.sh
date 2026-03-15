@@ -137,12 +137,45 @@ install_checkov() {
   esac
 }
 
+install_gitleaks() {
+  if command -v gitleaks &>/dev/null; then
+    echo "✓ Gitleaks already installed ($(gitleaks version 2>&1))"
+    return
+  fi
+  echo "Installing Gitleaks..."
+  case "$OS" in
+    Darwin)
+      install_brew
+      brew install gitleaks
+      ;;
+    Linux)
+      local gl_version
+      gl_version=$(curl -sL https://api.github.com/repos/gitleaks/gitleaks/releases/latest | grep -oP '"tag_name":\s*"v\K[^"]+')
+      curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${gl_version}/gitleaks_${gl_version}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
+      mkdir -p "$HOME/.local/bin"
+      tar -xzf /tmp/gitleaks.tar.gz -C "$HOME/.local/bin" gitleaks
+      rm /tmp/gitleaks.tar.gz
+      ;;
+  esac
+}
+
+setup_git_hooks() {
+  local repo_root
+  repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+  if [[ -d "$repo_root/.githooks" ]]; then
+    git -C "$repo_root" config core.hooksPath .githooks
+    echo "✓ Git hooks configured (.githooks/pre-commit)"
+  fi
+}
+
 install_aws_cli
 install_session_manager_plugin
 install_terraform
 install_gh_cli
 install_trivy
 install_checkov
+install_gitleaks
+setup_git_hooks
 
 echo ""
 echo "=== Verify ==="
@@ -152,6 +185,7 @@ echo "Terraform:   $(terraform --version 2>/dev/null | head -1)"
 echo "GitHub CLI:  $(gh --version 2>/dev/null | head -1)"
 echo "Trivy:       $(trivy --version 2>&1 | head -1)"
 echo "Checkov:     $(checkov --version 2>/dev/null || echo 'not found')"
+echo "Gitleaks:    $(gitleaks version 2>/dev/null || echo 'not found')"
 
 echo ""
 echo "=== Next steps ==="

@@ -1,0 +1,12 @@
+#!/bin/bash
+# Scan staged changes for secrets before committing
+if command -v gitleaks &>/dev/null; then
+  gitleaks git --pre-commit --staged --verbose 2>&1
+  if [[ $? -ne 0 ]]; then
+    echo "ERROR: gitleaks detected secrets in staged changes. Commit blocked."
+    echo "Fix the issues above or use 'git commit --no-verify' to bypass (not recommended)."
+    exit 1
+  fi
+else
+  echo "WARNING: gitleaks not installed — skipping secrets scan. Install: https://github.com/gitleaks/gitleaks#installing"
+fi
