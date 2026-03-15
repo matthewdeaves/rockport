@@ -471,7 +471,7 @@ cmd_status() {
   # Image model names that fail LiteLLM's built-in health probe (it sends max_tokens which they reject)
   local image_model_pattern="nova-canvas|sd3-5-large|titan-image"
 
-  local healthy unhealthy h_count
+  local healthy unhealthy
   healthy=$(echo "$response" | jq -r '.healthy_endpoints[]?.model // empty')
   unhealthy=$(echo "$response" | jq -r '[.unhealthy_endpoints[]? | select(.model != null)] | map(.model) | .[]')
 
