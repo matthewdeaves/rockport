@@ -3,6 +3,7 @@
 #
 # Allowed paths:
 #   /v1/chat/completions, /v1/messages, /v1/models  — Claude Code inference
+#   /v1/images/generations                           — Image generation
 #   /chat/completions, /completions, /models          — OpenAI-compatible aliases
 #   /v1/completions, /embeddings, /v1/embeddings      — additional API endpoints
 #   /key/*, /user/*, /team/*, /spend/*, /global/spend* — admin CLI management
@@ -21,13 +22,14 @@ resource "cloudflare_ruleset" "waf_block_sensitive" {
     action      = "block"
     enabled     = true
     description = "Block non-allowlisted paths"
-    expression  = join(" and ", [
+    expression = join(" and ", [
       # Not an allowed API inference path
       "not starts_with(http.request.uri.path, \"/v1/chat/completions\")",
       "not starts_with(http.request.uri.path, \"/v1/messages\")",
       "not starts_with(http.request.uri.path, \"/v1/models\")",
       "not starts_with(http.request.uri.path, \"/v1/completions\")",
       "not starts_with(http.request.uri.path, \"/v1/embeddings\")",
+      "not starts_with(http.request.uri.path, \"/v1/images/generations\")",
       "not starts_with(http.request.uri.path, \"/chat/completions\")",
       "not starts_with(http.request.uri.path, \"/completions\")",
       "not starts_with(http.request.uri.path, \"/models\")",

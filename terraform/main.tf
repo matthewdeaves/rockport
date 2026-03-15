@@ -6,11 +6,12 @@ locals {
     ManagedBy = "terraform"
   }
 
-  # Bedrock regions: primary region + all EU regions for cross-region inference profiles.
-  # The eu. prefix on model IDs can route to any EU region.
+  # Bedrock regions: primary region + all EU regions for cross-region inference profiles
+  # + us-west-2 and us-east-1 for image generation models.
+  # The eu. prefix on model IDs can route to ANY EU region, so all must be in IAM policy.
   bedrock_regions = distinct(concat(
     [var.region],
-    ["eu-west-1", "eu-west-2", "eu-west-3", "eu-central-1", "eu-central-2", "eu-north-1", "eu-south-1", "eu-south-2"]
+    ["eu-west-1", "eu-west-2", "eu-west-3", "eu-central-1", "eu-central-2", "eu-north-1", "eu-south-1", "eu-south-2", "us-west-2", "us-east-1"]
   ))
 }
 
@@ -75,13 +76,6 @@ resource "aws_iam_role_policy" "bedrock_invoke" {
           ]
         ])
       },
-      {
-        Effect = "Allow"
-        Action = [
-          "aws-marketplace:ViewSubscriptions"
-        ]
-        Resource = "*"
-      }
     ]
   })
 }
@@ -124,6 +118,10 @@ resource "aws_security_group" "rockport" {
   name        = "rockport-sg"
   description = "Rockport instance - no inbound, all outbound"
   vpc_id      = data.aws_vpc.default.id
+
+  tags = merge(local.common_tags, {
+    Name = "rockport-sg"
+  })
 }
 
 resource "aws_vpc_security_group_egress_rule" "all_outbound" {

@@ -104,8 +104,10 @@ API.
 **Rules:**
 - If LiteLLM can do it, use LiteLLM. Do not write code.
 - LiteLLM's admin UI MUST NOT be enabled.
-- All authenticated users see all configured models. Per-user
-  model restrictions are out of scope.
+- LiteLLM's built-in per-key `models` parameter MAY be used
+  to scope which models a key can access (e.g., restricting
+  Claude Code keys to Anthropic models only). This is native
+  LiteLLM configuration, not custom auth code.
 - Docker on EC2 MAY be used to run LiteLLM for reproducible
   deploys. Bare-metal pip install is also acceptable.
 

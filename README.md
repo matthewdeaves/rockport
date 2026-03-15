@@ -6,7 +6,8 @@ LiteLLM proxy on EC2 that gives Claude Code access to any Bedrock model through 
 
 - Claude Code connects via `ANTHROPIC_BASE_URL` to your own proxy
 - Anthropic (Opus 4.6, Sonnet 4.6, Haiku 4.5), DeepSeek V3.2, Qwen3 Coder 480B, Kimi K2.5, Nova Pro/Lite/Micro on Bedrock
-- Virtual API keys with per-key budgets and rate limits
+- Image generation via OpenAI-compatible `/v1/images/generations` (Nova Canvas, Titan Image v2, SD3.5 Large)
+- Virtual API keys with per-key budgets, rate limits, and model restrictions
 - Zero inbound security group rules — all traffic flows through Cloudflare Tunnel
 - Daily EBS snapshots with 7-day retention
 - Auto-recovery on system failure
@@ -20,7 +21,7 @@ Before you start, you need:
 
 1. **An AWS account** with an IAM user that has admin access (or root credentials for first-time setup)
 2. **A Cloudflare account** with a domain — you'll create an API token and a tunnel
-3. **Bedrock model access** enabled in your chosen AWS region
+3. **Bedrock model access** — chat models auto-enable on first use. Stability AI image models require a one-time Marketplace subscription (use them once in the Bedrock playground to activate)
 
 ### Cloudflare API token
 
@@ -34,7 +35,7 @@ You'll also need your Cloudflare **Zone ID** and **Account ID** (found on the do
 
 ### Bedrock model access
 
-Go to AWS Console > Bedrock > Model access (in your chosen region) and request access to the models you want. At minimum enable Claude Sonnet and Claude Haiku. Model access can take a few minutes to activate.
+Serverless foundation models auto-enable on first invocation. For Stability AI image models (SD3.5 Large), open the model in the Bedrock playground once to trigger the Marketplace subscription. Chat models (Claude, Nova, etc.) work immediately.
 
 ## Setup
 
@@ -121,7 +122,7 @@ Launch Claude Code. Default model routes to Opus 4.6.
 ./scripts/rockport.sh deploy                        # Run terraform apply
 ./scripts/rockport.sh status                        # Health check + model list
 ./scripts/rockport.sh models                        # List available models
-./scripts/rockport.sh key create <name> [--budget N] # Create API key (optional $/day limit)
+./scripts/rockport.sh key create <name> [--budget N] [--claude-only] # Create API key
 ./scripts/rockport.sh key list                      # List all keys with spend
 ./scripts/rockport.sh key info <key>                # Key details + spend
 ./scripts/rockport.sh key revoke <key>              # Revoke a key
@@ -132,7 +133,7 @@ Launch Claude Code. Default model routes to Opus 4.6.
 ./scripts/rockport.sh upgrade                       # Restart LiteLLM (config changes)
 ./scripts/rockport.sh start                         # Start a stopped instance
 ./scripts/rockport.sh stop                          # Stop the instance
-./scripts/rockport.sh setup-claude                  # Create key + show Claude Code config
+./scripts/rockport.sh setup-claude                  # Create Anthropic-only key + Claude Code config
 ./scripts/rockport.sh destroy                       # Tear down everything
 ```
 
@@ -144,7 +145,7 @@ The instance automatically stops after 30 minutes of inactivity to save costs. W
 ./scripts/rockport.sh start
 ```
 
-Services auto-start on boot — LiteLLM and the Cloudflare Tunnel reconnect within ~60 seconds.
+The `start` command waits for the health endpoint to respond, so you know when it's ready. Services auto-start on boot — LiteLLM and the Cloudflare Tunnel reconnect within ~60 seconds.
 
 To disable auto-stop, add to `terraform.tfvars`:
 
@@ -204,15 +205,19 @@ Rockport is designed so that the proxy has no direct internet exposure. Every la
 
 **Localhost-only binding** — LiteLLM listens on `127.0.0.1:4000`, not `0.0.0.0`. Even if the security group were misconfigured, the service would not accept external connections directly.
 
-**Admin UI disabled** — The LiteLLM admin dashboard is disabled via `disable_admin_ui: true` and Swagger/ReDoc docs are disabled via `NO_DOCS=True` / `NO_REDOC=True` environment variables. A Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code and the admin CLI — only `/v1/chat/completions`, `/v1/models`, `/v1/messages`, `/key/*`, `/health/*`, `/spend/*`, and a handful of other operational paths are reachable. Everything else (admin UI, OpenAPI schema, routes list, SSO, SCIM, debug endpoints, etc.) returns 403 at the Cloudflare edge.
+**Admin UI disabled** — The LiteLLM admin dashboard is disabled via `disable_admin_ui: true` and Swagger/ReDoc docs are disabled via `NO_DOCS=True` / `NO_REDOC=True` environment variables. A Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation, and the admin CLI — only `/v1/chat/completions`, `/v1/models`, `/v1/messages`, `/v1/images/generations`, `/key/*`, `/health/*`, `/spend/*`, and a handful of other operational paths are reachable. Everything else (admin UI, OpenAPI schema, routes list, SSO, SCIM, debug endpoints, etc.) returns 403 at the Cloudflare edge.
 
-**Key separation** — The master key (stored in SSM Parameter Store) is only used by the admin CLI. Users get virtual keys with per-key daily budgets and rate limits. Virtual keys can only call model endpoints — they cannot create other keys, view spend, or manage the proxy.
+**Key separation** — The master key (stored in SSM Parameter Store) is only used by the admin CLI. Users get virtual keys with per-key daily budgets and rate limits. Keys created with `--claude-only` (or via `setup-claude`) are restricted to Anthropic models only. Keys without this flag get access to all models including image generation. Virtual keys can only call model endpoints — they cannot create other keys, view spend, or manage the proxy.
 
 **Secrets handling** — The master key and tunnel token are stored as SSM SecureString parameters (encrypted at rest with AWS KMS). The database password is generated on the instance during bootstrap, stored in SSM for recovery, and never appears in logs. Environment files are written with `umask 077` to prevent brief permission windows.
 
 **Systemd hardening** — Both LiteLLM and cloudflared run as dedicated non-root users with `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`, and memory limits. The `litellm` user's home directory is `/var/lib/litellm` (not `/home/litellm`) so prisma cache is accessible under `ProtectHome=yes`.
 
 **IMDSv2 enforced** — The instance metadata service requires session tokens (hop limit 1), preventing SSRF-based credential theft.
+
+**Transport security** — HSTS (6 months max-age) and "Always Use HTTPS" are enabled in Cloudflare, enforcing HTTPS-only access. HTTP requests are redirected with 301.
+
+**Least-privilege IAM** — The deployer IAM policy (`terraform/rockport-deployer-policy.json`) scopes EC2 and SSM mutating actions to resources tagged `Project=rockport`. Read-only Describe actions use `Resource: *` as required by AWS. The instance role is limited to Bedrock invoke and SSM parameter access.
 
 **CI security scanning** — Every push runs Trivy (IaC misconfiguration) and Checkov (policy-as-code) against the Terraform. Skipped checks are documented with justifications in `.checkov.yaml`.
 
