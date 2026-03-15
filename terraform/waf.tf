@@ -6,7 +6,7 @@
 #   /chat/completions, /completions, /models          — OpenAI-compatible aliases
 #   /v1/completions, /embeddings, /v1/embeddings      — additional API endpoints
 #   /key/*, /user/*, /team/*, /spend/*, /global/spend* — admin CLI management
-#   /health/*, /test                                   — health checks
+#   /health                                             — health check (exact match only)
 #   /budget/*                                          — budget management
 #   /model/info, /v1/model/info, /model_group/info     — model metadata
 
@@ -42,9 +42,8 @@ resource "cloudflare_ruleset" "waf_block_sensitive" {
       "not starts_with(http.request.uri.path, \"/model/info\")",
       "not starts_with(http.request.uri.path, \"/v1/model/info\")",
       "not starts_with(http.request.uri.path, \"/model_group/info\")",
-      # Not a health check
-      "not starts_with(http.request.uri.path, \"/health\")",
-      "http.request.uri.path ne \"/test\"",
+      # Not a health check (exact match — /health/readiness etc. leak version info)
+      "http.request.uri.path ne \"/health\"",
     ])
   }]
 }
