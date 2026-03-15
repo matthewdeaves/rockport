@@ -157,7 +157,10 @@
     {
       "Sid": "SSMCommandDocuments",
       "Effect": "Allow",
-      "Action": "ssm:SendCommand",
+      "Action": [
+        "ssm:SendCommand",
+        "ssm:StartSession"
+      ],
       "Resource": "arn:aws:ssm:*::document/*"
     },
     {
