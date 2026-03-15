@@ -461,26 +461,80 @@ EOF
 }
 
 cmd_status() {
-  local url
+  local url key
   url="$(get_tunnel_url)"
+  key="$(get_master_key)"
   echo "Checking health at $url..."
   local response
   response=$(api_call GET "/health") || { echo "Could not reach health endpoint."; return 1; }
 
-  local healthy unhealthy h_count u_count
-  healthy=$(echo "$response" | jq -r '.healthy_endpoints[]?.model // empty')
-  unhealthy=$(echo "$response" | jq -r '.unhealthy_endpoints[]?.model // empty')
+  # Image model names that fail LiteLLM's built-in health probe (it sends max_tokens which they reject)
+  local image_model_pattern="nova-canvas|sd3-5-large|titan-image"
 
-  h_count=$(echo "$healthy" | grep -c . 2>/dev/null || true)
-  echo "Healthy ($h_count):"
+  local healthy unhealthy h_count
+  healthy=$(echo "$response" | jq -r '.healthy_endpoints[]?.model // empty')
+  unhealthy=$(echo "$response" | jq -r '[.unhealthy_endpoints[]? | select(.model != null)] | map(.model) | .[]')
+
+  # Split unhealthy into real failures vs image models needing manual probe
+  local real_unhealthy image_unhealthy
+  real_unhealthy=$(echo "$unhealthy" | grep -vE "$image_model_pattern" 2>/dev/null || true)
+  image_unhealthy=$(echo "$unhealthy" | grep -E "$image_model_pattern" 2>/dev/null || true)
+
+  # Manually probe image models with a real generation request
+  local image_healthy=""
+  local image_failed=""
+  if [[ -n "$image_unhealthy" ]]; then
+    # Map Bedrock model IDs back to LiteLLM model names for the probe
+    while IFS= read -r bedrock_model; do
+      [[ -z "$bedrock_model" ]] && continue
+      local litellm_name=""
+      case "$bedrock_model" in
+        *nova-canvas*)    litellm_name="nova-canvas" ;;
+        *titan-image*)    litellm_name="titan-image-v2" ;;
+        *sd3-5-large*)    litellm_name="sd3.5-large" ;;
+        *)                litellm_name="" ;;
+      esac
+      if [[ -n "$litellm_name" ]]; then
+        # Use smallest valid size per model to minimize cost
+        local probe_size="512x512"
+        [[ "$litellm_name" == "nova-canvas" ]] && probe_size="320x320"
+        local probe_code
+        probe_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$url/v1/images/generations" \
+          -H "Authorization: Bearer $key" \
+          -H "Content-Type: application/json" \
+          -d "{\"model\":\"$litellm_name\",\"prompt\":\"test\",\"n\":1,\"size\":\"$probe_size\"}" \
+          --max-time 30 2>/dev/null) || probe_code="000"
+        if [[ "$probe_code" == "200" ]]; then
+          image_healthy="${image_healthy}${bedrock_model}\n"
+        else
+          image_failed="${image_failed}${bedrock_model}\n"
+        fi
+      fi
+    done <<< "$image_unhealthy"
+  fi
+
+  # Display results
+  # Combine healthy lists
+  local all_healthy
+  all_healthy=$(printf "%s\n%b" "$healthy" "$image_healthy" | grep -c . 2>/dev/null || true)
+  echo "Healthy ($all_healthy):"
   echo "$healthy" | while IFS= read -r m; do
     [[ -n "$m" ]] && echo "  ✓ $m"
   done
+  if [[ -n "$image_healthy" ]]; then
+    printf "%b" "$image_healthy" | while IFS= read -r m; do
+      [[ -n "$m" ]] && echo "  ✓ $m"
+    done
+  fi
 
-  if [[ -n "$unhealthy" ]]; then
-    u_count=$(echo "$unhealthy" | grep -c . 2>/dev/null || true)
+  # Show real failures
+  local all_unhealthy
+  all_unhealthy=$(printf "%s\n%b" "$real_unhealthy" "$image_failed" | sed '/^$/d')
+  if [[ -n "$all_unhealthy" ]]; then
+    local u_count
+    u_count=$(echo "$all_unhealthy" | grep -c . 2>/dev/null || true)
     echo "Unhealthy ($u_count):"
-    echo "$unhealthy" | while IFS= read -r m; do
+    echo "$all_unhealthy" | while IFS= read -r m; do
       [[ -n "$m" ]] && echo "  ✗ $m"
     done
   fi

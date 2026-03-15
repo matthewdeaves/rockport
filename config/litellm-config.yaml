@@ -68,16 +68,22 @@ model_list:
     litellm_params:
       model: bedrock/amazon.nova-canvas-v1:0
       aws_region_name: us-east-1  # Not available in us-west-2; us-east-1 has it
+    model_info:
+      mode: image_generation
 
   - model_name: titan-image-v2
     litellm_params:
       model: bedrock/amazon.titan-image-generator-v2:0
       aws_region_name: us-west-2
+    model_info:
+      mode: image_generation
 
   - model_name: sd3.5-large
     litellm_params:
       model: bedrock/stability.sd3-5-large-v1:0
       aws_region_name: us-west-2
+    model_info:
+      mode: image_generation
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
