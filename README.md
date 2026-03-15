@@ -194,7 +194,7 @@ Image generation uses the OpenAI-compatible `/v1/images/generations` endpoint. P
 |-------|-----------|------------|---------|
 | Nova Canvas | 320–2048 per side | Must be divisible by 64, max 4.1MP total | 1024x1024 |
 | Titan Image v2 | Preset sizes | 256, 512, 768, 1024, 1152, 1408 combinations | 512x512 |
-| SD3.5 Large | Flexible | Max ~1MP total pixels | 1024x1024 |
+| SD3.5 Large | Fixed 1024x1024 | `size` parameter ignored, returns JPEG not PNG | 1024x1024 |
 
 ```bash
 curl -X POST https://<your-domain>/v1/images/generations \
