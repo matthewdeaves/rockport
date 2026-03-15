@@ -3,7 +3,7 @@
 #
 # Allowed paths:
 #   /v1/chat/completions, /v1/messages, /v1/models  — Claude Code inference
-#   /v1/images/generations, /v1/images/edits          — Image generation and editing
+#   /v1/images/generations                           — Image generation (text-to-image + image-to-image)
 #   /chat/completions, /completions, /models          — OpenAI-compatible aliases
 #   /v1/completions, /embeddings, /v1/embeddings      — additional API endpoints
 #   /key/*, /user/*, /team/*, /spend/*, /global/spend* — admin CLI management
@@ -30,7 +30,6 @@ resource "cloudflare_ruleset" "waf_block_sensitive" {
       "not starts_with(http.request.uri.path, \"/v1/completions\")",
       "not starts_with(http.request.uri.path, \"/v1/embeddings\")",
       "not starts_with(http.request.uri.path, \"/v1/images/generations\")",
-      "not starts_with(http.request.uri.path, \"/v1/images/edits\")",
       "not starts_with(http.request.uri.path, \"/chat/completions\")",
       "not starts_with(http.request.uri.path, \"/completions\")",
       "not starts_with(http.request.uri.path, \"/models\")",
