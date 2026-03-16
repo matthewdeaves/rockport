@@ -1,6 +1,6 @@
 # Rockport
 
-LiteLLM proxy on EC2 that gives Claude Code access to any Bedrock model through a single endpoint. Cloudflare Tunnel provides HTTPS ingress with zero inbound ports. Terraform manages everything.
+LiteLLM proxy on EC2 that gives Claude Code access to any Bedrock model — chat, image generation, and video generation — through a single endpoint. Cloudflare Tunnel provides HTTPS ingress with zero inbound ports. Terraform manages everything.
 
 ## Architecture
 
