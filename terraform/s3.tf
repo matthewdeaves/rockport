@@ -7,7 +7,7 @@ provider "aws" {
 }
 
 resource "aws_s3_bucket" "video" {
-  provider = aws.us_east_1
+  provider      = aws.us_east_1
   bucket        = "rockport-video-${data.aws_caller_identity.current.account_id}-us-east-1"
   force_destroy = true
 

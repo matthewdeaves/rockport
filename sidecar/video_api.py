@@ -27,6 +27,9 @@ from pydantic import BaseModel, Field
 
 import db
 
+# Limit Pillow decompression to slightly above 1280x720 to prevent decompression bombs
+Image.MAX_IMAGE_PIXELS = 1280 * 720 * 2
+
 # --- Configuration ---
 
 LITELLM_URL = os.environ.get("LITELLM_URL", "http://127.0.0.1:4000")
@@ -103,21 +106,25 @@ def authenticate(authorization: str = Header(...)) -> dict:
 
 class ShotRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=512)
-    image: str | None = None
+    image: str | None = Field(default=None, max_length=14_000_000)
 
 
 class VideoGenerationRequest(BaseModel):
     prompt: str | None = Field(default=None, min_length=1, max_length=4000)
     duration: int | None = None
-    image: str | None = None
+    image: str | None = Field(default=None, max_length=14_000_000)
     shots: list[ShotRequest] | None = None
     seed: int | None = None
 
 
 # --- Image validation ---
 
-def validate_image(data_uri: str) -> None:
-    """Validate a base64 data URI image is 1280x720 PNG or JPEG."""
+def validate_image(data_uri: str) -> tuple[bytes, str]:
+    """Validate a base64 data URI image is 1280x720 PNG or JPEG.
+
+    Returns (raw_bytes, format_str) where format_str is 'png' or 'jpeg'.
+    If the image has a fully-opaque alpha channel, it is stripped automatically.
+    """
     try:
         if not data_uri.startswith("data:image/"):
             raise ValueError("Must be a data:image/ URI")
@@ -152,6 +159,36 @@ def validate_image(data_uri: str) -> None:
             "error": {"type": "validation_error",
                       "message": f"Image must be 1280x720 (got {img.size[0]}x{img.size[1]})"}
         })
+
+    fmt = img.format  # "PNG" or "JPEG"
+
+    # Alpha channel handling (PNG only — JPEG never has alpha)
+    if img.mode in ("RGBA", "LA", "PA"):
+        alpha = img.getchannel("A")
+        min_alpha = alpha.getextrema()[0]
+        if min_alpha < 255:
+            raise HTTPException(status_code=400, detail={
+                "error": {"type": "validation_error",
+                          "message": f"Image contains transparent pixels (got {img.mode} mode "
+                                     f"with alpha < 255). Nova Reel requires fully opaque images."}
+            })
+        # All pixels fully opaque — strip alpha and re-encode
+        img = img.convert("RGB")
+        buf = io.BytesIO()
+        img.save(buf, format=fmt)
+        raw = buf.getvalue()
+
+    return raw, fmt.lower()  # "png" or "jpeg"
+
+
+def parse_image_data_uri(data_uri: str) -> tuple[str, str]:
+    """Parse and validate a data URI, returning (raw_base64, format_str).
+
+    Calls validate_image for full validation (dimensions, format, alpha),
+    then returns the raw base64 string and format suitable for Bedrock API.
+    """
+    raw_bytes, fmt = validate_image(data_uri)
+    return base64.b64encode(raw_bytes).decode("ascii"), fmt
 
 
 # --- Endpoints ---
@@ -214,9 +251,11 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
                           "message": f"Multi-shot requires 2-20 shots (got {num_shots})."}
             })
         duration = 6 * num_shots
-        for shot in req.shots:
+        # Validate all images upfront (fail-fast) and cache parsed results
+        parsed_images: dict[int, tuple[str, str]] = {}
+        for i, shot in enumerate(req.shots):
             if shot.image:
-                validate_image(shot.image)
+                parsed_images[i] = parse_image_data_uri(shot.image)
         prompt_store = json.dumps([s.prompt for s in req.shots])
     else:
         mode = "single_shot"
@@ -232,8 +271,16 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
                 "error": {"type": "validation_error",
                           "message": f"Duration must be a multiple of 6 seconds (got {duration})."}
             })
+        parsed_image: tuple[str, str] | None = None
         if req.image:
-            validate_image(req.image)
+            if duration != 6:
+                raise HTTPException(status_code=400, detail={
+                    "error": {"type": "validation_error",
+                              "message": "Single-shot with image is fixed at 6 seconds. "
+                                         "Remove 'duration' or set it to 6."}
+                })
+            # Validate and parse now; reuse result in Bedrock payload to avoid double processing
+            parsed_image = parse_image_data_uri(req.image)
         prompt_store = req.prompt
 
     estimated_cost = duration * COST_PER_SECOND
@@ -269,25 +316,26 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
     s3_output_uri = f"s3://{VIDEO_BUCKET}/jobs/{job_id}/"
 
     if mode == "multi_shot":
-        videos = []
-        for shot in req.shots:
-            v = {"text": shot.prompt}
-            if shot.image:
-                v["imageDataURI"] = shot.image
-            videos.append(v)
+        shots_payload = []
+        for i, shot in enumerate(req.shots):
+            s = {"text": shot.prompt}
+            if i in parsed_images:
+                raw_b64, fmt = parsed_images[i]
+                s["image"] = {"format": fmt, "source": {"bytes": raw_b64}}
+            shots_payload.append(s)
         model_input = {
-            "taskType": "TEXT_VIDEO",
-            "textToVideoParams": {"videos": videos},
+            "taskType": "MULTI_SHOT_MANUAL",
+            "multiShotManualParams": {"shots": shots_payload},
             "videoGenerationConfig": {
                 "fps": 24,
-                "durationSeconds": duration,
                 "dimension": "1280x720",
             },
         }
     else:
         text_params = {"text": req.prompt}
-        if req.image:
-            text_params["image"] = req.image
+        if parsed_image:
+            raw_b64, fmt = parsed_image
+            text_params["images"] = [{"format": fmt, "source": {"bytes": raw_b64}}]
         model_input = {
             "taskType": "TEXT_VIDEO",
             "textToVideoParams": text_params,
@@ -311,7 +359,7 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
     except ClientError as e:
         raise HTTPException(status_code=502, detail={
             "error": {"type": "upstream_error",
-                      "message": f"Bedrock error: {e.response['Error']['Message']}"}
+                      "message": "Video generation request failed. Check image format and dimensions."}
         })
 
     invocation_arn = response["invocationArn"]
@@ -367,7 +415,7 @@ def get_video_status(job_id: str, auth: dict = Depends(authenticate)):
                     job["completed_at"] = datetime.now(timezone.utc).isoformat()
 
                 elif bedrock_status == "Failed":
-                    error_msg = bedrock_resp.get("failureMessage", "Video generation failed")
+                    error_msg = "Video generation failed"
                     db.try_fail_job(job_id, error_msg)
                     job["status"] = "failed"
                     job["cost"] = 0

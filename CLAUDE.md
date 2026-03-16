@@ -81,6 +81,9 @@ tests/smoke-test.sh     # Post-deploy verification
 - Cloudflare Tunnel must be configured to route `/v1/videos/*` to `http://localhost:4001` (manual dashboard config step)
 - Video sidecar MemoryMax is 256MB; LiteLLM reduced to 1280MB to fit on t3.small (2GB + 512MB swap)
 - Single-shot (one prompt, 6-120s) and multi-shot (2-20 per-shot prompts, 6s each) modes supported
+- Image-to-video: single-shot with image is fixed at 6s duration; multi-shot uses `MULTI_SHOT_MANUAL` taskType with `multiShotManualParams.shots`
+- Video image requirements: exactly 1280x720, PNG or JPEG, no transparent pixels (opaque alpha channels are automatically stripped), max 10MB, submitted as data URIs
+- Bedrock image format: `{format: "png"|"jpeg", source: {bytes: "<raw-base64>"}}` — data URI prefix must be stripped
 - Per-key concurrent job limit defaults to 3 (configurable via `VIDEO_MAX_CONCURRENT_JOBS` env var)
 - Video sidecar accepted risks: (1) TOCTOU race on concurrent job count and budget — low risk at expected scale (~10-20 jobs/day), would need advisory locks to fully fix; (2) `ListAsyncInvokes` IAM may need `Resource: "*"` — health check will fail if so, fix on first deploy
 - Cloudflare Tunnel routes `/v1/videos*` → `http://localhost:4001` (video sidecar), all other traffic → `http://localhost:4000` (LiteLLM) — managed in `terraform/tunnel.tf`
@@ -88,6 +91,9 @@ tests/smoke-test.sh     # Post-deploy verification
 ## Active Technologies
 - Python 3.11 (already installed on EC2 instance) + FastAPI, uvicorn, boto3, psycopg2 (FastAPI/uvicorn already installed as LiteLLM dependencies; boto3 available via AWS CLI; psycopg2 needs install) (004-video-generation-sidecar)
 - PostgreSQL 15 (existing instance, new `rockport_video_jobs` table) + S3 (new bucket in us-east-1 for video output) (004-video-generation-sidecar)
+- Python 3.11 + FastAPI, boto3, Pillow, psycopg2, pydantic (005-fix-image-to-video)
+- PostgreSQL 15 (existing, no schema changes) (005-fix-image-to-video)
+- Python 3.11 + FastAPI, boto3, Pillow, psycopg2, pydantic (all already installed) (005-fix-image-to-video)
 
 ## Recent Changes
 - 004-video-generation-sidecar: Added Python 3.11 (already installed on EC2 instance) + FastAPI, uvicorn, boto3, psycopg2 (FastAPI/uvicorn already installed as LiteLLM dependencies; boto3 available via AWS CLI; psycopg2 needs install)

@@ -18,6 +18,14 @@ override.tf.json
 # Keep lock file
 !.terraform.lock.hcl
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
 # OS
 .DS_Store
 Thumbs.db
