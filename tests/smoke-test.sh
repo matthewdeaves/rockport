@@ -130,6 +130,34 @@ VIDEO_WAF_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/v1/videos/som
 # /v1/videos/* is allowed by WAF, so this should reach the sidecar (404, not 403)
 [[ "$VIDEO_WAF_CODE" != "403" ]]; check "Video paths not WAF-blocked (HTTP $VIDEO_WAF_CODE)" "$?"
 
+# 15. Video model selection — explicit nova-reel
+echo "15. Video model selection"
+VIDEO_MODEL_SUBMIT=$(curl -s -w "\n%{http_code}" -X POST "$BASE_URL/v1/videos/generations" \
+  -H "Authorization: Bearer $VALID_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"nova-reel","prompt":"a blue sky","duration":6}' \
+  --max-time 30 2>/dev/null)
+VIDEO_MODEL_CODE=$(echo "$VIDEO_MODEL_SUBMIT" | tail -1)
+VIDEO_MODEL_BODY=$(echo "$VIDEO_MODEL_SUBMIT" | sed '$d')
+[[ "$VIDEO_MODEL_CODE" == "202" ]]; check "Explicit nova-reel model returns 202 (HTTP $VIDEO_MODEL_CODE)" "$?"
+echo "$VIDEO_MODEL_BODY" | jq -e '.model == "nova-reel"' >/dev/null 2>&1; check "Response includes model field" "$?"
+
+# 16. Video unknown model rejection
+echo "16. Video unknown model rejection"
+VIDEO_BAD_MODEL_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/videos/generations" \
+  -H "Authorization: Bearer $VALID_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"nonexistent","prompt":"test","duration":6}' \
+  --max-time 10 2>/dev/null)
+[[ "$VIDEO_BAD_MODEL_CODE" == "400" ]]; check "Unknown video model rejected (HTTP $VIDEO_BAD_MODEL_CODE)" "$?"
+
+# 17. Video health shows per-model status
+echo "17. Video per-model health"
+VIDEO_HEALTH_BODY=$(curl -s "$BASE_URL/v1/videos/health" \
+  -H "Authorization: Bearer $VALID_KEY" --max-time 10 2>/dev/null)
+echo "$VIDEO_HEALTH_BODY" | jq -e '.models["nova-reel"]' >/dev/null 2>&1; check "Health includes nova-reel model status" "$?"
+echo "$VIDEO_HEALTH_BODY" | jq -e '.models["luma-ray2"]' >/dev/null 2>&1; check "Health includes luma-ray2 model status" "$?"
+
 # Summary
 echo
 echo "=== Results: $PASS passed, $FAIL failed ==="

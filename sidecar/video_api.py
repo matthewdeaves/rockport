@@ -1,7 +1,8 @@
 """Rockport Video Generation Sidecar API.
 
-FastAPI service that proxies video generation requests to Amazon Nova Reel
-via Bedrock's async invoke API. Runs alongside LiteLLM on the same EC2 instance.
+FastAPI service that proxies video generation requests to Amazon Bedrock
+video models (Nova Reel, Luma Ray2) via the async invoke API. Runs alongside
+LiteLLM on the same EC2 instance.
 
 All endpoints use def (not async def) so FastAPI runs them in a threadpool,
 avoiding event loop blocking from synchronous boto3 and psycopg2 calls.
@@ -27,33 +28,80 @@ from pydantic import BaseModel, Field
 
 import db
 
-# Limit Pillow decompression to slightly above 1280x720 to prevent decompression bombs
-Image.MAX_IMAGE_PIXELS = 1280 * 720 * 2
+# Limit Pillow decompression to accommodate Ray2's 4096x4096 max
+Image.MAX_IMAGE_PIXELS = 4096 * 4096 * 2
 
 # --- Configuration ---
 
 LITELLM_URL = os.environ.get("LITELLM_URL", "http://127.0.0.1:4000")
 MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
-VIDEO_BUCKET = os.environ.get("VIDEO_BUCKET", "")
-VIDEO_MODEL_ID = "amazon.nova-reel-v1:1"
-COST_PER_SECOND = 0.08
 MAX_CONCURRENT_JOBS = int(os.environ.get("VIDEO_MAX_CONCURRENT_JOBS", "3"))
-MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10MB limit for base64 image payloads
 
-# --- Boto3 clients (initialized on startup) ---
+# Per-region S3 buckets (Bedrock async invoke requires same-region bucket)
+VIDEO_BUCKETS = {
+    "us-east-1": os.environ.get("VIDEO_BUCKET", ""),
+    "us-west-2": os.environ.get("VIDEO_BUCKET_US_WEST_2", ""),
+}
 
-bedrock_client = None
-s3_client = None
+# --- Video Model Registry ---
+
+VIDEO_MODELS = {
+    "nova-reel": {
+        "bedrock_model_id": "amazon.nova-reel-v1:1",
+        "region": "us-east-1",
+        "durations": list(range(6, 121, 6)),  # 6, 12, 18, ..., 120
+        "duration_must_be_multiple_of": 6,
+        "resolutions": None,  # fixed 1280x720
+        "aspect_ratios": None,  # fixed 16:9
+        "supports_multi_shot": True,
+        "supports_loop": False,
+        "supports_seed": True,
+        "supports_end_image": False,
+        "cost_per_second": {"default": 0.08},
+        "image_exact_size": (1280, 720),
+        "image_min_size": None,
+        "image_max_size": None,
+        "image_max_bytes": 10 * 1024 * 1024,
+        "default_resolution": None,
+        "default_aspect_ratio": None,
+    },
+    "luma-ray2": {
+        "bedrock_model_id": "luma.ray-v2:0",
+        "region": "us-west-2",
+        "durations": [5, 9],
+        "duration_must_be_multiple_of": None,
+        "resolutions": ["540p", "720p"],
+        "aspect_ratios": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "9:21"],
+        "supports_multi_shot": False,
+        "supports_loop": True,
+        "supports_seed": False,
+        "supports_end_image": True,
+        "cost_per_second": {"540p": 0.75, "720p": 1.50},
+        "image_exact_size": None,
+        "image_min_size": (512, 512),
+        "image_max_size": (4096, 4096),
+        "image_max_bytes": 25 * 1024 * 1024,
+        "default_resolution": "720p",
+        "default_aspect_ratio": "16:9",
+    },
+}
+
+# --- Boto3 clients (initialized on startup, keyed by region) ---
+
+bedrock_clients: dict[str, object] = {}
+s3_clients: dict[str, object] = {}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global bedrock_client, s3_client
     database_url = os.environ.get("DATABASE_URL", "")
     db.init_pool(database_url)
     db.ensure_tables()
-    bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
-    s3_client = boto3.client("s3", region_name="us-east-1", config=BotoConfig(signature_version="s3v4"))
+    # Initialize one Bedrock + S3 client per region used by video models
+    regions = {m["region"] for m in VIDEO_MODELS.values()}
+    for region in regions:
+        bedrock_clients[region] = boto3.client("bedrock-runtime", region_name=region)
+        s3_clients[region] = boto3.client("s3", region_name=region, config=BotoConfig(signature_version="s3v4"))
     yield
     db.close_pool()
 
@@ -110,29 +158,90 @@ class ShotRequest(BaseModel):
 
 
 class VideoGenerationRequest(BaseModel):
-    prompt: str | None = Field(default=None, min_length=1, max_length=4000)
+    model: str | None = None
+    prompt: str | None = Field(default=None, min_length=1, max_length=5000)
     duration: int | None = None
-    image: str | None = Field(default=None, max_length=14_000_000)
+    image: str | None = Field(default=None, max_length=35_000_000)
+    end_image: str | None = Field(default=None, max_length=35_000_000)
     shots: list[ShotRequest] | None = None
     seed: int | None = None
+    aspect_ratio: str | None = None
+    resolution: str | None = None
+    loop: bool | None = None
 
 
 # --- Image validation ---
 
-def validate_image(data_uri: str) -> tuple[bytes, str]:
-    """Validate a base64 data URI image is 1280x720 PNG or JPEG.
+def validate_image_nova_reel(data_uri: str) -> tuple[bytes, str]:
+    """Validate a Nova Reel image: exactly 1280x720, PNG or JPEG, max 10MB.
 
     Returns (raw_bytes, format_str) where format_str is 'png' or 'jpeg'.
     If the image has a fully-opaque alpha channel, it is stripped automatically.
     """
+    max_bytes = VIDEO_MODELS["nova-reel"]["image_max_bytes"]
+    raw, img = _decode_image(data_uri, max_bytes)
+
+    if img.size != (1280, 720):
+        raise HTTPException(status_code=400, detail={
+            "error": {"type": "validation_error",
+                      "message": f"Image must be 1280x720 (got {img.size[0]}x{img.size[1]})"}
+        })
+
+    fmt = img.format
+    # Alpha channel handling (PNG only — JPEG never has alpha)
+    if img.mode in ("RGBA", "LA", "PA"):
+        alpha = img.getchannel("A")
+        min_alpha = alpha.getextrema()[0]
+        if min_alpha < 255:
+            raise HTTPException(status_code=400, detail={
+                "error": {"type": "validation_error",
+                          "message": f"Image contains transparent pixels (got {img.mode} mode "
+                                     f"with alpha < 255). Nova Reel requires fully opaque images."}
+            })
+        img = img.convert("RGB")
+        buf = io.BytesIO()
+        img.save(buf, format=fmt)
+        raw = buf.getvalue()
+
+    return raw, fmt.lower()
+
+
+def validate_image_ray2(data_uri: str) -> tuple[bytes, str]:
+    """Validate a Ray2 image: 512x512 to 4096x4096, PNG or JPEG, max 25MB.
+
+    Returns (raw_bytes, format_str) where format_str is 'png' or 'jpeg'.
+    """
+    model = VIDEO_MODELS["luma-ray2"]
+    max_bytes = model["image_max_bytes"]
+    raw, img = _decode_image(data_uri, max_bytes)
+
+    min_w, min_h = model["image_min_size"]
+    max_w, max_h = model["image_max_size"]
+    w, h = img.size
+    if w < min_w or h < min_h:
+        raise HTTPException(status_code=400, detail={
+            "error": {"type": "validation_error",
+                      "message": f"Image must be at least {min_w}x{min_h} (got {w}x{h})"}
+        })
+    if w > max_w or h > max_h:
+        raise HTTPException(status_code=400, detail={
+            "error": {"type": "validation_error",
+                      "message": f"Image must be at most {max_w}x{max_h} (got {w}x{h})"}
+        })
+
+    return raw, img.format.lower()
+
+
+def _decode_image(data_uri: str, max_bytes: int) -> tuple[bytes, Image.Image]:
+    """Decode a data URI into raw bytes and a PIL Image. Validates format is PNG or JPEG."""
     try:
         if not data_uri.startswith("data:image/"):
             raise ValueError("Must be a data:image/ URI")
         header, b64data = data_uri.split(",", 1)
-        if len(b64data) > MAX_IMAGE_BYTES * 4 // 3:  # base64 expansion ratio
+        if len(b64data) > max_bytes * 4 // 3:
             raise ValueError("Image too large")
         raw = base64.b64decode(b64data)
-        if len(raw) > MAX_IMAGE_BYTES:
+        if len(raw) > max_bytes:
             raise ValueError("Image too large")
     except (ValueError, Exception) as e:
         raise HTTPException(status_code=400, detail={
@@ -142,7 +251,7 @@ def validate_image(data_uri: str) -> tuple[bytes, str]:
 
     try:
         img = Image.open(io.BytesIO(raw))
-        img.load()  # Force decode to catch truncated images
+        img.load()
     except Exception:
         raise HTTPException(status_code=400, detail={
             "error": {"type": "validation_error",
@@ -154,51 +263,42 @@ def validate_image(data_uri: str) -> tuple[bytes, str]:
             "error": {"type": "validation_error",
                       "message": f"Image must be PNG or JPEG (got {img.format})"}
         })
-    if img.size != (1280, 720):
-        raise HTTPException(status_code=400, detail={
-            "error": {"type": "validation_error",
-                      "message": f"Image must be 1280x720 (got {img.size[0]}x{img.size[1]})"}
-        })
 
-    fmt = img.format  # "PNG" or "JPEG"
-
-    # Alpha channel handling (PNG only — JPEG never has alpha)
-    if img.mode in ("RGBA", "LA", "PA"):
-        alpha = img.getchannel("A")
-        min_alpha = alpha.getextrema()[0]
-        if min_alpha < 255:
-            raise HTTPException(status_code=400, detail={
-                "error": {"type": "validation_error",
-                          "message": f"Image contains transparent pixels (got {img.mode} mode "
-                                     f"with alpha < 255). Nova Reel requires fully opaque images."}
-            })
-        # All pixels fully opaque — strip alpha and re-encode
-        img = img.convert("RGB")
-        buf = io.BytesIO()
-        img.save(buf, format=fmt)
-        raw = buf.getvalue()
-
-    return raw, fmt.lower()  # "png" or "jpeg"
+    return raw, img
 
 
-def parse_image_data_uri(data_uri: str) -> tuple[str, str]:
-    """Parse and validate a data URI, returning (raw_base64, format_str).
-
-    Calls validate_image for full validation (dimensions, format, alpha),
-    then returns the raw base64 string and format suitable for Bedrock API.
-    """
-    raw_bytes, fmt = validate_image(data_uri)
+def parse_nova_reel_image(data_uri: str) -> tuple[str, str]:
+    """Parse and validate a Nova Reel image, returning (raw_base64, format_str)."""
+    raw_bytes, fmt = validate_image_nova_reel(data_uri)
     return base64.b64encode(raw_bytes).decode("ascii"), fmt
+
+
+def parse_ray2_image(data_uri: str) -> tuple[str, str]:
+    """Parse and validate a Ray2 image, returning (raw_base64, media_type)."""
+    raw_bytes, fmt = validate_image_ray2(data_uri)
+    media_type = "image/jpeg" if fmt == "jpeg" else "image/png"
+    return base64.b64encode(raw_bytes).decode("ascii"), media_type
+
+
+# --- Cost calculation ---
+
+def calculate_cost(model_name: str, duration: int, resolution: str | None = None) -> float:
+    """Calculate cost for a video job based on model and resolution."""
+    model = VIDEO_MODELS[model_name]
+    pricing = model["cost_per_second"]
+    if "default" in pricing:
+        return duration * pricing["default"]
+    # Resolution-dependent pricing (Ray2)
+    res = resolution or model["default_resolution"]
+    return duration * pricing.get(res, 0)
 
 
 # --- Endpoints ---
 
 @app.get("/v1/videos/health")
 def health():
-    """Health check — verifies DB connectivity and Bedrock reachability."""
+    """Health check — verifies DB connectivity and per-model Bedrock reachability."""
     db_ok = False
-    bedrock_ok = False
-
     try:
         with db._get_conn() as conn:
             with conn.cursor() as cur:
@@ -207,20 +307,29 @@ def health():
     except Exception:
         pass
 
-    try:
-        bedrock_client.list_async_invokes(maxResults=1)
-        bedrock_ok = True
-    except Exception:
-        pass
+    models_status = {}
+    any_model_ok = False
+    for name, model in VIDEO_MODELS.items():
+        region = model["region"]
+        client = bedrock_clients.get(region)
+        ok = False
+        if client:
+            try:
+                client.list_async_invokes(maxResults=1)
+                ok = True
+                any_model_ok = True
+            except Exception:
+                pass
+        models_status[name] = {"status": "healthy" if ok else "unavailable", "region": region}
 
-    status = "healthy" if (db_ok and bedrock_ok) else "unhealthy"
-    code = 200 if status == "healthy" else 503
+    overall = "healthy" if (db_ok and any_model_ok) else "unhealthy"
+    code = 200 if overall == "healthy" else 503
     return JSONResponse(
         status_code=code,
         content={
-            "status": status,
+            "status": overall,
             "database": "connected" if db_ok else "disconnected",
-            "bedrock": "reachable" if bedrock_ok else "unreachable",
+            "models": models_status,
         },
     )
 
@@ -229,6 +338,15 @@ def health():
 def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)):
     """Submit a video generation job (single-shot or multi-shot)."""
     key_hash = auth["key_hash"]
+
+    # --- Resolve model ---
+    model_name = req.model or "nova-reel"
+    if model_name not in VIDEO_MODELS:
+        raise HTTPException(status_code=400, detail={
+            "error": {"type": "validation_error",
+                      "message": f"Unknown model '{model_name}'. Available: {', '.join(VIDEO_MODELS.keys())}"}
+        })
+    model = VIDEO_MODELS[model_name]
 
     # --- Determine mode and validate ---
     if req.prompt and req.shots:
@@ -242,7 +360,13 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
                       "message": "Must provide either 'prompt' (single-shot) or 'shots' (multi-shot)."}
         })
 
+    # --- Multi-shot validation ---
     if req.shots:
+        if not model["supports_multi_shot"]:
+            raise HTTPException(status_code=400, detail={
+                "error": {"type": "validation_error",
+                          "message": f"Multi-shot mode is not supported by {model_name}. Use nova-reel instead."}
+            })
         mode = "multi_shot"
         num_shots = len(req.shots)
         if num_shots < 2 or num_shots > 20:
@@ -251,39 +375,80 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
                           "message": f"Multi-shot requires 2-20 shots (got {num_shots})."}
             })
         duration = 6 * num_shots
-        # Validate all images upfront (fail-fast) and cache parsed results
         parsed_images: dict[int, tuple[str, str]] = {}
         for i, shot in enumerate(req.shots):
             if shot.image:
-                parsed_images[i] = parse_image_data_uri(shot.image)
+                parsed_images[i] = parse_nova_reel_image(shot.image)
         prompt_store = json.dumps([s.prompt for s in req.shots])
+        resolution = None
     else:
         mode = "single_shot"
         num_shots = 1
-        duration = req.duration or 6
-        if duration < 6 or duration > 120:
-            raise HTTPException(status_code=400, detail={
-                "error": {"type": "validation_error",
-                          "message": f"Duration must be 6-120 seconds (got {duration})."}
-            })
-        if duration % 6 != 0:
-            raise HTTPException(status_code=400, detail={
-                "error": {"type": "validation_error",
-                          "message": f"Duration must be a multiple of 6 seconds (got {duration})."}
-            })
-        parsed_image: tuple[str, str] | None = None
-        if req.image:
-            if duration != 6:
+        duration = req.duration or (model["durations"][0] if model["durations"] else 6)
+
+        # Duration validation
+        if duration not in model["durations"]:
+            if model["duration_must_be_multiple_of"]:
+                low, high = model["durations"][0], model["durations"][-1]
+                mult = model["duration_must_be_multiple_of"]
                 raise HTTPException(status_code=400, detail={
                     "error": {"type": "validation_error",
-                              "message": "Single-shot with image is fixed at 6 seconds. "
-                                         "Remove 'duration' or set it to 6."}
+                              "message": f"Duration must be {low}-{high} seconds and a multiple of {mult} (got {duration})."}
                 })
-            # Validate and parse now; reuse result in Bedrock payload to avoid double processing
-            parsed_image = parse_image_data_uri(req.image)
+            else:
+                raise HTTPException(status_code=400, detail={
+                    "error": {"type": "validation_error",
+                              "message": f"Duration must be one of {model['durations']} seconds for {model_name} (got {duration})."}
+                })
+
+        # Ray2-specific: aspect_ratio, resolution
+        resolution = None
+        if model["resolutions"]:
+            resolution = req.resolution or model["default_resolution"]
+            if resolution not in model["resolutions"]:
+                raise HTTPException(status_code=400, detail={
+                    "error": {"type": "validation_error",
+                              "message": f"Resolution must be one of {model['resolutions']} for {model_name} (got {resolution})."}
+                })
+        if model["aspect_ratios"]:
+            aspect_ratio = req.aspect_ratio or model["default_aspect_ratio"]
+            if aspect_ratio not in model["aspect_ratios"]:
+                raise HTTPException(status_code=400, detail={
+                    "error": {"type": "validation_error",
+                              "message": f"Aspect ratio must be one of {model['aspect_ratios']} for {model_name} (got {req.aspect_ratio})."}
+                })
+        else:
+            aspect_ratio = None
+
+        # end_image validation
+        if req.end_image and not model["supports_end_image"]:
+            raise HTTPException(status_code=400, detail={
+                "error": {"type": "validation_error",
+                          "message": f"End image (end_image) is not supported by {model_name}. Use luma-ray2 instead."}
+            })
+
+        # Image validation (model-specific)
+        parsed_image: tuple[str, str] | None = None
+        parsed_end_image: tuple[str, str] | None = None
+
+        if model_name == "nova-reel":
+            if req.image:
+                if duration != 6:
+                    raise HTTPException(status_code=400, detail={
+                        "error": {"type": "validation_error",
+                                  "message": "Single-shot with image is fixed at 6 seconds. "
+                                             "Remove 'duration' or set it to 6."}
+                    })
+                parsed_image = parse_nova_reel_image(req.image)
+        elif model_name == "luma-ray2":
+            if req.image:
+                parsed_image = parse_ray2_image(req.image)
+            if req.end_image:
+                parsed_end_image = parse_ray2_image(req.end_image)
+
         prompt_store = req.prompt
 
-    estimated_cost = duration * COST_PER_SECOND
+    estimated_cost = calculate_cost(model_name, duration, resolution)
 
     # --- Budget enforcement ---
     max_budget = auth.get("max_budget")
@@ -313,8 +478,52 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
 
     # --- Build Bedrock request ---
     job_id = uuid.uuid4()
-    s3_output_uri = f"s3://{VIDEO_BUCKET}/jobs/{job_id}/"
+    region = model["region"]
+    bucket = VIDEO_BUCKETS.get(region, "")
+    s3_output_uri = f"s3://{bucket}/jobs/{job_id}/"
 
+    if model_name == "nova-reel":
+        model_input = _build_nova_reel_payload(req, mode, duration, parsed_images if req.shots else {},
+                                                parsed_image if not req.shots else None)
+    elif model_name == "luma-ray2":
+        model_input = _build_ray2_payload(req.prompt, duration, aspect_ratio, resolution,
+                                           req.loop, parsed_image, parsed_end_image)
+
+    # --- Call Bedrock ---
+    client = bedrock_clients[region]
+    try:
+        response = client.start_async_invoke(
+            modelId=model["bedrock_model_id"],
+            modelInput=model_input,
+            outputDataConfig={"s3OutputDataConfig": {"s3Uri": s3_output_uri}},
+        )
+    except ClientError:
+        raise HTTPException(status_code=502, detail={
+            "error": {"type": "upstream_error",
+                      "message": "Video generation request failed. Check image format and dimensions."}
+        })
+
+    invocation_arn = response["invocationArn"]
+
+    # --- Store job ---
+    job = db.insert_job(
+        job_id=job_id,
+        api_key_hash=key_hash,
+        invocation_arn=invocation_arn,
+        model=model_name,
+        mode=mode,
+        prompt=prompt_store,
+        num_shots=num_shots,
+        duration_seconds=duration,
+        cost=estimated_cost,
+        resolution=resolution,
+    )
+
+    return job
+
+
+def _build_nova_reel_payload(req, mode, duration, parsed_images, parsed_image):
+    """Build Nova Reel modelInput payload."""
     if mode == "multi_shot":
         shots_payload = []
         for i, shot in enumerate(req.shots):
@@ -349,33 +558,40 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
     if req.seed is not None:
         model_input["videoGenerationConfig"]["seed"] = req.seed
 
-    # --- Call Bedrock ---
-    try:
-        response = bedrock_client.start_async_invoke(
-            modelId=VIDEO_MODEL_ID,
-            modelInput=model_input,
-            outputDataConfig={"s3OutputDataConfig": {"s3Uri": s3_output_uri}},
-        )
-    except ClientError as e:
-        raise HTTPException(status_code=502, detail={
-            "error": {"type": "upstream_error",
-                      "message": "Video generation request failed. Check image format and dimensions."}
-        })
+    return model_input
 
-    invocation_arn = response["invocationArn"]
 
-    # --- Store job ---
-    job = db.insert_job(
-        job_id=job_id,
-        api_key_hash=key_hash,
-        invocation_arn=invocation_arn,
-        mode=mode,
-        prompt=prompt_store,
-        num_shots=num_shots,
-        duration_seconds=duration,
-    )
+def _build_ray2_payload(prompt, duration, aspect_ratio, resolution, loop, parsed_image, parsed_end_image):
+    """Build Luma Ray2 modelInput payload."""
+    model_input = {
+        "prompt": prompt,
+        "duration": f"{duration}s",
+    }
+    if aspect_ratio:
+        model_input["aspect_ratio"] = aspect_ratio
+    if resolution:
+        model_input["resolution"] = resolution
+    if loop:
+        model_input["loop"] = True
 
-    return job
+    # Keyframes for image-to-video
+    if parsed_image:
+        raw_b64, media_type = parsed_image
+        keyframes = {
+            "frame0": {
+                "type": "image",
+                "source": {"type": "base64", "media_type": media_type, "data": raw_b64},
+            }
+        }
+        if parsed_end_image:
+            end_b64, end_media = parsed_end_image
+            keyframes["frame1"] = {
+                "type": "image",
+                "source": {"type": "base64", "media_type": end_media, "data": end_b64},
+            }
+        model_input["keyframes"] = keyframes
+
+    return model_input
 
 
 @app.get("/v1/videos/generations/{job_id}")
@@ -387,54 +603,65 @@ def get_video_status(job_id: str, auth: dict = Depends(authenticate)):
             "error": {"type": "not_found", "message": "Job not found"}
         })
 
-    # For in-progress jobs, always re-poll Bedrock (ensures restart recovery per SC-007)
+    # For in-progress jobs, always re-poll Bedrock
     if job["status"] == "in_progress":
         row = db.get_job_internals(job_id)
         if row:
-            invocation_arn, duration_seconds, mode, created_at = row
-            try:
-                bedrock_resp = bedrock_client.get_async_invoke(invocationArn=invocation_arn)
-                bedrock_status = bedrock_resp["status"]
+            invocation_arn, duration_seconds, mode, created_at, job_model, job_resolution = row
+            model = VIDEO_MODELS.get(job_model, VIDEO_MODELS["nova-reel"])
+            region = model["region"]
+            client = bedrock_clients.get(region)
+            if client:
+                try:
+                    bedrock_resp = client.get_async_invoke(invocationArn=invocation_arn)
+                    bedrock_status = bedrock_resp["status"]
 
-                if bedrock_status == "Completed":
-                    s3_uri = bedrock_resp["outputDataConfig"]["s3OutputDataConfig"]["s3Uri"]
-                    cost = float(duration_seconds * COST_PER_SECOND)
-                    # Atomic CAS: only one poller processes the transition
-                    if db.try_complete_job(job_id, s3_uri):
-                        db.log_spend(
-                            api_key_hash=auth["key_hash"],
-                            job_id=job_id,
-                            cost=cost,
-                            duration_seconds=duration_seconds,
-                            mode=mode,
-                            start_time=created_at,
-                        )
-                    job["status"] = "completed"
-                    job["cost"] = cost
-                    job["s3_uri"] = s3_uri
-                    job["completed_at"] = datetime.now(timezone.utc).isoformat()
+                    if bedrock_status == "Completed":
+                        s3_uri = bedrock_resp["outputDataConfig"]["s3OutputDataConfig"]["s3Uri"]
+                        cost = calculate_cost(job_model, duration_seconds, job_resolution)
+                        if db.try_complete_job(job_id, s3_uri):
+                            db.log_spend(
+                                api_key_hash=auth["key_hash"],
+                                job_id=job_id,
+                                cost=cost,
+                                duration_seconds=duration_seconds,
+                                mode=mode,
+                                model=job_model,
+                                start_time=created_at,
+                            )
+                        job["status"] = "completed"
+                        job["cost"] = cost
+                        job["s3_uri"] = s3_uri
+                        job["completed_at"] = datetime.now(timezone.utc).isoformat()
 
-                elif bedrock_status == "Failed":
-                    error_msg = "Video generation failed"
-                    db.try_fail_job(job_id, error_msg)
-                    job["status"] = "failed"
-                    job["cost"] = 0
-                    job["error"] = error_msg
-                    job["completed_at"] = datetime.now(timezone.utc).isoformat()
+                    elif bedrock_status == "Failed":
+                        error_msg = "Video generation failed"
+                        db.try_fail_job(job_id, error_msg)
+                        job["status"] = "failed"
+                        job["cost"] = 0
+                        job["error"] = error_msg
+                        job["completed_at"] = datetime.now(timezone.utc).isoformat()
 
-            except ClientError:
-                pass  # Leave as in_progress, will retry on next poll
+                except ClientError:
+                    pass
 
     # Generate presigned URL for completed jobs
-    # Bedrock writes output under a random subdirectory: s3://bucket/jobs/{id}/{random}/output.mp4
     if job["status"] == "completed" and job.get("s3_uri"):
         s3_uri = job["s3_uri"]
         bucket = s3_uri.split("/")[2]
         key_prefix = "/".join(s3_uri.split("/")[3:])
 
+        # Determine correct S3 client from bucket name
+        s3 = None
+        for region, client in s3_clients.items():
+            if VIDEO_BUCKETS.get(region) == bucket:
+                s3 = client
+                break
+        if not s3:
+            s3 = list(s3_clients.values())[0]  # fallback
+
         try:
-            # Find output.mp4 under the prefix (Bedrock adds a random subdirectory)
-            resp = s3_client.list_objects_v2(Bucket=bucket, Prefix=key_prefix, MaxKeys=10)
+            resp = s3.list_objects_v2(Bucket=bucket, Prefix=key_prefix, MaxKeys=10)
             mp4_key = None
             for obj in resp.get("Contents", []):
                 if obj["Key"].endswith("/output.mp4"):
@@ -442,7 +669,7 @@ def get_video_status(job_id: str, auth: dict = Depends(authenticate)):
                     break
 
             if mp4_key:
-                url = s3_client.generate_presigned_url(
+                url = s3.generate_presigned_url(
                     "get_object",
                     Params={"Bucket": bucket, "Key": mp4_key},
                     ExpiresIn=3600,
@@ -454,9 +681,8 @@ def get_video_status(job_id: str, auth: dict = Depends(authenticate)):
                 job["status"] = "expired"
                 job["error"] = "Video file has been deleted (7-day retention period expired)"
         except ClientError:
-            pass  # Transient S3 error — omit URL, don't mark expired
+            pass
 
-    # Clean up internal fields
     job.pop("s3_uri", None)
     return job
 

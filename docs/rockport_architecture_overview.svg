@@ -97,7 +97,7 @@
   <rect x="652" y="214" width="174" height="72" rx="4" fill="#0f1820" stroke="#58a6ff" stroke-width="1.5"/>
   <text x="739" y="234" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="bold">Video Sidecar</text>
   <text x="739" y="250" text-anchor="middle" fill="#8b949e" font-size="9">localhost:4001</text>
-  <text x="739" y="264" text-anchor="middle" fill="#8b949e" font-size="9">Nova Reel async invoke</text>
+  <text x="739" y="264" text-anchor="middle" fill="#8b949e" font-size="9">Nova Reel + Luma Ray2</text>
   <text x="739" y="278" text-anchor="middle" fill="#8b949e" font-size="9">256MB MemoryMax</text>
 
   <!-- PostgreSQL -->
@@ -139,7 +139,7 @@
   <rect x="1104" y="304" width="230" height="60" rx="3" fill="#111827" stroke="#58a6ff" stroke-width="1"/>
   <text x="1219" y="323" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="bold">S3</text>
   <text x="1219" y="339" text-anchor="middle" fill="#8b949e" font-size="9">Terraform state bucket (eu-west-2)</text>
-  <text x="1219" y="353" text-anchor="middle" fill="#8b949e" font-size="9">Video output bucket (us-east-1 · 7-day lifecycle)</text>
+  <text x="1219" y="353" text-anchor="middle" fill="#8b949e" font-size="9">Video buckets (us-east-1 + us-west-2 · 7-day lifecycle)</text>
 
   <!-- AWS Budgets + SNS -->
   <rect x="876" y="374" width="458" height="60" rx="3" fill="#111827" stroke="#e3b341" stroke-width="1"/>
@@ -206,7 +206,7 @@
   <text x="1486" y="366" text-anchor="middle" fill="#8b949e" font-size="8">video gen (async → S3)</text>
 
   <!-- us-west-2 -->
-  <rect x="1586" y="262" width="188" height="124" rx="3" fill="#0a1a10" stroke="#3fb950" stroke-width="1" stroke-dasharray="3,2"/>
+  <rect x="1586" y="262" width="188" height="170" rx="3" fill="#0a1a10" stroke="#3fb950" stroke-width="1" stroke-dasharray="3,2"/>
   <text x="1598" y="278" fill="#3fb950" font-size="8" opacity="0.8">us-west-2</text>
   <rect x="1596" y="284" width="168" height="40" rx="3" fill="#0f2018" stroke="#3fb950" stroke-width="1"/>
   <text x="1680" y="300" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="bold">titan-image-generator-v2</text>
@@ -214,6 +214,9 @@
   <rect x="1596" y="334" width="168" height="40" rx="3" fill="#0f2018" stroke="#3fb950" stroke-width="1"/>
   <text x="1680" y="350" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="bold">stable-diffusion-3.5-large</text>
   <text x="1680" y="364" text-anchor="middle" fill="#8b949e" font-size="8">image generation</text>
+  <rect x="1596" y="384" width="168" height="40" rx="3" fill="#0f2018" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="1680" y="400" text-anchor="middle" fill="#58a6ff" font-size="9" font-weight="bold">luma-ray2</text>
+  <text x="1680" y="414" text-anchor="middle" fill="#8b949e" font-size="8">video gen (async → S3)</text>
 
   <!-- ═══════════════════════════════════════════════════════════ -->
   <!-- ZONE: ADMIN (bottom) -->

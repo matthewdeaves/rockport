@@ -19,6 +19,11 @@ output "ssm_connect_command" {
 }
 
 output "video_bucket_name" {
-  description = "S3 bucket for video generation output"
+  description = "S3 bucket for video generation output (us-east-1, Nova Reel)"
   value       = aws_s3_bucket.video.id
+}
+
+output "video_bucket_us_west_2_name" {
+  description = "S3 bucket for video generation output (us-west-2, Luma Ray2)"
+  value       = aws_s3_bucket.video_us_west_2.id
 }

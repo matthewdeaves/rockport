@@ -5,7 +5,7 @@ Requires=postgresql.service
 
 [Service]
 Type=simple
-ExecStartPre=/bin/bash -c 'for i in $(seq 1 60); do curl -sf http://127.0.0.1:4000/health/readiness >/dev/null 2>&1 && exit 0; sleep 5; done; echo "LiteLLM not ready after 5min"; exit 1'
+ExecStartPre=/bin/bash -c 'for i in $(seq 1 204); do curl -sf http://127.0.0.1:4000/health/readiness >/dev/null 2>&1 && exit 0; sleep 5; done; echo "LiteLLM not ready after 17min"; exit 1'
 ExecStart=/usr/local/bin/uvicorn video_api:app --host 127.0.0.1 --port 4001
 WorkingDirectory=/opt/rockport-video
 EnvironmentFile=/etc/litellm/env
@@ -14,7 +14,7 @@ Restart=always
 RestartSec=5
 KillMode=mixed
 KillSignal=SIGTERM
-TimeoutStartSec=360
+TimeoutStartSec=1080
 TimeoutStopSec=15
 User=litellm
 Group=litellm

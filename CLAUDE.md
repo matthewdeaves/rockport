@@ -75,20 +75,22 @@ tests/smoke-test.sh     # Post-deploy verification
 - Deployer IAM is split into 3 policies under `terraform/deployer-policies/` (compute, iam-ssm, monitoring-storage) to stay under the 6144-byte per-policy limit while keeping all actions explicit (no wildcards). EC2/SSM mutating actions scoped to `aws:ResourceTag/Project=rockport`
 - Admin IAM policy (`terraform/rockport-admin-policy.json`) is a one-time bootstrap: must be created and attached to the admin user via the AWS console (root account) before first `init`. After that, `init` self-manages it.
 - HSTS and "Always Use HTTPS" are enabled in Cloudflare (not managed by Terraform)
-- Video generation: Nova Reel v1.1 via sidecar FastAPI service on port 4001, us-east-1 only, fixed 1280x720 24fps MP4, duration must be multiple of 6 (6-120s), $0.08/second
+- Video generation: multi-model sidecar on port 4001 supporting Nova Reel v1.1 (us-east-1, 1280x720, 6-120s, $0.08/s) and Luma Ray2 (us-west-2, 540p/720p, 5s/9s, $0.75-1.50/s). Model selected via `model` field, defaults to `nova-reel`
 - Video sidecar authenticates via LiteLLM's `/key/info` endpoint; writes spend to `LiteLLM_SpendLogs` + `LiteLLM_VerificationToken` for unified tracking
-- Video output stored in S3 bucket `rockport-video-{account}-us-east-1` with 7-day lifecycle; presigned URLs expire after 1 hour
+- Video output stored in per-region S3 buckets (`rockport-video-{account}-us-east-1` for Nova Reel, `rockport-video-{account}-us-west-2` for Ray2) with 7-day lifecycle; presigned URLs expire after 1 hour. Bedrock async invoke requires same-region S3 bucket
 - Cloudflare Tunnel routes `/v1/videos/*` to `http://localhost:4001` — managed in `terraform/tunnel.tf`
 - Video sidecar MemoryMax is 256MB; LiteLLM reduced to 1280MB to fit on t3.small (2GB + 512MB swap)
 - Single-shot (one prompt, 6-120s) and multi-shot (2-20 per-shot prompts, 6s each) modes supported
 - Image-to-video: single-shot with image is fixed at 6s duration; multi-shot uses `MULTI_SHOT_MANUAL` taskType with `multiShotManualParams.shots`
-- Video image requirements: exactly 1280x720, PNG or JPEG, no transparent pixels (opaque alpha channels are automatically stripped), max 10MB, submitted as data URIs
-- Bedrock image format: `{format: "png"|"jpeg", source: {bytes: "<raw-base64>"}}` — data URI prefix must be stripped
+- Nova Reel image requirements: exactly 1280x720, PNG or JPEG, no transparent pixels (opaque alpha channels are automatically stripped), max 10MB, submitted as data URIs. Bedrock format: `{format: "png"|"jpeg", source: {bytes: "<raw-base64>"}}`
+- Ray2 image requirements: 512x512 to 4096x4096, PNG or JPEG, max 25MB, data URIs. Bedrock format: `keyframes.frame0/frame1` with `{type: "image", source: {type: "base64", media_type, data}}`. Supports start + optional end frame
+- Ray2 extra params: `aspect_ratio` (7 options), `resolution` (540p/720p), `loop` (bool). No multi-shot, no seed. Requires Marketplace subscription
+- Luma Ray2 Marketplace subscription must be activated manually before first use (same pattern as SD3.5 Large)
 - Per-key concurrent job limit defaults to 3 (configurable via `VIDEO_MAX_CONCURRENT_JOBS` env var)
 - Video sidecar accepted risks: (1) TOCTOU race on concurrent job count and budget — low risk at expected scale (~10-20 jobs/day), would need advisory locks to fully fix; (2) `ListAsyncInvokes` IAM may need `Resource: "*"` — health check will fail if so, fix on first deploy
 ## Active Technologies
 - Terraform (AWS provider, Cloudflare provider) — all infrastructure
-- Python 3.11 + FastAPI, uvicorn, boto3, Pillow, psycopg2, pydantic — video sidecar
-- PostgreSQL 15 — LiteLLM keys/spend + video job tracking (`rockport_video_jobs` table)
-- S3 — Terraform state (eu-west-2) + video output (us-east-1, 7-day lifecycle)
+- Python 3.11 + FastAPI, uvicorn, boto3, Pillow, psycopg2, pydantic — video sidecar (multi-region clients for us-east-1 + us-west-2)
+- PostgreSQL 15 — LiteLLM keys/spend + video job tracking (`rockport_video_jobs` table with `model` column)
+- S3 — Terraform state (eu-west-2) + video output (us-east-1 for Nova Reel, us-west-2 for Ray2, both 7-day lifecycle)
 - Bash — admin CLI, bootstrap, smoke tests

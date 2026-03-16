@@ -538,10 +538,11 @@ cmd_status() {
       echo "Video sidecar: healthy"
     else
       echo "Video sidecar: unhealthy"
-      echo "$video_health" | jq -r '
-        "  database: \(.database // "unknown")",
-        "  bedrock:  \(.bedrock // "unknown")"' 2>/dev/null
     fi
+    # Show per-model video status
+    echo "$video_health" | jq -r '
+      .models // {} | to_entries[] |
+      "  video/\(.key): \(.value.status) (\(.value.region))"' 2>/dev/null
   else
     echo "Video sidecar: not reachable"
   fi

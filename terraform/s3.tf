@@ -1,9 +1,15 @@
-# S3 bucket for video generation output (Nova Reel writes directly to S3).
-# Must be in us-east-1 because Nova Reel is only available there.
+# S3 buckets for video generation output.
+# Each video model requires its bucket to be in the same region as the Bedrock endpoint.
+# Nova Reel: us-east-1, Luma Ray2: us-west-2.
 
 provider "aws" {
   alias  = "us_east_1"
   region = "us-east-1"
+}
+
+provider "aws" {
+  alias  = "us_west_2"
+  region = "us-west-2"
 }
 
 resource "aws_s3_bucket" "video" {
@@ -65,6 +71,94 @@ resource "aws_s3_bucket_policy" "video" {
 resource "aws_s3_bucket_lifecycle_configuration" "video" {
   provider = aws.us_east_1
   bucket   = aws_s3_bucket.video.id
+
+  rule {
+    id     = "delete-old-videos"
+    status = "Enabled"
+
+    filter {
+      prefix = "jobs/"
+    }
+
+    expiration {
+      days = 7
+    }
+  }
+
+  rule {
+    id     = "abort-incomplete-uploads"
+    status = "Enabled"
+
+    filter {}
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 1
+    }
+  }
+}
+
+# --- us-west-2 video bucket (Luma Ray2) ---
+# Mirrors us-east-1 bucket security: SSE-S3, public access blocked, DenyNonSSL, 7-day lifecycle.
+
+resource "aws_s3_bucket" "video_us_west_2" {
+  provider      = aws.us_west_2
+  bucket        = "rockport-video-${data.aws_caller_identity.current.account_id}-us-west-2"
+  force_destroy = true
+
+  tags = merge(local.common_tags, {
+    Name = "rockport-video-us-west-2"
+  })
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "video_us_west_2" {
+  provider = aws.us_west_2
+  bucket   = aws_s3_bucket.video_us_west_2.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+    bucket_key_enabled = true
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "video_us_west_2" {
+  provider = aws.us_west_2
+  bucket   = aws_s3_bucket.video_us_west_2.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_policy" "video_us_west_2" {
+  provider = aws.us_west_2
+  bucket   = aws_s3_bucket.video_us_west_2.id
+
+  depends_on = [aws_s3_bucket_public_access_block.video_us_west_2]
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "DenyNonSSL"
+      Effect    = "Deny"
+      Principal = "*"
+      Action    = "s3:*"
+      Resource = [
+        aws_s3_bucket.video_us_west_2.arn,
+        "${aws_s3_bucket.video_us_west_2.arn}/*"
+      ]
+      Condition = {
+        Bool = { "aws:SecureTransport" = "false" }
+      }
+    }]
+  })
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "video_us_west_2" {
+  provider = aws.us_west_2
+  bucket   = aws_s3_bucket.video_us_west_2.id
 
   rule {
     id     = "delete-old-videos"
