@@ -233,7 +233,7 @@ Source images must be base64-encoded PNG or JPEG. Nova Canvas requires minimum 3
 
 ### Video generation
 
-Video generation uses Nova Reel v1.1 via a sidecar service on port 4001. All videos are 1280x720 at 24fps, output as MP4. The workflow is asynchronous — submit a job, then poll for completion.
+Video generation uses Nova Reel v1.1 via a sidecar service on port 4001. Nova Reel requires Bedrock's async invoke API (`StartAsyncInvoke` / `GetAsyncInvoke` with S3 output), which LiteLLM doesn't support — the sidecar handles this and can be decommissioned if LiteLLM adds async invoke support. All videos are 1280x720 at 24fps, output as MP4. The workflow is asynchronous — submit a job, then poll for completion.
 
 **Single-shot mode** — one prompt, variable duration:
 
