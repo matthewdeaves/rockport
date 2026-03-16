@@ -16,8 +16,6 @@ from decimal import Decimal
 import psycopg2
 from psycopg2 import pool
 
-COST_PER_SECOND = Decimal("0.08")
-
 _pool = None
 
 
@@ -61,10 +59,12 @@ def ensure_tables() -> None:
                     api_key_hash VARCHAR(128) NOT NULL,
                     invocation_arn VARCHAR(512) UNIQUE NOT NULL,
                     status VARCHAR(20) NOT NULL DEFAULT 'in_progress',
+                    model VARCHAR(30) NOT NULL DEFAULT 'nova-reel',
                     mode VARCHAR(20) NOT NULL,
                     prompt TEXT NOT NULL,
                     num_shots INTEGER NOT NULL DEFAULT 1,
                     duration_seconds INTEGER NOT NULL,
+                    resolution VARCHAR(10),
                     cost DECIMAL(10,4) DEFAULT 0,
                     s3_uri VARCHAR(512),
                     error_message TEXT,
@@ -74,6 +74,8 @@ def ensure_tables() -> None:
                 CREATE INDEX IF NOT EXISTS idx_video_jobs_api_key_hash ON rockport_video_jobs (api_key_hash);
                 CREATE INDEX IF NOT EXISTS idx_video_jobs_status ON rockport_video_jobs (status);
                 CREATE INDEX IF NOT EXISTS idx_video_jobs_created_at ON rockport_video_jobs (created_at);
+                ALTER TABLE rockport_video_jobs ADD COLUMN IF NOT EXISTS model VARCHAR(30) NOT NULL DEFAULT 'nova-reel';
+                ALTER TABLE rockport_video_jobs ADD COLUMN IF NOT EXISTS resolution VARCHAR(10);
             """)
 
 
@@ -81,34 +83,37 @@ def insert_job(
     job_id: uuid.UUID,
     api_key_hash: str,
     invocation_arn: str,
+    model: str,
     mode: str,
     prompt: str,
     num_shots: int,
     duration_seconds: int,
+    cost: float = 0,
+    resolution: str | None = None,
 ) -> dict:
     """Insert a new video job. Returns the job dict."""
-    estimated_cost = Decimal(duration_seconds) * COST_PER_SECOND
     with _get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
                 INSERT INTO rockport_video_jobs
-                    (id, api_key_hash, invocation_arn, mode, prompt, num_shots,
-                     duration_seconds, cost, status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'in_progress')
-                RETURNING id, status, mode, duration_seconds, cost, created_at
+                    (id, api_key_hash, invocation_arn, model, mode, prompt, num_shots,
+                     duration_seconds, resolution, cost, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'in_progress')
+                RETURNING id, status, model, mode, duration_seconds, cost, created_at
                 """,
-                (str(job_id), api_key_hash, invocation_arn, mode, prompt,
-                 num_shots, duration_seconds, estimated_cost),
+                (str(job_id), api_key_hash, invocation_arn, model, mode, prompt,
+                 num_shots, duration_seconds, resolution, Decimal(str(cost))),
             )
             row = cur.fetchone()
     return {
         "id": str(row[0]),
         "status": row[1],
-        "mode": row[2],
-        "duration": row[3],
-        "estimated_cost": float(row[4]),
-        "created_at": row[5].isoformat(),
+        "model": row[2],
+        "mode": row[3],
+        "duration": row[4],
+        "estimated_cost": float(row[5]),
+        "created_at": row[6].isoformat(),
     }
 
 
@@ -118,7 +123,7 @@ def get_job(job_id: str, api_key_hash: str) -> dict | None:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, status, mode, duration_seconds, cost, s3_uri,
+                SELECT id, status, model, mode, duration_seconds, cost, s3_uri,
                        error_message, created_at, completed_at
                 FROM rockport_video_jobs
                 WHERE id = %s AND api_key_hash = %s
@@ -131,13 +136,14 @@ def get_job(job_id: str, api_key_hash: str) -> dict | None:
     return {
         "id": str(row[0]),
         "status": row[1],
-        "mode": row[2],
-        "duration": row[3],
-        "cost": float(row[4]),
-        "s3_uri": row[5],
-        "error": row[6],
-        "created_at": row[7].isoformat(),
-        "completed_at": row[8].isoformat() if row[8] else None,
+        "model": row[2],
+        "mode": row[3],
+        "duration": row[4],
+        "cost": float(row[5]),
+        "s3_uri": row[6],
+        "error": row[7],
+        "created_at": row[8].isoformat(),
+        "completed_at": row[9].isoformat() if row[9] else None,
     }
 
 
@@ -146,7 +152,7 @@ def get_job_internals(job_id: str) -> tuple | None:
     with _get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT invocation_arn, duration_seconds, mode, created_at FROM rockport_video_jobs WHERE id = %s",
+                "SELECT invocation_arn, duration_seconds, mode, created_at, model, resolution FROM rockport_video_jobs WHERE id = %s",
                 (job_id,),
             )
             return cur.fetchone()
@@ -161,7 +167,7 @@ def list_jobs(
     with _get_conn() as conn:
         with conn.cursor() as cur:
             query = """
-                SELECT id, status, mode, duration_seconds, cost, created_at, completed_at
+                SELECT id, status, model, mode, duration_seconds, cost, created_at, completed_at
                 FROM rockport_video_jobs
                 WHERE api_key_hash = %s
             """
@@ -177,11 +183,12 @@ def list_jobs(
         {
             "id": str(r[0]),
             "status": r[1],
-            "mode": r[2],
-            "duration": r[3],
-            "cost": float(r[4]),
-            "created_at": r[5].isoformat(),
-            "completed_at": r[6].isoformat() if r[6] else None,
+            "model": r[2],
+            "mode": r[3],
+            "duration": r[4],
+            "cost": float(r[5]),
+            "created_at": r[6].isoformat(),
+            "completed_at": r[7].isoformat() if r[7] else None,
         }
         for r in rows
     ]
@@ -260,6 +267,7 @@ def log_spend(
     cost: float,
     duration_seconds: int,
     mode: str,
+    model: str,
     start_time: datetime,
 ) -> None:
     """Write spend to LiteLLM_SpendLogs and increment LiteLLM_VerificationToken.spend."""
@@ -277,7 +285,7 @@ def log_spend(
                      prompt_tokens, completion_tokens, "startTime", metadata)
                 VALUES (%s, %s, %s, %s, 0, 0, 0, %s, %s)
                 """,
-                (job_id, api_key_hash, "nova-reel", cost,
+                (job_id, api_key_hash, model, cost,
                  start_time, metadata),
             )
             cur.execute(

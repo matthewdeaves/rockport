@@ -233,7 +233,7 @@ Source images must be base64-encoded PNG or JPEG. Nova Canvas requires minimum 3
 
 ### Video generation
 
-Video generation uses Nova Reel v1.1 via a sidecar service on port 4001. Nova Reel requires Bedrock's async invoke API (`StartAsyncInvoke` / `GetAsyncInvoke` with S3 output), which LiteLLM doesn't support ([tracking discussion](https://github.com/BerriAI/litellm/discussions/9320)) — the sidecar handles this and can be decommissioned if LiteLLM adds Bedrock async invoke support. All videos are 1280x720 at 24fps, output as MP4. The workflow is asynchronous — submit a job, then poll for completion.
+Video generation uses a sidecar service on port 4001 that supports multiple Bedrock video models. Bedrock's async invoke API (`StartAsyncInvoke` / `GetAsyncInvoke` with S3 output) isn't supported by LiteLLM ([tracking discussion](https://github.com/BerriAI/litellm/discussions/9320)) — the sidecar handles this and can be decommissioned if LiteLLM adds Bedrock async invoke support. The workflow is asynchronous — submit a job, then poll for completion. Specify the model via the `model` field (defaults to `nova-reel`).
 
 **Single-shot mode** — one prompt, variable duration:
 
@@ -287,15 +287,36 @@ curl -X POST https://<your-domain>/v1/videos/generations \
 
 Each shot is 6 seconds. Shots can optionally include a per-shot `image` field (1280x720 data URI).
 
-| Detail | Value |
-|--------|-------|
-| Cost | $0.08/second |
-| Resolution | 1280x720, 24fps MP4 |
-| Duration (single-shot) | 6–120s, must be multiple of 6 |
-| Duration (multi-shot) | 6s per shot, 2–20 shots |
-| Concurrent jobs per key | 3 (configurable via `VIDEO_MAX_CONCURRENT_JOBS`) |
-| Output storage | S3 bucket with 7-day lifecycle |
-| Presigned URL expiry | 1 hour |
+**Luma Ray2** — shorter clips with flexible aspect ratios and resolutions:
+
+```bash
+curl -X POST https://<your-domain>/v1/videos/generations \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "luma-ray2",
+    "prompt": "a tiger walking through snow",
+    "duration": 5,
+    "aspect_ratio": "16:9",
+    "resolution": "720p",
+    "loop": true
+  }'
+```
+
+Ray2 supports 7 aspect ratios (16:9, 9:16, 1:1, 4:3, 3:4, 21:9, 9:21), two resolutions (540p, 720p), and optional start/end frame images via `image` and `end_image` fields. Requires a one-time Marketplace subscription (same as SD3.5 Large).
+
+| Detail | Nova Reel | Luma Ray2 |
+|--------|-----------|-----------|
+| Cost | $0.08/second | $0.75/s (540p), $1.50/s (720p) |
+| Resolution | 1280x720 fixed | 540p or 720p, 7 aspect ratios |
+| Duration | 6–120s (multiples of 6) | 5s or 9s |
+| Multi-shot | 2–20 shots, 6s each | Not supported |
+| Image-to-video | Start frame (1280x720 exact) | Start + optional end frame (512–4096px) |
+| Loop | No | Yes |
+| Seed | Yes | No |
+| Concurrent jobs per key | 3 (configurable via `VIDEO_MAX_CONCURRENT_JOBS`) | Same |
+| Output storage | S3 bucket with 7-day lifecycle | Same |
+| Presigned URL expiry | 1 hour | Same |
 
 ## CI/CD
 

@@ -118,7 +118,9 @@ resource "aws_iam_role_policy" "bedrock_async_invoke" {
         ]
         Resource = [
           "arn:aws:bedrock:us-east-1::foundation-model/*",
-          "arn:aws:bedrock:us-east-1:${data.aws_caller_identity.current.account_id}:async-invoke/*"
+          "arn:aws:bedrock:us-east-1:${data.aws_caller_identity.current.account_id}:async-invoke/*",
+          "arn:aws:bedrock:us-west-2::foundation-model/*",
+          "arn:aws:bedrock:us-west-2:${data.aws_caller_identity.current.account_id}:async-invoke/*"
         ]
       },
       {
@@ -144,12 +146,18 @@ resource "aws_iam_role_policy" "s3_video_bucket" {
           "s3:GetObject",
           "s3:HeadObject"
         ]
-        Resource = "${aws_s3_bucket.video.arn}/*"
+        Resource = [
+          "${aws_s3_bucket.video.arn}/*",
+          "${aws_s3_bucket.video_us_west_2.arn}/*"
+        ]
       },
       {
-        Effect   = "Allow"
-        Action   = "s3:ListBucket"
-        Resource = aws_s3_bucket.video.arn
+        Effect = "Allow"
+        Action = "s3:ListBucket"
+        Resource = [
+          aws_s3_bucket.video.arn,
+          aws_s3_bucket.video_us_west_2.arn
+        ]
       },
     ]
   })
@@ -206,6 +214,7 @@ resource "aws_instance" "rockport" {
     video_sidecar_api         = file("${path.module}/../sidecar/video_api.py")
     video_sidecar_service     = file("${path.module}/../config/rockport-video.service")
     video_bucket_name         = aws_s3_bucket.video.id
+    video_bucket_us_west_2    = aws_s3_bucket.video_us_west_2.id
     video_max_concurrent_jobs = var.video_max_concurrent_jobs
   }))
 
