@@ -80,6 +80,56 @@ echo "8. Image models in model list"
 echo "$MODELS" | grep -q "nova-canvas"; check "Model list contains nova-canvas" "$?"
 echo "$MODELS" | grep -q "titan-image-v2"; check "Model list contains titan-image-v2" "$?"
 
+# 9. Video sidecar health
+echo "9. Video sidecar health"
+VIDEO_HEALTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/v1/videos/health" \
+  -H "Authorization: Bearer $VALID_KEY" --max-time 10 2>/dev/null)
+[[ "$VIDEO_HEALTH_CODE" == "200" ]]; check "Video health returns 200 (HTTP $VIDEO_HEALTH_CODE)" "$?"
+
+# 10. Video generation submit
+echo "10. Video generation submit"
+VIDEO_SUBMIT=$(curl -s -w "\n%{http_code}" -X POST "$BASE_URL/v1/videos/generations" \
+  -H "Authorization: Bearer $VALID_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"a solid red circle on white background","duration":6}' \
+  --max-time 30 2>/dev/null)
+VIDEO_SUBMIT_CODE=$(echo "$VIDEO_SUBMIT" | tail -1)
+VIDEO_SUBMIT_BODY=$(echo "$VIDEO_SUBMIT" | sed '$d')
+[[ "$VIDEO_SUBMIT_CODE" == "202" ]]; check "Video submit returns 202 (HTTP $VIDEO_SUBMIT_CODE)" "$?"
+VIDEO_JOB_ID=$(echo "$VIDEO_SUBMIT_BODY" | jq -r '.id // empty' 2>/dev/null)
+[[ -n "$VIDEO_JOB_ID" ]]; check "Video submit returns job ID" "$?"
+
+# 11. Video generation poll
+echo "11. Video generation poll"
+if [[ -n "$VIDEO_JOB_ID" ]]; then
+  VIDEO_STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/v1/videos/generations/$VIDEO_JOB_ID" \
+    -H "Authorization: Bearer $VALID_KEY" --max-time 10 2>/dev/null)
+  [[ "$VIDEO_STATUS_CODE" == "200" ]]; check "Video status returns 200 (HTTP $VIDEO_STATUS_CODE)" "$?"
+else
+  check "Video status returns 200 (skipped, no job ID)" "1"
+fi
+
+# 12. Video generation list
+echo "12. Video generation list"
+VIDEO_LIST_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/v1/videos/generations" \
+  -H "Authorization: Bearer $VALID_KEY" --max-time 10 2>/dev/null)
+[[ "$VIDEO_LIST_CODE" == "200" ]]; check "Video list returns 200 (HTTP $VIDEO_LIST_CODE)" "$?"
+
+# 13. Video auth rejection
+echo "13. Video auth rejection"
+VIDEO_AUTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/videos/generations" \
+  -H "Authorization: Bearer sk-invalid-key-12345" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"test"}' --max-time 10 2>/dev/null)
+[[ "$VIDEO_AUTH_CODE" == "401" || "$VIDEO_AUTH_CODE" == "403" ]]; check "Video invalid key rejected (HTTP $VIDEO_AUTH_CODE)" "$?"
+
+# 14. WAF blocks non-allowlisted video paths
+echo "14. Video WAF block"
+VIDEO_WAF_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/v1/videos/somethingelse" \
+  -H "Authorization: Bearer $VALID_KEY" --max-time 10 2>/dev/null)
+# /v1/videos/* is allowed by WAF, so this should reach the sidecar (404, not 403)
+[[ "$VIDEO_WAF_CODE" != "403" ]]; check "Video paths not WAF-blocked (HTTP $VIDEO_WAF_CODE)" "$?"
+
 # Summary
 echo
 echo "=== Results: $PASS passed, $FAIL failed ==="

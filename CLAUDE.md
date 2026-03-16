@@ -7,12 +7,17 @@ LiteLLM proxy on EC2 behind Cloudflare Tunnel, routing Claude Code to Bedrock mo
 ```
 terraform/              # All infrastructure (EC2, IAM, SG, tunnel, snapshots, monitoring, idle shutdown)
 terraform/.build/       # Lambda zip artifacts (gitignored)
+terraform/s3.tf         # S3 bucket for video output (us-east-1)
 config/                 # LiteLLM config, systemd units, PostgreSQL tuning
   litellm-config.yaml   #   Model definitions, budget, rate limits
   litellm.service       #   Systemd unit for LiteLLM proxy
   cloudflared.service   #   Systemd unit for Cloudflare Tunnel
+  rockport-video.service #  Systemd unit for video generation sidecar
   postgresql-tuning.conf #  PostgreSQL memory tuning for t3.small
-scripts/bootstrap.sh    # EC2 user_data — installs PostgreSQL, LiteLLM, cloudflared
+sidecar/                # Video generation sidecar (FastAPI on port 4001)
+  video_api.py          #   API endpoints, auth, validation, Bedrock client
+  db.py                 #   PostgreSQL job tracking, spend logging
+scripts/bootstrap.sh    # EC2 user_data — installs PostgreSQL, LiteLLM, cloudflared, video sidecar
 scripts/rockport.sh     # Admin CLI (init, keys, status, spend, logs, deploy, start/stop)
 tests/smoke-test.sh     # Post-deploy verification
 .github/workflows/      # CI/CD — validate (fmt, lint, security scan) + deploy (plan/apply/smoke)
@@ -62,10 +67,27 @@ tests/smoke-test.sh     # Post-deploy verification
 - CI/CD uses GitHub OIDC for AWS authentication — set the `AWS_ROLE_ARN` secret in GitHub to the IAM role ARN
 - The LiteLLM admin UI is intentionally disabled (`disable_admin_ui: true`) — all admin is via the CLI
 - Swagger/ReDoc docs disabled via `NO_DOCS=True` / `NO_REDOC=True` in the LiteLLM env file
-- Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation (`/v1/images/generations`), and the admin CLI
+- Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation (`/v1/images/generations`), video generation (`/v1/videos/*`), and the admin CLI
 - `setup-claude` creates keys restricted to Anthropic models only; `key create` without `--claude-only` grants access to all models including image generation
 - Stability AI image models (SD3.5 Large) need a one-time Marketplace subscription — invoke once in the Bedrock playground to activate
 - `deploy` auto-creates the SSM master key if missing, so `init` is not a strict prerequisite
 - The Cloudflare API token (in `terraform/.env`, gitignored) needs Zone WAF Edit permission for the WAF rule
-- Deployer IAM policy (`terraform/rockport-deployer-policy.json`) scopes EC2/SSM mutating actions to `aws:ResourceTag/Project=rockport` — the SG and instance must have this tag
+- Deployer IAM is split into 3 policies under `terraform/deployer-policies/` (compute, iam-ssm, monitoring-storage) to stay under the 6144-byte per-policy limit while keeping all actions explicit (no wildcards). EC2/SSM mutating actions scoped to `aws:ResourceTag/Project=rockport`
+- Admin IAM policy (`terraform/rockport-admin-policy.json`) is a one-time bootstrap: must be created and attached to the admin user via the AWS console (root account) before first `init`. After that, `init` self-manages it.
 - HSTS and "Always Use HTTPS" are enabled in Cloudflare (not managed by Terraform)
+- Video generation: Nova Reel v1.1 via sidecar FastAPI service on port 4001, us-east-1 only, fixed 1280x720 24fps MP4, duration must be multiple of 6 (6-120s), $0.08/second
+- Video sidecar authenticates via LiteLLM's `/key/info` endpoint; writes spend to `LiteLLM_SpendLogs` + `LiteLLM_VerificationToken` for unified tracking
+- Video output stored in S3 bucket `rockport-video-{account}-us-east-1` with 7-day lifecycle; presigned URLs expire after 1 hour
+- Cloudflare Tunnel must be configured to route `/v1/videos/*` to `http://localhost:4001` (manual dashboard config step)
+- Video sidecar MemoryMax is 256MB; LiteLLM reduced to 1280MB to fit on t3.small (2GB + 512MB swap)
+- Single-shot (one prompt, 6-120s) and multi-shot (2-20 per-shot prompts, 6s each) modes supported
+- Per-key concurrent job limit defaults to 3 (configurable via `VIDEO_MAX_CONCURRENT_JOBS` env var)
+- Video sidecar accepted risks: (1) TOCTOU race on concurrent job count and budget — low risk at expected scale (~10-20 jobs/day), would need advisory locks to fully fix; (2) `ListAsyncInvokes` IAM may need `Resource: "*"` — health check will fail if so, fix on first deploy
+- Cloudflare Tunnel routes `/v1/videos*` → `http://localhost:4001` (video sidecar), all other traffic → `http://localhost:4000` (LiteLLM) — managed in `terraform/tunnel.tf`
+
+## Active Technologies
+- Python 3.11 (already installed on EC2 instance) + FastAPI, uvicorn, boto3, psycopg2 (FastAPI/uvicorn already installed as LiteLLM dependencies; boto3 available via AWS CLI; psycopg2 needs install) (004-video-generation-sidecar)
+- PostgreSQL 15 (existing instance, new `rockport_video_jobs` table) + S3 (new bucket in us-east-1 for video output) (004-video-generation-sidecar)
+
+## Recent Changes
+- 004-video-generation-sidecar: Added Python 3.11 (already installed on EC2 instance) + FastAPI, uvicorn, boto3, psycopg2 (FastAPI/uvicorn already installed as LiteLLM dependencies; boto3 available via AWS CLI; psycopg2 needs install)

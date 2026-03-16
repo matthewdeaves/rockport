@@ -220,32 +220,89 @@ get_state_bucket() {
   echo "rockport-tfstate-${account_id}-${region}"
 }
 
+# Delete all non-default versions of an IAM policy (required before policy deletion)
+delete_all_policy_versions() {
+  local arn="$1"
+  local versions
+  versions=$(aws iam list-policy-versions --policy-arn "$arn" --query 'Versions[?!IsDefaultVersion].VersionId' --output text)
+  for v in $versions; do
+    aws iam delete-policy-version --policy-arn "$arn" --version-id "$v" 2>/dev/null || true
+  done
+}
+
+# Create or update an IAM managed policy. Returns 1 if creation fails (bootstrap).
+upsert_iam_policy() {
+  local name="$1" file="$2" account_id="$3"
+  local arn="arn:aws:iam::${account_id}:policy/${name}"
+
+  if aws iam get-policy --policy-arn "$arn" &>/dev/null; then
+    delete_all_policy_versions "$arn"
+    aws iam create-policy-version \
+      --policy-arn "$arn" \
+      --policy-document "file://$file" \
+      --set-as-default >/dev/null
+    echo "  IAM policy ........... updated ($name)"
+  else
+    if ! aws iam create-policy \
+      --policy-name "$name" \
+      --policy-document "file://$file" >/dev/null 2>&1; then
+      return 1
+    fi
+    echo "  IAM policy ........... created ($name)"
+  fi
+}
+
+# Attach an IAM policy to a user if not already attached
+attach_iam_policy() {
+  local user="$1" name="$2" account_id="$3"
+  local arn="arn:aws:iam::${account_id}:policy/${name}"
+
+  if aws iam list-attached-user-policies --user-name "$user" \
+    --query "AttachedPolicies[?PolicyArn=='$arn']" --output text 2>/dev/null | grep -q "$name"; then
+    echo "  Policy attachment .... ok ($name → $user)"
+  else
+    aws iam attach-user-policy --user-name "$user" --policy-arn "$arn"
+    echo "  Policy attachment .... attached ($name → $user)"
+  fi
+}
+
 ensure_deployer_access() {
   local deployer_user="rockport-deployer"
-  local policy_name="RockportDeployerAccess"
-  local policy_file="$TERRAFORM_DIR/rockport-deployer-policy.json"
-  local account_id
-  account_id=$(aws sts get-caller-identity --query Account --output text)
-  local policy_arn="arn:aws:iam::${account_id}:policy/${policy_name}"
+  local policy_dir="$TERRAFORM_DIR/deployer-policies"
+  local account_id caller_user
+  local caller_identity
+  caller_identity=$(aws sts get-caller-identity --output json)
+  account_id=$(echo "$caller_identity" | jq -r '.Account')
+  caller_user=$(echo "$caller_identity" | jq -r '.Arn' | sed 's|.*/||')
 
-  if aws iam get-policy --policy-arn "$policy_arn" &>/dev/null; then
-    local versions
-    versions=$(aws iam list-policy-versions --policy-arn "$policy_arn" --query 'Versions[?!IsDefaultVersion].VersionId' --output text)
-    for v in $versions; do
-      aws iam delete-policy-version --policy-arn "$policy_arn" --version-id "$v" 2>/dev/null || true
-    done
-    aws iam create-policy-version \
-      --policy-arn "$policy_arn" \
-      --policy-document "file://$policy_file" \
-      --set-as-default >/dev/null
-    echo "  IAM policy ........... updated ($policy_name)"
-  else
-    aws iam create-policy \
-      --policy-name "$policy_name" \
-      --policy-document "file://$policy_file" >/dev/null
-    echo "  IAM policy ........... created ($policy_name)"
+  # --- Admin policy (self-bootstrapping) ---
+  # The RockportAdmin policy grants the admin user permission to manage all
+  # deployer policies. On first-ever run, this policy must be created manually
+  # via the AWS console or an IAM admin (chicken-and-egg).
+  if ! upsert_iam_policy "RockportAdmin" "$TERRAFORM_DIR/rockport-admin-policy.json" "$account_id"; then
+    echo
+    echo "ERROR: Cannot create the RockportAdmin policy."
+    echo "First-time bootstrap requires an IAM admin to create and attach it:"
+    echo
+    echo "  1. IAM → Policies → Create policy → JSON tab"
+    echo "     Paste contents of: terraform/rockport-admin-policy.json"
+    echo "     Name: RockportAdmin"
+    echo "  2. IAM → Users → $caller_user → Attach policies → RockportAdmin"
+    echo
+    echo "Then re-run: ./scripts/rockport.sh init"
+    return 1
   fi
+  attach_iam_policy "$caller_user" "RockportAdmin" "$account_id"
 
+  # --- Deployer policies ---
+  local policy_names=("RockportDeployerCompute" "RockportDeployerIamSsm" "RockportDeployerMonitoringStorage")
+  local policy_files=("$policy_dir/compute.json" "$policy_dir/iam-ssm.json" "$policy_dir/monitoring-storage.json")
+
+  for i in "${!policy_names[@]}"; do
+    upsert_iam_policy "${policy_names[$i]}" "${policy_files[$i]}" "$account_id"
+  done
+
+  # --- Deployer user ---
   if aws iam get-user --user-name "$deployer_user" &>/dev/null; then
     echo "  IAM user ............. ok ($deployer_user)"
   else
@@ -253,13 +310,13 @@ ensure_deployer_access() {
     echo "  IAM user ............. created ($deployer_user)"
   fi
 
-  if aws iam list-attached-user-policies --user-name "$deployer_user" \
-    --query "AttachedPolicies[?PolicyArn=='$policy_arn']" --output text 2>/dev/null | grep -q "$policy_name"; then
-    echo "  Policy attachment .... ok (already on $deployer_user)"
-  else
-    aws iam attach-user-policy --user-name "$deployer_user" --policy-arn "$policy_arn"
-    echo "  Policy attachment .... attached to $deployer_user"
-  fi
+  # Attach deployer policies to both the deployer user and the calling user
+  # so deploy/destroy work regardless of which user runs them
+  for user in "$deployer_user" "$caller_user"; do
+    for i in "${!policy_names[@]}"; do
+      attach_iam_policy "$user" "${policy_names[$i]}" "$account_id"
+    done
+  done
 
   local existing_keys
   existing_keys=$(aws iam list-access-keys --user-name "$deployer_user" --query 'length(AccessKeyMetadata)' --output text)
@@ -470,6 +527,24 @@ cmd_status() {
 
   # Image model names that fail LiteLLM's built-in health probe (it sends max_tokens which they reject)
   local image_model_pattern="nova-canvas|sd3-5-large|titan-image"
+
+  # Check video sidecar health
+  local video_health
+  video_health=$(curl -s "$url/v1/videos/health" -H "Authorization: Bearer $key" --max-time 5 2>/dev/null) || video_health=""
+  if [[ -n "$video_health" ]]; then
+    local video_status
+    video_status=$(echo "$video_health" | jq -r '.status // "unknown"' 2>/dev/null)
+    if [[ "$video_status" == "healthy" ]]; then
+      echo "Video sidecar: healthy"
+    else
+      echo "Video sidecar: unhealthy"
+      echo "$video_health" | jq -r '
+        "  database: \(.database // "unknown")",
+        "  bedrock:  \(.bedrock // "unknown")"' 2>/dev/null
+    fi
+  else
+    echo "Video sidecar: not reachable"
+  fi
 
   local healthy unhealthy
   healthy=$(echo "$response" | jq -r '.healthy_endpoints[]?.model // empty')
@@ -879,7 +954,7 @@ cmd_config_push() {
   params_file=$(mktemp)
   trap 'rm -f "$params_file"' RETURN
   jq -n --arg b64 "$config_b64" \
-    '{"commands":["echo \($b64) | base64 -d > /etc/litellm/config.yaml && chown litellm:litellm /etc/litellm/config.yaml && systemctl restart litellm && echo Config pushed and LiteLLM restarted"]}' \
+    '{"commands":["echo \($b64) | base64 -d > /etc/litellm/config.yaml && chown litellm:litellm /etc/litellm/config.yaml && systemctl restart litellm && (systemctl restart rockport-video 2>/dev/null || true) && echo Config pushed and services restarted"]}' \
     > "$params_file"
 
   local instance_id region command_id
@@ -989,7 +1064,7 @@ cmd_upgrade() {
   instance_id="$(get_instance_id)"
   echo "Restarting LiteLLM on instance $instance_id..."
   local result
-  result=$(ssm_run "sudo systemctl restart litellm && echo LiteLLM restarted successfully" 30)
+  result=$(ssm_run "sudo systemctl restart litellm && (sudo systemctl restart rockport-video 2>/dev/null || true) && echo Services restarted successfully" 30)
   echo "$result"
 }
 

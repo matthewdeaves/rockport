@@ -18,6 +18,11 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "rockport" {
     ingress = [
       {
         hostname = var.domain
+        path     = "/v1/videos*"
+        service  = "http://localhost:4001"
+      },
+      {
+        hostname = var.domain
         service  = "http://localhost:4000"
       },
       {
