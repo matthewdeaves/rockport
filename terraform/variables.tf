@@ -105,3 +105,9 @@ variable "idle_threshold_bytes" {
   type        = number
   default     = 500000
 }
+
+variable "video_max_concurrent_jobs" {
+  description = "Maximum concurrent video generation jobs per API key"
+  type        = number
+  default     = 3
+}

@@ -1,6 +1,6 @@
 # Rockport
 
-LiteLLM proxy on EC2 that gives Claude Code access to any Bedrock model through a single endpoint. Cloudflare Tunnel provides HTTPS ingress with zero inbound ports. Terraform manages everything.
+LiteLLM proxy on EC2 that gives Claude Code access to any Bedrock model — chat, image generation, and video generation — through a single endpoint. Cloudflare Tunnel provides HTTPS ingress with zero inbound ports. Terraform manages everything.
 
 ## Architecture
 
@@ -12,7 +12,8 @@ LiteLLM proxy on EC2 that gives Claude Code access to any Bedrock model through 
 
 - Claude Code connects via `ANTHROPIC_BASE_URL` to your own proxy
 - Anthropic (Opus 4.6, Sonnet 4.6, Haiku 4.5), DeepSeek V3.2, Qwen3 Coder 480B, Kimi K2.5, Nova Pro/Lite/Micro on Bedrock
-- Image generation and editing via OpenAI-compatible `/v1/images/generations` and `/v1/images/edits` (Nova Canvas, Titan Image v2, SD3.5 Large)
+- Image generation via OpenAI-compatible `/v1/images/generations` (Nova Canvas, Titan Image v2, SD3.5 Large)
+- Video generation via `/v1/videos/generations` (Nova Reel v1.1 — 1280x720 24fps MP4, 6-120s, $0.08/second)
 - Virtual API keys with per-key budgets, rate limits, and model restrictions
 - Zero inbound security group rules — all traffic flows through Cloudflare Tunnel
 - Daily EBS snapshots with 7-day retention
@@ -230,6 +231,72 @@ Source images must be base64-encoded PNG or JPEG. Nova Canvas requires minimum 3
 
 **Note:** `/v1/images/edits` is not supported — LiteLLM 1.82.2 only supports that endpoint for Stability AI models, not Bedrock's Nova Canvas or Titan. Use `/v1/images/generations` with `conditionImage` instead.
 
+### Video generation
+
+Video generation uses Nova Reel v1.1 via a sidecar service on port 4001. All videos are 1280x720 at 24fps, output as MP4. The workflow is asynchronous — submit a job, then poll for completion.
+
+**Single-shot mode** — one prompt, variable duration:
+
+```bash
+# Submit a video generation job
+curl -X POST https://<your-domain>/v1/videos/generations \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "a drone flyover of a coastal cliff at sunset",
+    "duration": 12,
+    "seed": 42
+  }'
+```
+
+Duration must be a multiple of 6, from 6 to 120 seconds. `seed` is optional (for reproducibility). You can also pass an optional reference image as a 1280x720 PNG or JPEG data URI in the `image` field.
+
+The POST returns `202 Accepted` with a job ID:
+
+```json
+{"id": "job_abc123", "status": "in_progress", "mode": "single_shot", "duration": 12, "estimated_cost": 0.96, "created_at": "..."}
+```
+
+Poll for completion:
+
+```bash
+curl https://<your-domain>/v1/videos/generations/job_abc123 \
+  -H "Authorization: Bearer $KEY"
+```
+
+A completed job returns a presigned S3 URL (expires after 1 hour):
+
+```json
+{"id": "job_abc123", "status": "completed", "mode": "single_shot", "duration": 12, "cost": 0.96, "url": "https://...s3.amazonaws.com/...", "url_expires_at": "..."}
+```
+
+**Multi-shot mode** — 2 to 20 per-shot prompts, 6 seconds each:
+
+```bash
+curl -X POST https://<your-domain>/v1/videos/generations \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "shots": [
+      {"prompt": "a rocket on the launchpad, pre-dawn light"},
+      {"prompt": "the rocket lifts off with a plume of smoke"},
+      {"prompt": "aerial view of the rocket climbing through clouds"}
+    ]
+  }'
+```
+
+Each shot is 6 seconds. Shots can optionally include a per-shot `image` field (1280x720 data URI).
+
+| Detail | Value |
+|--------|-------|
+| Cost | $0.08/second |
+| Resolution | 1280x720, 24fps MP4 |
+| Duration (single-shot) | 6–120s, must be multiple of 6 |
+| Duration (multi-shot) | 6s per shot, 2–20 shots |
+| Concurrent jobs per key | 3 (configurable via `VIDEO_MAX_CONCURRENT_JOBS`) |
+| Output storage | S3 bucket with 7-day lifecycle |
+| Presigned URL expiry | 1 hour |
+
 ## CI/CD
 
 Two GitHub Actions workflows run on push to `main`:
@@ -255,7 +322,7 @@ Rockport is designed so that the proxy has no direct internet exposure. Every la
 
 **Localhost-only binding** — LiteLLM listens on `127.0.0.1:4000`, not `0.0.0.0`. Even if the security group were misconfigured, the service would not accept external connections directly.
 
-**Admin UI disabled** — The LiteLLM admin dashboard is disabled via `disable_admin_ui: true` and Swagger/ReDoc docs are disabled via `NO_DOCS=True` / `NO_REDOC=True` environment variables. A Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation, and the admin CLI — only `/v1/chat/completions`, `/v1/models`, `/v1/messages`, `/v1/images/generations`, `/key/*`, `/health/*`, `/spend/*`, and a handful of other operational paths are reachable. Everything else (admin UI, OpenAPI schema, routes list, SSO, SCIM, debug endpoints, etc.) returns 403 at the Cloudflare edge.
+**Admin UI disabled** — The LiteLLM admin dashboard is disabled via `disable_admin_ui: true` and Swagger/ReDoc docs are disabled via `NO_DOCS=True` / `NO_REDOC=True` environment variables. A Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation, and the admin CLI — only `/v1/chat/completions`, `/v1/models`, `/v1/messages`, `/v1/images/generations`, `/v1/videos/*`, `/key/*`, `/health/*`, `/spend/*`, and a handful of other operational paths are reachable. Everything else (admin UI, OpenAPI schema, routes list, SSO, SCIM, debug endpoints, etc.) returns 403 at the Cloudflare edge.
 
 **Key separation** — The master key (stored in SSM Parameter Store) is only used by the admin CLI. Users get virtual keys with per-key daily budgets and rate limits. Keys created with `--claude-only` (or via `setup-claude`) are restricted to Anthropic models only. Keys without this flag get access to all models including image generation. Virtual keys can only call model endpoints — they cannot create other keys, view spend, or manage the proxy.
 
@@ -267,7 +334,7 @@ Rockport is designed so that the proxy has no direct internet exposure. Every la
 
 **Transport security** — HSTS (6 months max-age) and "Always Use HTTPS" are enabled in Cloudflare, enforcing HTTPS-only access. HTTP requests are redirected with 301.
 
-**Least-privilege IAM** — The deployer IAM policy (`terraform/rockport-deployer-policy.json`) scopes EC2 and SSM mutating actions to resources tagged `Project=rockport`. Read-only Describe actions use `Resource: *` as required by AWS. The instance role is limited to Bedrock invoke and SSM parameter access.
+**Least-privilege IAM** — The deployer IAM policies (`terraform/deployer-policies/`) scopes EC2 and SSM mutating actions to resources tagged `Project=rockport`. Read-only Describe actions use `Resource: *` as required by AWS. The instance role is limited to Bedrock invoke and SSM parameter access.
 
 **CI security scanning** — Every push runs Trivy (IaC misconfiguration) and Checkov (policy-as-code) against the Terraform. Skipped checks are documented with justifications in `.checkov.yaml`.
 

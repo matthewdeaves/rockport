@@ -1,0 +1,35 @@
+[Unit]
+Description=Rockport Video Generation Sidecar
+After=network.target postgresql.service litellm.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+ExecStartPre=/bin/bash -c 'for i in $(seq 1 60); do curl -sf http://127.0.0.1:4000/health/readiness >/dev/null 2>&1 && exit 0; sleep 5; done; echo "LiteLLM not ready after 5min"; exit 1'
+ExecStart=/usr/local/bin/uvicorn video_api:app --host 127.0.0.1 --port 4001
+WorkingDirectory=/opt/rockport-video
+EnvironmentFile=/etc/litellm/env
+Environment=HOME=/var/lib/litellm
+Restart=always
+RestartSec=5
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStartSec=360
+TimeoutStopSec=15
+User=litellm
+Group=litellm
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ReadWritePaths=/var/lib/litellm /opt/rockport-video
+MemoryMax=256M
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -102,6 +102,59 @@ resource "aws_iam_role_policy" "ssm_get_parameter" {
   })
 }
 
+resource "aws_iam_role_policy" "bedrock_async_invoke" {
+  name = "bedrock-async-invoke"
+  role = aws_iam_role.rockport.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "bedrock:InvokeModel",
+          "bedrock:StartAsyncInvoke",
+          "bedrock:GetAsyncInvoke"
+        ]
+        Resource = [
+          "arn:aws:bedrock:us-east-1::foundation-model/*",
+          "arn:aws:bedrock:us-east-1:${data.aws_caller_identity.current.account_id}:async-invoke/*"
+        ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = "bedrock:ListAsyncInvokes"
+        Resource = "*"
+      },
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "s3_video_bucket" {
+  name = "s3-video-bucket"
+  role = aws_iam_role.rockport.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:HeadObject"
+        ]
+        Resource = "${aws_s3_bucket.video.arn}/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = "s3:ListBucket"
+        Resource = aws_s3_bucket.video.arn
+      },
+    ]
+  })
+}
+
 resource "aws_iam_role_policy_attachment" "ssm_managed" {
   role       = aws_iam_role.rockport.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
@@ -140,16 +193,21 @@ resource "aws_instance" "rockport" {
   subnet_id              = data.aws_subnets.default.ids[0]
   vpc_security_group_ids = [aws_security_group.rockport.id]
 
-  user_data = templatefile("${path.module}/../scripts/bootstrap.sh", {
-    region                = var.region
-    master_key_ssm_path   = "/rockport/master-key"
-    tunnel_token_ssm_path = aws_ssm_parameter.tunnel_token.name
-    litellm_version       = var.litellm_version
-    cloudflared_version   = var.cloudflared_version
-    litellm_config        = file("${path.module}/../config/litellm-config.yaml")
-    litellm_service       = file("${path.module}/../config/litellm.service")
-    cloudflared_service   = file("${path.module}/../config/cloudflared.service")
-  })
+  user_data_base64 = base64gzip(templatefile("${path.module}/../scripts/bootstrap.sh", {
+    region                    = var.region
+    master_key_ssm_path       = "/rockport/master-key"
+    tunnel_token_ssm_path     = aws_ssm_parameter.tunnel_token.name
+    litellm_version           = var.litellm_version
+    cloudflared_version       = var.cloudflared_version
+    litellm_config            = file("${path.module}/../config/litellm-config.yaml")
+    litellm_service           = file("${path.module}/../config/litellm.service")
+    cloudflared_service       = file("${path.module}/../config/cloudflared.service")
+    video_sidecar_db          = file("${path.module}/../sidecar/db.py")
+    video_sidecar_api         = file("${path.module}/../sidecar/video_api.py")
+    video_sidecar_service     = file("${path.module}/../config/rockport-video.service")
+    video_bucket_name         = aws_s3_bucket.video.id
+    video_max_concurrent_jobs = var.video_max_concurrent_jobs
+  }))
 
   root_block_device {
     volume_type = "gp3"

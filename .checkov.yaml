@@ -38,3 +38,15 @@ skip-check:
   # --- SSM ---
   # SecureString encrypted with AWS-managed aws/ssm key; CMK adds $1/mo
   - CKV_AWS_337  # SSM parameter KMS CMK
+
+  # --- S3 video bucket ---
+  # Temporary video output (7-day lifecycle); versioning adds storage cost for no value
+  - CKV_AWS_21   # S3 bucket versioning (video files are ephemeral, 7-day lifecycle)
+  # SSE-S3 (AES-256) is configured; CMK adds $1/mo for transient video data
+  - CKV_AWS_145  # S3 bucket KMS encryption (SSE-S3 is sufficient)
+  # Bucket only accessed by EC2 instance role via presigned URLs; access logging adds cost
+  - CKV_AWS_18   # S3 bucket access logging (low-traffic, internal-only bucket)
+  # Ephemeral video data (7-day lifecycle) — replication adds cost for throwaway content
+  - CKV_AWS_144  # S3 cross-region replication (not needed for 7-day ephemeral data)
+  # No downstream consumers need event notifications; bucket is polled by the sidecar
+  - CKV2_AWS_62  # S3 event notifications (no consumers for video output events)

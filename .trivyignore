@@ -9,3 +9,7 @@ AVD-AWS-0017
 
 # Lambda X-Ray tracing — not worth the cost for a simple 5-min cron checker
 AVD-AWS-0066
+
+# S3 video bucket uses SSE-S3 (AES256) not CMK — Bedrock writes directly to this bucket,
+# contents are ephemeral (7-day lifecycle), and CMK adds unnecessary cost/complexity
+AVD-AWS-0132

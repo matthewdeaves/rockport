@@ -158,6 +158,7 @@ chown litellm:litellm /var/lib/litellm
 # Generate prisma client AS the litellm user so binary paths resolve correctly.
 # prisma generate hardcodes $HOME/.cache paths into the generated client.
 chown -R litellm:litellm /usr/local/lib/python3.11/site-packages/prisma
+chown -R litellm:litellm /usr/local/lib/python3.11/site-packages/litellm_proxy_extras/migrations
 sudo -u litellm prisma generate \
   --schema /usr/local/lib/python3.11/site-packages/litellm/proxy/schema.prisma
 
@@ -184,6 +185,58 @@ chown litellm:litellm /etc/litellm/env
 cat > /etc/systemd/system/litellm.service <<'LITELLMSVC'
 ${litellm_service}
 LITELLMSVC
+
+# --- Video Generation Sidecar ---
+echo "Installing video sidecar dependencies..."
+pip3.11 install psycopg2-binary Pillow httpx
+
+echo "Setting up video sidecar..."
+mkdir -p /opt/rockport-video
+cat > /opt/rockport-video/db.py <<'VIDEODB'
+${video_sidecar_db}
+VIDEODB
+cat > /opt/rockport-video/video_api.py <<'VIDEOAPI'
+${video_sidecar_api}
+VIDEOAPI
+chown -R litellm:litellm /opt/rockport-video
+
+# Create video jobs table in litellm database
+sudo -u postgres psql -d litellm -c "
+  CREATE TABLE IF NOT EXISTS rockport_video_jobs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    api_key_hash VARCHAR(128) NOT NULL,
+    invocation_arn VARCHAR(512) UNIQUE NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'in_progress',
+    mode VARCHAR(20) NOT NULL,
+    prompt TEXT NOT NULL,
+    num_shots INTEGER NOT NULL DEFAULT 1,
+    duration_seconds INTEGER NOT NULL,
+    cost DECIMAL(10,4) DEFAULT 0,
+    s3_uri VARCHAR(512),
+    error_message TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ
+  );
+  CREATE INDEX IF NOT EXISTS idx_video_jobs_api_key_hash ON rockport_video_jobs (api_key_hash);
+  CREATE INDEX IF NOT EXISTS idx_video_jobs_status ON rockport_video_jobs (status);
+  CREATE INDEX IF NOT EXISTS idx_video_jobs_created_at ON rockport_video_jobs (created_at);
+  ALTER TABLE rockport_video_jobs OWNER TO litellm_user;
+"
+echo "Video jobs table ready."
+
+# Sidecar env file — append video-specific vars to LiteLLM env
+(
+  umask 077
+  cat >> /etc/litellm/env <<VIDENVEOF
+VIDEO_BUCKET=${video_bucket_name}
+VIDEO_MAX_CONCURRENT_JOBS=${video_max_concurrent_jobs}
+VIDENVEOF
+)
+
+# Systemd unit for video sidecar
+cat > /etc/systemd/system/rockport-video.service <<'VIDEOSVC'
+${video_sidecar_service}
+VIDEOSVC
 
 # --- Cloudflared ---
 echo "Installing cloudflared..."
@@ -225,8 +278,9 @@ CFLDSVC
 # --- Start services ---
 echo "Starting services..."
 systemctl daemon-reload
-systemctl enable litellm cloudflared
+systemctl enable litellm cloudflared rockport-video
 systemctl start litellm
 systemctl start cloudflared
+systemctl start --no-block rockport-video
 
 echo "=== Rockport bootstrap completed at $(date) ==="

@@ -39,9 +39,14 @@ jobs:
 
   security-scan:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Gitleaks secrets scan
         uses: gitleaks/gitleaks-action@v2
