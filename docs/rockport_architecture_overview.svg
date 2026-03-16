@@ -145,7 +145,7 @@
 
   <!-- EU Regions box -->
   <rect x="1386" y="70" width="388" height="326" rx="4" fill="#0a1a10" stroke="#3fb950" stroke-width="1"/>
-  <text x="1398" y="86" fill="#3fb950" font-size="9" letter-spacing="1" opacity="0.8">EU REGIONS · cross-region inference (eu.* prefix)</text>
+  <text x="1398" y="86" fill="#3fb950" font-size="9" letter-spacing="1" opacity="0.8">EU REGIONS · eu-west-2 (Claude uses eu.* cross-region profiles)</text>
 
   <!-- Claude models -->
   <rect x="1396" y="94" width="116" height="44" rx="3" fill="#0f2018" stroke="#f78166" stroke-width="1"/>
@@ -163,28 +163,28 @@
   <!-- Third-party models -->
   <rect x="1396" y="150" width="116" height="44" rx="3" fill="#0f2018" stroke="#58a6ff" stroke-width="1"/>
   <text x="1454" y="168" text-anchor="middle" fill="#58a6ff" font-size="9" font-weight="bold">deepseek-v3.2</text>
-  <text x="1454" y="182" text-anchor="middle" fill="#8b949e" font-size="8">eu.* prefix</text>
+  <text x="1454" y="182" text-anchor="middle" fill="#8b949e" font-size="8">eu-west-2</text>
 
   <rect x="1522" y="150" width="116" height="44" rx="3" fill="#0f2018" stroke="#58a6ff" stroke-width="1"/>
-  <text x="1580" y="168" text-anchor="middle" fill="#58a6ff" font-size="9" font-weight="bold">qwen3</text>
-  <text x="1580" y="182" text-anchor="middle" fill="#8b949e" font-size="8">eu.* prefix</text>
+  <text x="1580" y="168" text-anchor="middle" fill="#58a6ff" font-size="9" font-weight="bold">qwen3-coder-480b</text>
+  <text x="1580" y="182" text-anchor="middle" fill="#8b949e" font-size="8">eu-west-2</text>
 
   <rect x="1648" y="150" width="116" height="44" rx="3" fill="#0f2018" stroke="#58a6ff" stroke-width="1"/>
   <text x="1706" y="168" text-anchor="middle" fill="#58a6ff" font-size="9" font-weight="bold">kimi-k2.5</text>
-  <text x="1706" y="182" text-anchor="middle" fill="#8b949e" font-size="8">eu.* prefix</text>
+  <text x="1706" y="182" text-anchor="middle" fill="#8b949e" font-size="8">eu-west-2</text>
 
   <!-- Nova models -->
   <rect x="1396" y="206" width="116" height="44" rx="3" fill="#0f2018" stroke="#3fb950" stroke-width="1"/>
   <text x="1454" y="224" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="bold">nova-pro</text>
-  <text x="1454" y="238" text-anchor="middle" fill="#8b949e" font-size="8">eu.* prefix</text>
+  <text x="1454" y="238" text-anchor="middle" fill="#8b949e" font-size="8">eu-west-2</text>
 
   <rect x="1522" y="206" width="116" height="44" rx="3" fill="#0f2018" stroke="#3fb950" stroke-width="1"/>
   <text x="1580" y="224" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="bold">nova-lite</text>
-  <text x="1580" y="238" text-anchor="middle" fill="#8b949e" font-size="8">eu.* prefix</text>
+  <text x="1580" y="238" text-anchor="middle" fill="#8b949e" font-size="8">eu-west-2</text>
 
   <rect x="1648" y="206" width="116" height="44" rx="3" fill="#0f2018" stroke="#3fb950" stroke-width="1"/>
   <text x="1706" y="224" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="bold">nova-micro</text>
-  <text x="1706" y="238" text-anchor="middle" fill="#8b949e" font-size="8">eu.* prefix</text>
+  <text x="1706" y="238" text-anchor="middle" fill="#8b949e" font-size="8">eu-west-2</text>
 
   <!-- us-east-1 -->
   <rect x="1396" y="262" width="180" height="124" rx="3" fill="#0a1a10" stroke="#3fb950" stroke-width="1" stroke-dasharray="3,2"/>
