@@ -1,6 +1,6 @@
 # Rockport
 
-LiteLLM proxy on EC2 behind Cloudflare Tunnel, routing Claude Code to Bedrock models.
+LiteLLM proxy on EC2 behind Cloudflare Tunnel, routing Claude Code to Bedrock models — chat, image generation, and video generation.
 
 ## Project Structure
 
@@ -78,7 +78,7 @@ tests/smoke-test.sh     # Post-deploy verification
 - Video generation: Nova Reel v1.1 via sidecar FastAPI service on port 4001, us-east-1 only, fixed 1280x720 24fps MP4, duration must be multiple of 6 (6-120s), $0.08/second
 - Video sidecar authenticates via LiteLLM's `/key/info` endpoint; writes spend to `LiteLLM_SpendLogs` + `LiteLLM_VerificationToken` for unified tracking
 - Video output stored in S3 bucket `rockport-video-{account}-us-east-1` with 7-day lifecycle; presigned URLs expire after 1 hour
-- Cloudflare Tunnel must be configured to route `/v1/videos/*` to `http://localhost:4001` (manual dashboard config step)
+- Cloudflare Tunnel routes `/v1/videos/*` to `http://localhost:4001` — managed in `terraform/tunnel.tf`
 - Video sidecar MemoryMax is 256MB; LiteLLM reduced to 1280MB to fit on t3.small (2GB + 512MB swap)
 - Single-shot (one prompt, 6-120s) and multi-shot (2-20 per-shot prompts, 6s each) modes supported
 - Image-to-video: single-shot with image is fixed at 6s duration; multi-shot uses `MULTI_SHOT_MANUAL` taskType with `multiShotManualParams.shots`
@@ -86,14 +86,9 @@ tests/smoke-test.sh     # Post-deploy verification
 - Bedrock image format: `{format: "png"|"jpeg", source: {bytes: "<raw-base64>"}}` — data URI prefix must be stripped
 - Per-key concurrent job limit defaults to 3 (configurable via `VIDEO_MAX_CONCURRENT_JOBS` env var)
 - Video sidecar accepted risks: (1) TOCTOU race on concurrent job count and budget — low risk at expected scale (~10-20 jobs/day), would need advisory locks to fully fix; (2) `ListAsyncInvokes` IAM may need `Resource: "*"` — health check will fail if so, fix on first deploy
-- Cloudflare Tunnel routes `/v1/videos*` → `http://localhost:4001` (video sidecar), all other traffic → `http://localhost:4000` (LiteLLM) — managed in `terraform/tunnel.tf`
-
 ## Active Technologies
-- Python 3.11 (already installed on EC2 instance) + FastAPI, uvicorn, boto3, psycopg2 (FastAPI/uvicorn already installed as LiteLLM dependencies; boto3 available via AWS CLI; psycopg2 needs install) (004-video-generation-sidecar)
-- PostgreSQL 15 (existing instance, new `rockport_video_jobs` table) + S3 (new bucket in us-east-1 for video output) (004-video-generation-sidecar)
-- Python 3.11 + FastAPI, boto3, Pillow, psycopg2, pydantic (005-fix-image-to-video)
-- PostgreSQL 15 (existing, no schema changes) (005-fix-image-to-video)
-- Python 3.11 + FastAPI, boto3, Pillow, psycopg2, pydantic (all already installed) (005-fix-image-to-video)
-
-## Recent Changes
-- 004-video-generation-sidecar: Added Python 3.11 (already installed on EC2 instance) + FastAPI, uvicorn, boto3, psycopg2 (FastAPI/uvicorn already installed as LiteLLM dependencies; boto3 available via AWS CLI; psycopg2 needs install)
+- Terraform (AWS provider, Cloudflare provider) — all infrastructure
+- Python 3.11 + FastAPI, uvicorn, boto3, Pillow, psycopg2, pydantic — video sidecar
+- PostgreSQL 15 — LiteLLM keys/spend + video job tracking (`rockport_video_jobs` table)
+- S3 — Terraform state (eu-west-2) + video output (us-east-1, 7-day lifecycle)
+- Bash — admin CLI, bootstrap, smoke tests
