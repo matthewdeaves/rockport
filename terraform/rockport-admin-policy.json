@@ -58,6 +58,23 @@
       "Resource": "arn:aws:s3:::rockport-tfstate-*"
     },
     {
+      "Sid": "S3VideoBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket",
+        "s3:ListBucketVersions",
+        "s3:GetBucketAcl",
+        "s3:DeleteBucket",
+        "s3:GetObject",
+        "s3:DeleteObject",
+        "s3:DeleteObjectVersion"
+      ],
+      "Resource": [
+        "arn:aws:s3:::rockport-video-*",
+        "arn:aws:s3:::rockport-video-*/*"
+      ]
+    },
+    {
       "Sid": "AccountDiscovery",
       "Effect": "Allow",
       "Action": "sts:GetCallerIdentity",

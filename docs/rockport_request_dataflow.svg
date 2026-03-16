@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 960" width="1800" height="960" font-family="'Courier New', Courier, monospace">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 1540" width="1800" height="1540" font-family="'Courier New', Courier, monospace">
   <defs>
     <marker id="ah" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
       <path d="M0,0 L0,6 L8,3 z" fill="#8b949e"/>
@@ -21,10 +21,16 @@
     <marker id="ah-yellow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
       <path d="M0,0 L0,6 L8,3 z" fill="#e3b341"/>
     </marker>
+    <marker id="ah-cyan" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#39d2c0"/>
+    </marker>
+    <marker id="ah-down" markerWidth="8" markerHeight="8" refX="3" refY="6" orient="auto">
+      <path d="M0,0 L6,0 L3,8 z" fill="#d2a8ff"/>
+    </marker>
   </defs>
 
   <!-- Background -->
-  <rect width="1800" height="960" fill="#0d1117"/>
+  <rect width="1800" height="1540" fill="#0d1117"/>
 
   <!-- Title -->
   <text x="900" y="26" text-anchor="middle" fill="#8b949e" font-size="13" font-weight="bold" letter-spacing="2">PROJECT ROCKPORT — REQUEST DATA FLOW</text>
@@ -40,14 +46,14 @@
   <!-- Col 7: ERRORS          x=1365 w=425 -->
   <!-- ═══════════════════════════════════════════════════════════ -->
 
-  <!-- Lane backgrounds -->
-  <rect x="10"   y="38" width="155" height="840" rx="0" fill="#0d1f38" opacity="0.3"/>
-  <rect x="170"  y="38" width="185" height="840" rx="0" fill="#261510" opacity="0.4"/>
-  <rect x="360"  y="38" width="150" height="840" rx="0" fill="#261510" opacity="0.25"/>
-  <rect x="515"  y="38" width="130" height="840" rx="0" fill="#1a1327" opacity="0.35"/>
-  <rect x="650"  y="38" width="530" height="840" rx="0" fill="#0f2018" opacity="0.35"/>
-  <rect x="1185" y="38" width="175" height="840" rx="0" fill="#0d1a12" opacity="0.4"/>
-  <rect x="1365" y="38" width="425" height="840" rx="0" fill="#1a0808" opacity="0.4"/>
+  <!-- Lane backgrounds (extended height to 1420) -->
+  <rect x="10"   y="38" width="155" height="1420" rx="0" fill="#0d1f38" opacity="0.3"/>
+  <rect x="170"  y="38" width="185" height="1420" rx="0" fill="#261510" opacity="0.4"/>
+  <rect x="360"  y="38" width="150" height="1420" rx="0" fill="#261510" opacity="0.25"/>
+  <rect x="515"  y="38" width="130" height="1420" rx="0" fill="#1a1327" opacity="0.35"/>
+  <rect x="650"  y="38" width="530" height="1420" rx="0" fill="#0f2018" opacity="0.35"/>
+  <rect x="1185" y="38" width="175" height="1420" rx="0" fill="#0d1a12" opacity="0.4"/>
+  <rect x="1365" y="38" width="425" height="1420" rx="0" fill="#1a0808" opacity="0.4"/>
 
   <!-- Lane header bars -->
   <rect x="10"   y="38" width="155" height="28" fill="#0d1f38"/>
@@ -67,16 +73,16 @@
   <text x="1272" y="57" text-anchor="middle" fill="#3fb950"  font-size="9" font-weight="bold" letter-spacing="1">BEDROCK</text>
   <text x="1577" y="57" text-anchor="middle" fill="#f85149"  font-size="9" font-weight="bold" letter-spacing="1">ERROR / REJECTION PATHS</text>
 
-  <!-- Lane separator lines -->
-  <line x1="165"  y1="38" x2="165"  y2="878" stroke="#30363d" stroke-width="1"/>
-  <line x1="355"  y1="38" x2="355"  y2="878" stroke="#30363d" stroke-width="1"/>
-  <line x1="510"  y1="38" x2="510"  y2="878" stroke="#30363d" stroke-width="1"/>
-  <line x1="645"  y1="38" x2="645"  y2="878" stroke="#30363d" stroke-width="1"/>
-  <line x1="1180" y1="38" x2="1180" y2="878" stroke="#30363d" stroke-width="1"/>
-  <line x1="1360" y1="38" x2="1360" y2="878" stroke="#30363d" stroke-width="1"/>
+  <!-- Lane separator lines (extended) -->
+  <line x1="165"  y1="38" x2="165"  y2="1458" stroke="#30363d" stroke-width="1"/>
+  <line x1="355"  y1="38" x2="355"  y2="1458" stroke="#30363d" stroke-width="1"/>
+  <line x1="510"  y1="38" x2="510"  y2="1458" stroke="#30363d" stroke-width="1"/>
+  <line x1="645"  y1="38" x2="645"  y2="1458" stroke="#30363d" stroke-width="1"/>
+  <line x1="1180" y1="38" x2="1180" y2="1458" stroke="#30363d" stroke-width="1"/>
+  <line x1="1360" y1="38" x2="1360" y2="1458" stroke="#30363d" stroke-width="1"/>
 
-  <!-- Outer border -->
-  <rect x="10" y="38" width="1780" height="840" rx="4" fill="none" stroke="#30363d" stroke-width="1.5"/>
+  <!-- Outer border (extended) -->
+  <rect x="10" y="38" width="1780" height="1420" rx="4" fill="none" stroke="#30363d" stroke-width="1.5"/>
 
   <!-- ═══════════════════════════════════════════════════════════ -->
   <!-- STEP 1: CLIENT REQUEST (y=76) -->
@@ -349,38 +355,210 @@
   <path d="M 1267 204 Q 1267 640 1156 698" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="4,3" fill="none" marker-end="url(#ah-green)"/>
 
   <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- LEGEND -->
+  <!-- STEP 5V: VIDEO SIDECAR PROCESSING (alternate path from step 4) -->
   <!-- ═══════════════════════════════════════════════════════════ -->
-  <rect x="10" y="752" width="1350" height="72" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
-  <text x="22" y="770" fill="#8b949e" font-size="9" font-weight="bold" letter-spacing="1">COLOUR KEY</text>
 
-  <rect x="22" y="778" width="10" height="10" rx="2" fill="#58a6ff"/>
-  <text x="38" y="787" fill="#e6edf3" font-size="9">Client / AWS</text>
+  <!-- Section divider -->
+  <line x1="20" y1="755" x2="1770" y2="755" stroke="#39d2c0" stroke-width="1" stroke-dasharray="6,4" opacity="0.5"/>
 
-  <rect x="140" y="778" width="10" height="10" rx="2" fill="#f78166"/>
-  <text x="156" y="787" fill="#e6edf3" font-size="9">Cloudflare</text>
+  <!-- Step badge -->
+  <circle cx="535" cy="775" r="14" fill="#39d2c0"/>
+  <text x="535" y="780" text-anchor="middle" fill="#0d1117" font-size="9" font-weight="bold">5V</text>
+  <text x="700" y="780" text-anchor="start" fill="#39d2c0" font-size="10" font-weight="bold">Video Sidecar Processing (alternate path from Step 4 when /v1/videos/*)</text>
 
-  <rect x="250" y="778" width="10" height="10" rx="2" fill="#d2a8ff"/>
-  <text x="266" y="787" fill="#e6edf3" font-size="9">EC2 internal</text>
+  <!-- 4→5V: cloudflared → Video Sidecar (downward arrow from step 4 box) -->
+  <path d="M 577 188 L 577 770" stroke="#d2a8ff" stroke-width="2" marker-end="url(#ah-purple)"/>
+  <text x="584" y="480" fill="#d2a8ff" font-size="8">:4001</text>
+  <text x="584" y="494" fill="#d2a8ff" font-size="8">/v1/videos/*</text>
 
-  <rect x="370" y="778" width="10" height="10" rx="2" fill="#3fb950"/>
-  <text x="386" y="787" fill="#e6edf3" font-size="9">Success / Bedrock</text>
+  <!-- 5V-a: Auth via LiteLLM  y=798..862 -->
+  <rect x="523" y="798" width="640" height="64" rx="4" fill="#0a1a1a" stroke="#39d2c0" stroke-width="1"/>
+  <text x="533" y="816" fill="#39d2c0" font-size="9" font-weight="bold">a.  Auth: validate key via LiteLLM /key/info</text>
+  <text x="533" y="832" fill="#8b949e" font-size="9">sidecar calls LiteLLM :4000/key/info with master key · gets spend + budget info</text>
+  <text x="533" y="850" fill="#8b949e" font-size="8">invalid key → 401 · LiteLLM unreachable → 502</text>
+  <!-- error badge -->
+  <rect x="1060" y="808" width="96" height="22" rx="3" fill="#2a0808" stroke="#f85149" stroke-width="1"/>
+  <text x="1108" y="823" text-anchor="middle" fill="#f85149" font-size="9" font-weight="bold">→ 401 / 502</text>
 
-  <rect x="510" y="778" width="10" height="10" rx="2" fill="#f85149"/>
-  <text x="526" y="787" fill="#e6edf3" font-size="9">Hard rejection (4xx)</text>
+  <!-- 5V-b: Validation  y=870..934 -->
+  <rect x="523" y="870" width="640" height="64" rx="4" fill="#0a1a1a" stroke="#39d2c0" stroke-width="1"/>
+  <text x="533" y="888" fill="#39d2c0" font-size="9" font-weight="bold">b.  Validation: prompt, shots, duration, image</text>
+  <text x="533" y="904" fill="#8b949e" font-size="9">single-shot: duration 6-120s (multiple of 6) · multi-shot: 2-20 shots at 6s each</text>
+  <text x="533" y="922" fill="#8b949e" font-size="8">image must be 1280x720 PNG/JPEG · cannot mix prompt + shots</text>
+  <!-- error badge -->
+  <rect x="1060" y="880" width="96" height="22" rx="3" fill="#2a0808" stroke="#f85149" stroke-width="1"/>
+  <text x="1108" y="895" text-anchor="middle" fill="#f85149" font-size="9" font-weight="bold">→ 400 Invalid</text>
 
-  <rect x="670" y="778" width="10" height="10" rx="2" fill="#e3b341"/>
-  <text x="686" y="787" fill="#e6edf3" font-size="9">Soft limit (429/400)</text>
+  <!-- 5V-c: Budget check  y=942..1006 -->
+  <rect x="523" y="942" width="640" height="64" rx="4" fill="#0a1a1a" stroke="#39d2c0" stroke-width="1"/>
+  <text x="533" y="960" fill="#39d2c0" font-size="9" font-weight="bold">c.  Budget Check: estimated_cost vs remaining</text>
+  <text x="533" y="976" fill="#8b949e" font-size="9">cost = duration x $0.08/s · checks remaining budget from LiteLLM key info</text>
+  <text x="533" y="994" fill="#8b949e" font-size="8">estimated cost exceeds remaining budget → 402 Payment Required</text>
+  <!-- error badge -->
+  <rect x="1060" y="952" width="96" height="22" rx="3" fill="#1a1200" stroke="#e3b341" stroke-width="1"/>
+  <text x="1108" y="967" text-anchor="middle" fill="#e3b341" font-size="9" font-weight="bold">→ 402 Budget</text>
 
-  <rect x="830" y="778" width="10" height="10" rx="2" fill="#e3b341"/>
-  <text x="846" y="787" fill="#e6edf3" font-size="9">PostgreSQL</text>
+  <!-- 5V-d: Concurrent job limit  y=1014..1078 -->
+  <rect x="523" y="1014" width="640" height="64" rx="4" fill="#0a1a1a" stroke="#39d2c0" stroke-width="1"/>
+  <text x="533" y="1032" fill="#39d2c0" font-size="9" font-weight="bold">d.  Concurrent Job Limit: max 3 in-progress per key</text>
+  <text x="533" y="1048" fill="#8b949e" font-size="9">count in-progress jobs in PostgreSQL rockport_video_jobs table</text>
+  <!-- PG badge -->
+  <rect x="533" y="1058" width="140" height="18" rx="3" fill="#1a1a0a" stroke="#e3b341" stroke-width="1"/>
+  <text x="603" y="1071" text-anchor="middle" fill="#e3b341" font-size="8">PostgreSQL :5432</text>
+  <!-- error badge -->
+  <rect x="1060" y="1024" width="96" height="22" rx="3" fill="#1a1200" stroke="#e3b341" stroke-width="1"/>
+  <text x="1108" y="1039" text-anchor="middle" fill="#e3b341" font-size="9" font-weight="bold">→ 429 Limit</text>
 
-  <line x1="1000" y1="783" x2="1040" y2="783" stroke="#3fb950" stroke-width="2"/>
-  <text x="1048" y="787" fill="#e6edf3" font-size="9">request / response</text>
+  <!-- 5V-e: Bedrock StartAsyncInvoke  y=1086..1150 -->
+  <rect x="523" y="1086" width="640" height="64" rx="4" fill="#0a1a1a" stroke="#39d2c0" stroke-width="1"/>
+  <text x="533" y="1104" fill="#39d2c0" font-size="9" font-weight="bold">e.  Bedrock StartAsyncInvoke → Nova Reel v1:1</text>
+  <text x="533" y="1120" fill="#8b949e" font-size="9">us-east-1 only · 1280x720 24fps MP4 · output → S3 bucket</text>
+  <text x="533" y="1138" fill="#8b949e" font-size="8">Bedrock error → 502 · returns invocationArn on success</text>
+  <!-- Bedrock badge -->
+  <rect x="1060" y="1096" width="96" height="22" rx="3" fill="#0d1a12" stroke="#3fb950" stroke-width="1"/>
+  <text x="1108" y="1111" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="bold">Bedrock async</text>
 
-  <line x1="1160" y1="783" x2="1200" y2="783" stroke="#8b949e" stroke-width="1.5" stroke-dasharray="4,3"/>
-  <text x="1208" y="787" fill="#e6edf3" font-size="9">error / control</text>
+  <!-- 5V-f: Store job in PostgreSQL  y=1158..1210 -->
+  <rect x="523" y="1158" width="640" height="52" rx="4" fill="#0a1a1a" stroke="#39d2c0" stroke-width="1"/>
+  <text x="533" y="1176" fill="#39d2c0" font-size="9" font-weight="bold">f.  Store Job in PostgreSQL</text>
+  <text x="533" y="1192" fill="#8b949e" font-size="9">insert into rockport_video_jobs · status=in_progress · returns 202 with job_id</text>
+  <!-- PG badge -->
+  <rect x="1060" y="1168" width="96" height="22" rx="3" fill="#1a1a0a" stroke="#e3b341" stroke-width="1"/>
+  <text x="1108" y="1183" text-anchor="middle" fill="#e3b341" font-size="8">rockport_video_jobs</text>
+
+  <!-- 5V arrow to Bedrock column -->
+  <line x1="1163" y1="1107" x2="1193" y2="1107" stroke="#3fb950" stroke-width="1.5" marker-end="url(#ah-green)"/>
+
+  <!-- 5V error arrows -->
+  <line x1="1156" y1="819" x2="1373" y2="819" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
+  <line x1="1156" y1="891" x2="1373" y2="891" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
+  <line x1="1156" y1="963" x2="1373" y2="963" stroke="#e3b341" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-yellow)"/>
+  <line x1="1156" y1="1035" x2="1373" y2="1035" stroke="#e3b341" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-yellow)"/>
+
+  <!-- Video error boxes (right column) -->
+  <rect x="1373" y="798" width="404" height="52" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
+  <text x="1380" y="816" fill="#f85149" font-size="10" font-weight="bold">Step 5V-a: Auth Failed → 401 / 502</text>
+  <text x="1380" y="832" fill="#8b949e" font-size="9">invalid key or LiteLLM unreachable</text>
+  <text x="1380" y="844" fill="#8b949e" font-size="8">key validated via LiteLLM /key/info (not direct DB)</text>
+
+  <rect x="1373" y="864" width="404" height="52" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
+  <text x="1380" y="882" fill="#f85149" font-size="10" font-weight="bold">Step 5V-b: Validation Failed → 400</text>
+  <text x="1380" y="898" fill="#8b949e" font-size="9">bad duration, invalid image, mixed prompt+shots</text>
+  <text x="1380" y="910" fill="#8b949e" font-size="8">image must be exactly 1280x720 PNG or JPEG</text>
+
+  <rect x="1373" y="930" width="404" height="52" rx="4" fill="#1a1200" stroke="#e3b341" stroke-width="1.5"/>
+  <text x="1380" y="948" fill="#e3b341" font-size="10" font-weight="bold">Step 5V-c: Budget Exceeded → 402</text>
+  <text x="1380" y="964" fill="#8b949e" font-size="9">estimated cost exceeds remaining key budget</text>
+  <text x="1380" y="976" fill="#8b949e" font-size="8">cost = duration x $0.08/second</text>
+
+  <rect x="1373" y="996" width="404" height="52" rx="4" fill="#1a1200" stroke="#e3b341" stroke-width="1.5"/>
+  <text x="1380" y="1014" fill="#e3b341" font-size="10" font-weight="bold">Step 5V-d: Concurrent Limit → 429</text>
+  <text x="1380" y="1030" fill="#8b949e" font-size="9">max 3 in-progress jobs per key</text>
+  <text x="1380" y="1042" fill="#8b949e" font-size="8">checked in PostgreSQL rockport_video_jobs</text>
+
+  <!-- Bedrock async invoke box -->
+  <rect x="1193" y="1082" width="148" height="64" rx="4" fill="#0d1a12" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="1267" y="1102" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="bold">Bedrock Async</text>
+  <text x="1267" y="1118" text-anchor="middle" fill="#8b949e" font-size="9">StartAsyncInvoke</text>
+  <text x="1267" y="1134" text-anchor="middle" fill="#8b949e" font-size="9">Nova Reel v1:1</text>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- STEP 5V RESPONSE: 202 + Poll flow (bottom bar) -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <circle cx="535" cy="1234" r="12" fill="#39d2c0"/>
+  <text x="535" y="1239" text-anchor="middle" fill="#0d1117" font-size="10" font-weight="bold">R</text>
+
+  <rect x="10" y="1252" width="1770" height="102" rx="4" fill="#0a1a1a" stroke="#39d2c0" stroke-width="1.5"/>
+  <text x="900" y="1270" text-anchor="middle" fill="#39d2c0" font-size="10" font-weight="bold">Video Response Path (async)</text>
+
+  <!-- Initial 202 response -->
+  <rect x="20" y="1278" width="220" height="64" rx="3" fill="#0a2020" stroke="#39d2c0" stroke-width="1"/>
+  <text x="130" y="1298" text-anchor="middle" fill="#39d2c0" font-size="10" font-weight="bold">202 Accepted</text>
+  <text x="130" y="1314" text-anchor="middle" fill="#8b949e" font-size="8">returns job_id immediately</text>
+  <text x="130" y="1328" text-anchor="middle" fill="#8b949e" font-size="8">via cloudflared → tunnel → client</text>
+
+  <line x1="240" y1="1310" x2="260" y2="1310" stroke="#39d2c0" stroke-width="1.5" marker-end="url(#ah-cyan)"/>
+
+  <!-- Client polls -->
+  <rect x="262" y="1278" width="220" height="64" rx="3" fill="#0d1f38" stroke="#58a6ff" stroke-width="1"/>
+  <text x="372" y="1298" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="bold">Client Polls</text>
+  <text x="372" y="1314" text-anchor="middle" fill="#8b949e" font-size="8">GET /v1/videos/generations/{id}</text>
+  <text x="372" y="1328" text-anchor="middle" fill="#8b949e" font-size="8">repeats until completed/failed</text>
+
+  <line x1="482" y1="1310" x2="502" y2="1310" stroke="#39d2c0" stroke-width="1.5" marker-end="url(#ah-cyan)"/>
+
+  <!-- Sidecar checks Bedrock -->
+  <rect x="504" y="1278" width="220" height="64" rx="3" fill="#0a2020" stroke="#39d2c0" stroke-width="1"/>
+  <text x="614" y="1298" text-anchor="middle" fill="#39d2c0" font-size="10" font-weight="bold">Sidecar Re-polls</text>
+  <text x="614" y="1314" text-anchor="middle" fill="#8b949e" font-size="8">GetAsyncInvoke on Bedrock</text>
+  <text x="614" y="1328" text-anchor="middle" fill="#8b949e" font-size="8">updates job status in PostgreSQL</text>
+
+  <line x1="724" y1="1310" x2="744" y2="1310" stroke="#39d2c0" stroke-width="1.5" marker-end="url(#ah-cyan)"/>
+
+  <!-- Spend logging -->
+  <rect x="746" y="1278" width="220" height="64" rx="3" fill="#0a2020" stroke="#39d2c0" stroke-width="1"/>
+  <text x="856" y="1298" text-anchor="middle" fill="#39d2c0" font-size="10" font-weight="bold">Spend Logged</text>
+  <text x="856" y="1314" text-anchor="middle" fill="#8b949e" font-size="8">on completion: writes to</text>
+  <text x="856" y="1328" text-anchor="middle" fill="#e3b341" font-size="8">LiteLLM_SpendLogs + VerificationToken</text>
+
+  <line x1="966" y1="1310" x2="986" y2="1310" stroke="#39d2c0" stroke-width="1.5" marker-end="url(#ah-cyan)"/>
+
+  <!-- Presigned URL -->
+  <rect x="988" y="1278" width="240" height="64" rx="3" fill="#0a2020" stroke="#39d2c0" stroke-width="1"/>
+  <text x="1108" y="1298" text-anchor="middle" fill="#39d2c0" font-size="10" font-weight="bold">Presigned S3 URL</text>
+  <text x="1108" y="1314" text-anchor="middle" fill="#8b949e" font-size="8">generates 1hr presigned URL for MP4</text>
+  <text x="1108" y="1328" text-anchor="middle" fill="#8b949e" font-size="8">S3 lifecycle: 7-day auto-delete</text>
+
+  <line x1="1228" y1="1310" x2="1248" y2="1310" stroke="#39d2c0" stroke-width="1.5" marker-end="url(#ah-cyan)"/>
+
+  <!-- Client receives -->
+  <rect x="1250" y="1278" width="200" height="64" rx="3" fill="#0d1f38" stroke="#58a6ff" stroke-width="1"/>
+  <text x="1350" y="1298" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="bold">Client Downloads</text>
+  <text x="1350" y="1314" text-anchor="middle" fill="#8b949e" font-size="8">200 OK · url + cost returned</text>
+  <text x="1350" y="1328" text-anchor="middle" fill="#8b949e" font-size="8">fetches MP4 from presigned URL</text>
+
+  <!-- S3 bucket box in Bedrock column -->
+  <rect x="1470" y="1278" width="148" height="64" rx="3" fill="#0d1a12" stroke="#3fb950" stroke-width="1"/>
+  <text x="1544" y="1298" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="bold">S3 Bucket</text>
+  <text x="1544" y="1314" text-anchor="middle" fill="#8b949e" font-size="8">rockport-video-*</text>
+  <text x="1544" y="1328" text-anchor="middle" fill="#8b949e" font-size="8">us-east-1</text>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- LEGEND (moved down) -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <rect x="10" y="1376" width="1770" height="72" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="22" y="1394" fill="#8b949e" font-size="9" font-weight="bold" letter-spacing="1">COLOUR KEY</text>
+
+  <rect x="22" y="1402" width="10" height="10" rx="2" fill="#58a6ff"/>
+  <text x="38" y="1411" fill="#e6edf3" font-size="9">Client / AWS</text>
+
+  <rect x="140" y="1402" width="10" height="10" rx="2" fill="#f78166"/>
+  <text x="156" y="1411" fill="#e6edf3" font-size="9">Cloudflare</text>
+
+  <rect x="250" y="1402" width="10" height="10" rx="2" fill="#d2a8ff"/>
+  <text x="266" y="1411" fill="#e6edf3" font-size="9">EC2 internal</text>
+
+  <rect x="370" y="1402" width="10" height="10" rx="2" fill="#3fb950"/>
+  <text x="386" y="1411" fill="#e6edf3" font-size="9">Success / Bedrock</text>
+
+  <rect x="510" y="1402" width="10" height="10" rx="2" fill="#f85149"/>
+  <text x="526" y="1411" fill="#e6edf3" font-size="9">Hard rejection (4xx)</text>
+
+  <rect x="670" y="1402" width="10" height="10" rx="2" fill="#e3b341"/>
+  <text x="686" y="1411" fill="#e6edf3" font-size="9">Soft limit (429/400)</text>
+
+  <rect x="830" y="1402" width="10" height="10" rx="2" fill="#e3b341"/>
+  <text x="846" y="1411" fill="#e6edf3" font-size="9">PostgreSQL</text>
+
+  <rect x="970" y="1402" width="10" height="10" rx="2" fill="#39d2c0"/>
+  <text x="986" y="1411" fill="#e6edf3" font-size="9">Video sidecar</text>
+
+  <line x1="1100" y1="1407" x2="1140" y2="1407" stroke="#3fb950" stroke-width="2"/>
+  <text x="1148" y="1411" fill="#e6edf3" font-size="9">request / response</text>
+
+  <line x1="1280" y1="1407" x2="1320" y2="1407" stroke="#8b949e" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="1328" y="1411" fill="#e6edf3" font-size="9">error / control</text>
 
   <!-- Footer -->
-  <text x="900" y="950" text-anchor="middle" fill="#8b949e" font-size="9" opacity="0.5">rockport · request data flow · cloudflare tunnel · litellm proxy · aws bedrock</text>
+  <text x="900" y="1530" text-anchor="middle" fill="#8b949e" font-size="9" opacity="0.5">rockport · request data flow · cloudflare tunnel · litellm proxy · video sidecar · aws bedrock</text>
 </svg>
