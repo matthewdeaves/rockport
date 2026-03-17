@@ -1,6 +1,6 @@
 # Rockport
 
-LiteLLM proxy on EC2 that gives Claude Code access to any Bedrock model — chat, image generation, and video generation — through a single endpoint. Cloudflare Tunnel provides HTTPS ingress with zero inbound ports. Terraform manages everything.
+OpenAI-compatible LiteLLM proxy on EC2 that routes any application to Bedrock models — chat, image generation, and video generation — through a single HTTPS endpoint. Built for Claude Code but works with any OpenAI SDK client. Cloudflare Tunnel provides ingress with zero inbound ports; Terraform manages everything.
 
 ## Architecture
 
@@ -13,7 +13,7 @@ LiteLLM proxy on EC2 that gives Claude Code access to any Bedrock model — chat
 - Claude Code connects via `ANTHROPIC_BASE_URL` to your own proxy
 - Anthropic (Opus 4.6, Sonnet 4.6, Haiku 4.5), DeepSeek V3.2, Qwen3 Coder 480B, Kimi K2.5, Nova Pro/Lite/Micro on Bedrock
 - Image generation via OpenAI-compatible `/v1/images/generations` (Nova Canvas, Titan Image v2, SD3.5 Large)
-- Video generation via `/v1/videos/generations` (Nova Reel v1.1 — 1280x720 24fps MP4, 6-120s, $0.08/second)
+- Video generation via `/v1/videos/generations` (Nova Reel v1.1 + Luma Ray2 — async jobs with presigned S3 URLs)
 - Virtual API keys with per-key budgets, rate limits, and model restrictions
 - Zero inbound security group rules — all traffic flows through Cloudflare Tunnel
 - Daily EBS snapshots with 7-day retention

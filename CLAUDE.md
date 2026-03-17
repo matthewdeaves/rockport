@@ -1,6 +1,6 @@
 # Rockport
 
-LiteLLM proxy on EC2 behind Cloudflare Tunnel, routing Claude Code to Bedrock models — chat, image generation, and video generation.
+OpenAI-compatible LiteLLM proxy on EC2 behind Cloudflare Tunnel, routing any application to Bedrock models — chat, image generation, and video generation. Built for Claude Code but works with any OpenAI SDK client.
 
 ## Project Structure
 
