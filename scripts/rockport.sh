@@ -694,6 +694,28 @@ cmd_status() {
       [[ -n "$m" ]] && echo "  ✗ $m"
     done
   fi
+
+  # Instance resource usage via SSM
+  echo ""
+  echo "Instance:"
+  local stats
+  stats=$(ssm_run "free -m && echo === && uptime && echo === && nproc" 30 2>/dev/null) || stats=""
+  if [[ -n "$stats" ]]; then
+    local mem_used mem_total mem_pct swap_used swap_total load cpus upstr
+    mem_total=$(echo "$stats" | awk '/^Mem:/{print $2}')
+    mem_used=$(echo "$stats" | awk '/^Mem:/{print $3}')
+    swap_total=$(echo "$stats" | awk '/^Swap:/{print $2}')
+    swap_used=$(echo "$stats" | awk '/^Swap:/{print $3}')
+    mem_pct=$((mem_used * 100 / mem_total))
+    load=$(echo "$stats" | grep "load average" | sed 's/.*load average: //')
+    cpus=$(echo "$stats" | tail -1)
+    upstr=$(echo "$stats" | grep "load average" | sed 's/.*up //;s/,.*load.*//')
+    echo "  Memory:   ${mem_used}/${mem_total}MB (${mem_pct}%)  Swap: ${swap_used}/${swap_total}MB"
+    echo "  CPU:      load ${load} (${cpus} vCPU)"
+    echo "  Uptime:   ${upstr}"
+  else
+    echo "  (could not retrieve instance stats)"
+  fi
 }
 
 cmd_key_create() {
@@ -1139,6 +1161,13 @@ cmd_deploy() {
     -backend-config="bucket=$bucket" \
     -backend-config="region=$region" \
     -backend-config="use_lockfile=true"
+
+  # Import artifacts bucket into state if pre-created by this script
+  if ! terraform state show aws_s3_bucket.artifacts &>/dev/null; then
+    echo "  Importing artifacts bucket into Terraform state..."
+    terraform import aws_s3_bucket.artifacts "$artifacts_bucket"
+  fi
+
   terraform apply
 
   echo

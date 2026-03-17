@@ -171,6 +171,19 @@ chown -R litellm:litellm /usr/local/lib/python3.11/site-packages/litellm_proxy_e
 sudo -u litellm prisma generate \
   --schema /usr/local/lib/python3.11/site-packages/litellm/proxy/schema.prisma
 
+# Apply all Prisma migrations now while DB is empty.
+# This avoids the slow per-migration baseline resolve that LiteLLM does on
+# startup when it finds tables but no migration history (~10s × 108 migrations).
+# Prisma expects a migrations/ dir next to the schema; LiteLLM stores them in
+# litellm_proxy_extras, so we symlink.
+echo "Applying Prisma migrations..."
+mkdir -p /usr/local/lib/python3.11/site-packages/litellm/proxy/prisma
+ln -sfn /usr/local/lib/python3.11/site-packages/litellm_proxy_extras/migrations \
+  /usr/local/lib/python3.11/site-packages/litellm/proxy/prisma/migrations
+sudo -u litellm DATABASE_URL="$DATABASE_URL" prisma migrate deploy \
+  --schema /usr/local/lib/python3.11/site-packages/litellm/proxy/schema.prisma
+echo "Prisma migrations applied."
+
 # --- Download deploy artifact from S3 ---
 echo "Downloading deploy artifact from S3..."
 aws s3 cp "s3://$ARTIFACTS_BUCKET/deploy/rockport-artifact.tar.gz" /tmp/rockport-artifact.tar.gz \
@@ -245,9 +258,6 @@ VIDENVEOF
 # Systemd unit for video sidecar
 cp /tmp/rockport-artifact/config/rockport-video.service /etc/systemd/system/rockport-video.service
 
-# Cleanup
-rm -rf /tmp/rockport-artifact /tmp/rockport-artifact.tar.gz
-
 # --- Cloudflared ---
 echo "Installing cloudflared..."
 curl -fsSL "https://github.com/cloudflare/cloudflared/releases/download/$CLOUDFLARED_VERSION/cloudflared-linux-amd64" \
@@ -282,6 +292,9 @@ chown cloudflared:cloudflared /etc/cloudflared/env
 
 # Systemd unit
 cp /tmp/rockport-artifact/config/cloudflared.service /etc/systemd/system/cloudflared.service
+
+# Cleanup artifact
+rm -rf /tmp/rockport-artifact /tmp/rockport-artifact.tar.gz
 
 # --- Start services ---
 echo "Starting services..."

@@ -13,6 +13,7 @@ OpenAI-compatible LiteLLM proxy on EC2 that routes any application to Bedrock mo
 - Claude Code connects via `ANTHROPIC_BASE_URL` to your own proxy
 - Anthropic (Opus 4.6, Sonnet 4.6, Haiku 4.5), DeepSeek V3.2, Qwen3 Coder 480B, Kimi K2.5, Nova Pro/Lite/Micro on Bedrock
 - Image generation via OpenAI-compatible `/v1/images/generations` (Nova Canvas, Titan Image v2, SD3.5 Large)
+- Image services: variations, background removal, outpainting (Nova Canvas) + structure, sketch, style transfer, upscale, and more (Stability AI)
 - Video generation via `/v1/videos/generations` (Nova Reel v1.1 + Luma Ray2 — async jobs with presigned S3 URLs)
 - Virtual API keys with per-key budgets, rate limits, and model restrictions
 - Zero inbound security group rules — all traffic flows through Cloudflare Tunnel
@@ -170,7 +171,7 @@ All settings are in `terraform/terraform.tfvars`. These variables have defaults 
 |----------|---------|-------------|
 | `region` | `eu-west-2` | AWS region |
 | `instance_type` | `t3.small` | EC2 instance type |
-| `litellm_version` | `1.82.2` | LiteLLM version to install |
+| `litellm_version` | `1.82.3` | LiteLLM version to install |
 | `cloudflared_version` | `2026.3.0` | Cloudflared version (pinned for stability) |
 | `bedrock_daily_budget` | `10` | Daily Bedrock spend alert threshold (USD) |
 | `monthly_budget` | `30` | Monthly overall AWS budget alert threshold (USD) |
@@ -229,7 +230,33 @@ curl -X POST https://<your-domain>/v1/images/generations \
 
 Source images must be base64-encoded PNG or JPEG. Nova Canvas requires minimum 320px per side. SD3.5 Large also supports `mode: "image-to-image"` with an `image` and `strength` parameter, but always outputs 1024x1024 JPEG — Nova Canvas is recommended for image-to-image.
 
-**Note:** `/v1/images/edits` is not supported — LiteLLM 1.82.2 only supports that endpoint for Stability AI models, not Bedrock's Nova Canvas or Titan. Use `/v1/images/generations` with `conditionImage` instead.
+**Note:** `/v1/images/edits` is not supported — LiteLLM 1.82.3 only supports that endpoint for Stability AI models, not Bedrock's Nova Canvas or Titan. Use `/v1/images/generations` with `conditionImage` instead.
+
+#### Image service endpoints
+
+Advanced image operations run on the sidecar (port 4001) and are routed via `/v1/images/*` (except `/v1/images/generations` which goes to LiteLLM). Keys created with `--claude-only` cannot access these endpoints.
+
+**Nova Canvas operations:**
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /v1/images/variations` | Generate variations of input images with a text prompt |
+| `POST /v1/images/background-removal` | Remove the background from an image |
+| `POST /v1/images/outpaint` | Extend an image beyond its borders using a mask |
+
+**Stability AI operations** (require Marketplace subscription):
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /v1/images/structure` | Structure-guided generation (maintain composition) |
+| `POST /v1/images/sketch` | Sketch-to-image generation |
+| `POST /v1/images/style-transfer` | Transfer style between images |
+| `POST /v1/images/remove-background` | Remove background (Stability AI model) |
+| `POST /v1/images/search-replace` | Find and replace objects in an image |
+| `POST /v1/images/upscale` | Conservative upscale (max 1MP input) |
+| `POST /v1/images/style-guide` | Style-guided generation with reference image |
+
+All image service endpoints authenticate via LiteLLM, enforce per-key budgets, and log spend to the unified tracking tables.
 
 ### Video generation
 
@@ -343,7 +370,7 @@ Rockport is designed so that the proxy has no direct internet exposure. Every la
 
 **Localhost-only binding** — LiteLLM listens on `127.0.0.1:4000`, not `0.0.0.0`. Even if the security group were misconfigured, the service would not accept external connections directly.
 
-**Admin UI disabled** — The LiteLLM admin dashboard is disabled via `disable_admin_ui: true` and Swagger/ReDoc docs are disabled via `NO_DOCS=True` / `NO_REDOC=True` environment variables. A Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation, and the admin CLI — only `/v1/chat/completions`, `/v1/models`, `/v1/messages`, `/v1/images/generations`, `/v1/videos/*`, `/key/*`, `/health/*`, `/spend/*`, and a handful of other operational paths are reachable. Everything else (admin UI, OpenAPI schema, routes list, SSO, SCIM, debug endpoints, etc.) returns 403 at the Cloudflare edge.
+**Admin UI disabled** — The LiteLLM admin dashboard is disabled via `disable_admin_ui: true` and Swagger/ReDoc docs are disabled via `NO_DOCS=True` / `NO_REDOC=True` environment variables. A Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation, image services, and the admin CLI — only `/v1/chat/completions`, `/v1/models`, `/v1/messages`, `/v1/images/generations`, `/v1/images/*`, `/v1/videos/*`, `/key/*`, `/health/*`, `/spend/*`, and a handful of other operational paths are reachable. Everything else (admin UI, OpenAPI schema, routes list, SSO, SCIM, debug endpoints, etc.) returns 403 at the Cloudflare edge.
 
 **Key separation** — The master key (stored in SSM Parameter Store) is only used by the admin CLI. Users get virtual keys with per-key daily budgets and rate limits. Keys created with `--claude-only` (or via `setup-claude`) are restricted to Anthropic models only. Keys without this flag get access to all models including image generation. Virtual keys can only call model endpoints — they cannot create other keys, view spend, or manage the proxy.
 
