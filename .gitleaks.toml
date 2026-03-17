@@ -6,9 +6,7 @@ description = "False positives — placeholder and intentionally-invalid keys in
 stopwords = [
   "sk-your-key",
   "sk-invalid-key-12345",
+  "Bearer sk-invalid-key-12345",
 ]
-
-[[allowlists]]
-description = "Smoke test curl auth header with intentionally-invalid key (not a real secret)"
 regexTarget = "match"
-regexes = ['''Bearer sk-invalid-key-12345''']
+regexes = ['''sk-invalid-key-12345''']
