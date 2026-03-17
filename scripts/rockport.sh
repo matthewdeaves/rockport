@@ -54,7 +54,6 @@ package_and_upload_artifact() {
 
   local tmpdir
   tmpdir=$(mktemp -d)
-  trap 'rm -rf "$tmpdir"' RETURN
 
   # Create artifact directory structure
   mkdir -p "$tmpdir/rockport-artifact/sidecar"
@@ -78,9 +77,11 @@ package_and_upload_artifact() {
     "s3://$bucket/deploy/rockport-artifact.tar.gz" \
     --region "$region" --quiet || {
     echo "ERROR: Failed to upload artifact to S3" >&2
+    rm -rf "$tmpdir"
     return 1
   }
   echo "  Artifact uploaded."
+  rm -rf "$tmpdir"
 }
 
 get_region() {
