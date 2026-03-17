@@ -311,7 +311,7 @@ Ray2 supports 7 aspect ratios (16:9, 9:16, 1:1, 4:3, 3:4, 21:9, 9:21), two resol
 | Resolution | 1280x720 fixed | 540p or 720p, 7 aspect ratios |
 | Duration | 6–120s (multiples of 6) | 5s or 9s |
 | Multi-shot | 2–20 shots, 6s each | Not supported |
-| Image-to-video | Start frame (1280x720 exact) | Start + optional end frame (512–4096px) |
+| Image-to-video | Start frame (1280x720 exact, 6s only) | Start + optional end frame (512–4096px) |
 | Loop | No | Yes |
 | Seed | Yes | No |
 | Concurrent jobs per key | 3 (configurable via `VIDEO_MAX_CONCURRENT_JOBS`) | Same |
