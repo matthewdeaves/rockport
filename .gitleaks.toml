@@ -7,3 +7,8 @@ stopwords = [
   "sk-your-key",
   "sk-invalid-key-12345",
 ]
+
+[[allowlists]]
+description = "Smoke tests use shell variables in curl auth headers, not real secrets"
+paths = ["tests/smoke-test.sh"]
+regexTarget = "match"
