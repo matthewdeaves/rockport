@@ -247,6 +247,62 @@ def mark_expired(job_id: str) -> None:
             )
 
 
+def insert_job_if_under_limit(
+    job_id: uuid.UUID,
+    api_key_hash: str,
+    max_concurrent: int,
+    invocation_arn: str,
+    model: str,
+    mode: str,
+    prompt: str,
+    num_shots: int,
+    duration_seconds: int,
+    cost: float = 0,
+    resolution: str | None = None,
+) -> dict | None:
+    """Atomically check concurrent job limit and insert if under limit.
+
+    Uses pg_advisory_xact_lock keyed on the API key hash to prevent TOCTOU races.
+    Returns the job dict if inserted, or None if the limit is reached.
+    """
+    with _get_conn() as conn:
+        with conn.cursor() as cur:
+            # Advisory lock scoped to this API key (auto-released on commit/rollback)
+            cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (api_key_hash,))
+
+            # Count in-progress jobs while holding the lock
+            cur.execute(
+                "SELECT COUNT(*) FROM rockport_video_jobs WHERE api_key_hash = %s AND status = 'in_progress'",
+                (api_key_hash,),
+            )
+            in_progress = cur.fetchone()[0]
+            if in_progress >= max_concurrent:
+                return None
+
+            # Insert the job
+            cur.execute(
+                """
+                INSERT INTO rockport_video_jobs
+                    (id, api_key_hash, invocation_arn, model, mode, prompt, num_shots,
+                     duration_seconds, resolution, cost, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'in_progress')
+                RETURNING id, status, model, mode, duration_seconds, cost, created_at
+                """,
+                (str(job_id), api_key_hash, invocation_arn, model, mode, prompt,
+                 num_shots, duration_seconds, resolution, Decimal(str(cost))),
+            )
+            row = cur.fetchone()
+    return {
+        "id": str(row[0]),
+        "status": row[1],
+        "model": row[2],
+        "mode": row[3],
+        "duration": row[4],
+        "estimated_cost": float(row[5]),
+        "created_at": row[6].isoformat(),
+    }
+
+
 def count_in_progress_jobs(api_key_hash: str) -> int:
     """Count in-progress jobs for a given API key."""
     with _get_conn() as conn:

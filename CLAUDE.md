@@ -7,6 +7,7 @@ OpenAI-compatible LiteLLM proxy on EC2 behind Cloudflare Tunnel, routing any app
 ```
 terraform/              # All infrastructure (EC2, IAM, SG, tunnel, snapshots, monitoring, idle shutdown)
 terraform/.build/       # Lambda zip artifacts (gitignored)
+terraform/access.tf     # Cloudflare Access application + service token (edge pre-auth)
 terraform/s3.tf         # S3 bucket for video output (us-east-1)
 config/                 # LiteLLM config, systemd units, PostgreSQL tuning
   litellm-config.yaml   #   Model definitions, budget, rate limits
@@ -59,7 +60,7 @@ tests/smoke-test.sh     # Post-deploy verification
 - Image-to-image: use `/v1/images/generations` with `textToImageParams.conditionImage` (Nova Canvas) — NOT `/v1/images/edits` which LiteLLM 1.82.2 doesn't support for Bedrock models
 - Cloudflare blocks requests with Python's default `Python-urllib` user-agent (403) — OpenAI SDK and curl work fine
 - `ANTHROPIC_AUTH_TOKEN` (not `ANTHROPIC_API_KEY`) is the env var for Claude Code virtual keys
-- Instance auto-stops after 30min of inactivity by default (Lambda checks NetworkIn metrics)
+- Instance auto-stops after 30min of inactivity by default (Lambda checks both NetworkIn and CPUUtilization — instance is only stopped when both are below threshold). A CloudWatch alarm fires if the idle-stop Lambda itself fails consecutively
 - Region is read from `terraform.tfvars` by rockport.sh — no hardcoded region in the CLI
 - cloudflared version is pinned via `cloudflared_version` variable for stability
 - The admin CLI requires `aws`, `terraform`, and `jq` — run `./scripts/setup.sh` to install all tools
@@ -67,12 +68,13 @@ tests/smoke-test.sh     # Post-deploy verification
 - CI/CD uses GitHub OIDC for AWS authentication — set the `AWS_ROLE_ARN` secret in GitHub to the IAM role ARN
 - The LiteLLM admin UI is intentionally disabled (`disable_admin_ui: true`) — all admin is via the CLI
 - Swagger/ReDoc docs disabled via `NO_DOCS=True` / `NO_REDOC=True` in the LiteLLM env file
+- Cloudflare Access (`terraform/access.tf`) requires a service token for all requests — `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers must be present or Cloudflare returns 403 before traffic reaches the tunnel. Token values are Terraform outputs (sensitive). To rotate: create a new service token in Terraform, update all clients, then remove the old one
 - Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation (`/v1/images/generations`), video generation (`/v1/videos/*`), and the admin CLI
 - `setup-claude` creates keys restricted to Anthropic models only; `key create` without `--claude-only` grants access to all models including image generation
 - Stability AI image models (SD3.5 Large) need a one-time Marketplace subscription — invoke once in the Bedrock playground to activate
 - `deploy` auto-creates the SSM master key if missing, so `init` is not a strict prerequisite
-- The Cloudflare API token (in `terraform/.env`, gitignored) needs Zone WAF Edit permission for the WAF rule
-- Deployer IAM is split into 3 policies under `terraform/deployer-policies/` (compute, iam-ssm, monitoring-storage) to stay under the 6144-byte per-policy limit while keeping all actions explicit (no wildcards). EC2/SSM mutating actions scoped to `aws:ResourceTag/Project=rockport`
+- The Cloudflare API token (in `terraform/.env`, gitignored) needs Zone WAF Edit + Access Edit permissions for the WAF rule and Cloudflare Access application
+- Deployer IAM is split into 3 policies under `terraform/deployer-policies/` (compute, iam-ssm, monitoring-storage) to stay under the 6144-byte per-policy limit while keeping all actions explicit (no wildcards). EC2/SSM mutating actions scoped to `aws:ResourceTag/Project=rockport`. An explicit Deny in iam-ssm.json blocks `AttachRolePolicy`/`DetachRolePolicy` for any policy ARN not matching `Rockport*` or `rockport*`, preventing privilege escalation via the deployer role
 - Admin IAM policy (`terraform/rockport-admin-policy.json`) is a one-time bootstrap: must be created and attached to the admin user via the AWS console (root account) before first `init`. After that, `init` self-manages it.
 - HSTS and "Always Use HTTPS" are enabled in Cloudflare (not managed by Terraform)
 - Video generation: multi-model sidecar on port 4001 supporting Nova Reel v1.1 (us-east-1, 1280x720, 6-120s, $0.08/s) and Luma Ray2 (us-west-2, 540p/720p, 5s/9s, $0.75-1.50/s). Model selected via `model` field, defaults to `nova-reel`
@@ -87,7 +89,8 @@ tests/smoke-test.sh     # Post-deploy verification
 - Ray2 extra params: `aspect_ratio` (7 options), `resolution` (540p/720p), `loop` (bool). No multi-shot, no seed. Requires Marketplace subscription
 - Luma Ray2 Marketplace subscription must be activated manually before first use (same pattern as SD3.5 Large)
 - Per-key concurrent job limit defaults to 3 (configurable via `VIDEO_MAX_CONCURRENT_JOBS` env var)
-- Video sidecar accepted risks: (1) TOCTOU race on concurrent job count and budget — low risk at expected scale (~10-20 jobs/day), would need advisory locks to fully fix; (2) `ListAsyncInvokes` IAM may need `Resource: "*"` — health check will fail if so, fix on first deploy
+- Video sidecar concurrent job limit enforced atomically via `pg_advisory_xact_lock(hashtext(api_key_hash))` — count and insert happen in a single transaction, preventing TOCTOU races. Different API keys use different lock IDs so they don't block each other
+- Video sidecar accepted risks: `ListAsyncInvokes` IAM may need `Resource: "*"` — health check will fail if so, fix on first deploy
 ## Active Technologies
 - Terraform (AWS provider, Cloudflare provider) — all infrastructure
 - Python 3.11 + FastAPI, uvicorn, boto3, Pillow, psycopg2, pydantic — video sidecar (multi-region clients for us-east-1 + us-west-2)

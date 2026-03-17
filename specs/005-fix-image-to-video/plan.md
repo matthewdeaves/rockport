@@ -13,7 +13,7 @@ Fix the video generation sidecar's image-to-video support by correcting Bedrock 
 **Primary Dependencies**: FastAPI, boto3, Pillow, psycopg2, pydantic (all already installed)
 **Storage**: PostgreSQL 15 (existing, no schema changes)
 **Testing**: Manual smoke testing via curl/httpx against deployed sidecar
-**Target Platform**: Linux (EC2 t4g.small, Amazon Linux 2023)
+**Target Platform**: Linux (EC2 t3.small, Amazon Linux 2023)
 **Project Type**: Web service (FastAPI sidecar)
 **Performance Goals**: N/A (async video generation, ~10-20 jobs/day)
 **Constraints**: 256MB memory limit (systemd MemoryMax), single file change

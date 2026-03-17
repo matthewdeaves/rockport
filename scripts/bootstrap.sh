@@ -40,13 +40,14 @@ work_mem = 4MB
 effective_cache_size = 256MB
 maintenance_work_mem = 32MB
 max_connections = 30
+password_encryption = scram-sha-256
 PGCONF
 
   echo "include = 'postgresql-tuning.conf'" >> /var/lib/pgsql/data/postgresql.conf
 
-  # Keep peer auth for postgres superuser, use md5 for litellm_user (local + TCP)
-  sed -i '/^local\s\+all\s\+all\s\+peer/i local all litellm_user md5' /var/lib/pgsql/data/pg_hba.conf
-  sed -i '/^host\s\+all\s\+all\s\+127.0.0.1/i host all litellm_user 127.0.0.1/32 md5' /var/lib/pgsql/data/pg_hba.conf
+  # Keep peer auth for postgres superuser, use scram-sha-256 for litellm_user (local + TCP)
+  sed -i '/^local\s\+all\s\+all\s\+peer/i local all litellm_user scram-sha-256' /var/lib/pgsql/data/pg_hba.conf
+  sed -i '/^host\s\+all\s\+all\s\+127.0.0.1/i host all litellm_user 127.0.0.1/32 scram-sha-256' /var/lib/pgsql/data/pg_hba.conf
 else
   echo "PostgreSQL already initialized, skipping initdb."
 fi

@@ -464,18 +464,6 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
                 }
             })
 
-    # --- Concurrent job limit ---
-    in_progress = db.count_in_progress_jobs(key_hash)
-    if in_progress >= MAX_CONCURRENT_JOBS:
-        raise HTTPException(status_code=429, detail={
-            "error": {
-                "type": "concurrent_limit",
-                "message": f"Concurrent job limit reached ({in_progress}/{MAX_CONCURRENT_JOBS} in progress)",
-                "in_progress": in_progress,
-                "limit": MAX_CONCURRENT_JOBS,
-            }
-        })
-
     # --- Build Bedrock request ---
     job_id = uuid.uuid4()
     region = model["region"]
@@ -505,10 +493,11 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
 
     invocation_arn = response["invocationArn"]
 
-    # --- Store job ---
-    job = db.insert_job(
+    # --- Atomic concurrent job limit check + insert ---
+    job = db.insert_job_if_under_limit(
         job_id=job_id,
         api_key_hash=key_hash,
+        max_concurrent=MAX_CONCURRENT_JOBS,
         invocation_arn=invocation_arn,
         model=model_name,
         mode=mode,
@@ -518,6 +507,15 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
         cost=estimated_cost,
         resolution=resolution,
     )
+    if job is None:
+        raise HTTPException(status_code=429, detail={
+            "error": {
+                "type": "concurrent_limit",
+                "message": f"Concurrent job limit reached ({MAX_CONCURRENT_JOBS}/{MAX_CONCURRENT_JOBS} in progress)",
+                "in_progress": MAX_CONCURRENT_JOBS,
+                "limit": MAX_CONCURRENT_JOBS,
+            }
+        })
 
     return job
 

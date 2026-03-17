@@ -60,6 +60,23 @@
       "Resource": "arn:aws:iam::*:user/rockport-deployer"
     },
     {
+      "Sid": "DenyNonRockportPolicyAttachment",
+      "Effect": "Deny",
+      "Action": [
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotLike": {
+          "iam:PolicyARN": [
+            "arn:aws:iam::*:policy/Rockport*",
+            "arn:aws:iam::*:policy/rockport*"
+          ]
+        }
+      }
+    },
+    {
       "Sid": "SSMParameters",
       "Effect": "Allow",
       "Action": [

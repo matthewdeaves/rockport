@@ -10,6 +10,8 @@ CACHED_MASTER_KEY=""
 CACHED_REGION=""
 CACHED_INSTANCE_ID=""
 CACHED_TUNNEL_URL=""
+CACHED_CF_CLIENT_ID=""
+CACHED_CF_CLIENT_SECRET=""
 
 # Anthropic model names for Claude Code key restrictions
 CLAUDE_MODELS='["claude-opus-4-6","claude-sonnet-4-6","claude-haiku-4-5-20251001","claude-sonnet-4-5-20250929","claude-opus-4-5-20251101"]'
@@ -88,6 +90,20 @@ get_tunnel_url() {
     return 1
   }
   echo "$CACHED_TUNNEL_URL"
+}
+
+ensure_cf_access_cached() {
+  # Populate CACHED_CF_* from env vars or terraform output (once)
+  if [[ -n "$CACHED_CF_CLIENT_ID" ]]; then
+    return
+  fi
+  if [[ -n "${CF_ACCESS_CLIENT_ID:-}" && -n "${CF_ACCESS_CLIENT_SECRET:-}" ]]; then
+    CACHED_CF_CLIENT_ID="$CF_ACCESS_CLIENT_ID"
+    CACHED_CF_CLIENT_SECRET="$CF_ACCESS_CLIENT_SECRET"
+    return
+  fi
+  CACHED_CF_CLIENT_ID=$(cd "$TERRAFORM_DIR" && terraform output -raw cf_access_client_id 2>/dev/null) || CACHED_CF_CLIENT_ID=""
+  CACHED_CF_CLIENT_SECRET=$(cd "$TERRAFORM_DIR" && terraform output -raw cf_access_client_secret 2>/dev/null) || CACHED_CF_CLIENT_SECRET=""
 }
 
 get_instance_id() {
@@ -187,6 +203,12 @@ api_call() {
   local key
   key="$(get_master_key)"
 
+  # Build CF Access header args from cached values
+  local cf_args=()
+  if [[ -n "$CACHED_CF_CLIENT_ID" && -n "$CACHED_CF_CLIENT_SECRET" ]]; then
+    cf_args=(-H "CF-Access-Client-Id: $CACHED_CF_CLIENT_ID" -H "CF-Access-Client-Secret: $CACHED_CF_CLIENT_SECRET")
+  fi
+
   local http_code tmpfile
   tmpfile=$(mktemp)
   trap 'rm -f "$tmpfile"' RETURN
@@ -195,11 +217,13 @@ api_call() {
     http_code=$(curl -s -w "%{http_code}" -o "$tmpfile" -X "$method" "$url" \
       -H "Authorization: Bearer $key" \
       -H "Content-Type: application/json" \
+      "${cf_args[@]+"${cf_args[@]}"}" \
       -d "$data" \
       --max-time 30)
   else
     http_code=$(curl -s -w "%{http_code}" -o "$tmpfile" -X "$method" "$url" \
       -H "Authorization: Bearer $key" \
+      "${cf_args[@]+"${cf_args[@]}"}" \
       --max-time 30)
   fi
 
@@ -389,7 +413,11 @@ wait_for_health() {
 
   while [[ $elapsed -lt $timeout ]]; do
     local code
-    code=$(curl -s -o /dev/null -w "%{http_code}" "$url/health" --max-time 5 2>/dev/null) || true
+    local cf_h_args=()
+    if [[ -n "$CACHED_CF_CLIENT_ID" && -n "$CACHED_CF_CLIENT_SECRET" ]]; then
+      cf_h_args=(-H "CF-Access-Client-Id: $CACHED_CF_CLIENT_ID" -H "CF-Access-Client-Secret: $CACHED_CF_CLIENT_SECRET")
+    fi
+    code=$(curl -s -o /dev/null -w "%{http_code}" "$url/health" "${cf_h_args[@]+"${cf_h_args[@]}"}" --max-time 5 2>/dev/null) || true
     # 200 = healthy, 401 = auth required but service is up — both mean ready
     if [[ "$code" == "200" || "$code" == "401" ]]; then
       echo "Services healthy. Rockport is ready."
@@ -528,9 +556,15 @@ cmd_status() {
   # Image model names that fail LiteLLM's built-in health probe (it sends max_tokens which they reject)
   local image_model_pattern="nova-canvas|sd3-5-large|titan-image"
 
+  # Build CF Access headers for direct curl calls
+  local cf_status_args=()
+  if [[ -n "$CACHED_CF_CLIENT_ID" && -n "$CACHED_CF_CLIENT_SECRET" ]]; then
+    cf_status_args=(-H "CF-Access-Client-Id: $CACHED_CF_CLIENT_ID" -H "CF-Access-Client-Secret: $CACHED_CF_CLIENT_SECRET")
+  fi
+
   # Check video sidecar health
   local video_health
-  video_health=$(curl -s "$url/v1/videos/health" -H "Authorization: Bearer $key" --max-time 5 2>/dev/null) || video_health=""
+  video_health=$(curl -s "$url/v1/videos/health" -H "Authorization: Bearer $key" "${cf_status_args[@]+"${cf_status_args[@]}"}" --max-time 5 2>/dev/null) || video_health=""
   if [[ -n "$video_health" ]]; then
     local video_status
     video_status=$(echo "$video_health" | jq -r '.status // "unknown"' 2>/dev/null)
@@ -578,6 +612,7 @@ cmd_status() {
         probe_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$url/v1/images/generations" \
           -H "Authorization: Bearer $key" \
           -H "Content-Type: application/json" \
+          "${cf_status_args[@]+"${cf_status_args[@]}"}" \
           -d "{\"model\":\"$litellm_name\",\"prompt\":\"test\",\"n\":1,\"size\":\"$probe_size\"}" \
           --max-time 30 2>/dev/null) || probe_code="000"
         if [[ "$probe_code" == "200" ]]; then
@@ -667,8 +702,28 @@ cmd_key_create() {
   if [[ -n "$key" ]]; then
     local url
     url="$(get_tunnel_url)"
+
+    # Include CF Access headers if configured
+    local cf_id_k="$CACHED_CF_CLIENT_ID"
+    local cf_secret_k="$CACHED_CF_CLIENT_SECRET"
+
     local settings_file="$CONFIG_DIR/claude-code-settings-${name}.json"
-    cat > "$settings_file" <<EOF
+    if [[ -n "$cf_id_k" && -n "$cf_secret_k" ]]; then
+      cat > "$settings_file" <<EOF
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "$url",
+    "ANTHROPIC_AUTH_TOKEN": "$key"
+  },
+  "apiKeyHelper": "echo $key",
+  "defaultHeaders": {
+    "CF-Access-Client-Id": "$cf_id_k",
+    "CF-Access-Client-Secret": "$cf_secret_k"
+  }
+}
+EOF
+    else
+      cat > "$settings_file" <<EOF
 {
   "env": {
     "ANTHROPIC_BASE_URL": "$url",
@@ -676,6 +731,7 @@ cmd_key_create() {
   }
 }
 EOF
+    fi
     echo
     echo "Settings file: $settings_file"
     echo "Copy to ~/.claude/settings.json to use with Claude Code"
@@ -832,10 +888,14 @@ cmd_monitor() {
 
     # Fetch key list and spend logs in parallel
     local keys_data logs_data
+    local cf_m_args=()
+    if [[ -n "$CACHED_CF_CLIENT_ID" && -n "$CACHED_CF_CLIENT_SECRET" ]]; then
+      cf_m_args=(-H "CF-Access-Client-Id: $CACHED_CF_CLIENT_ID" -H "CF-Access-Client-Secret: $CACHED_CF_CLIENT_SECRET")
+    fi
     keys_data=$(curl -s "$url/key/list?return_full_object=true" \
-      -H "Authorization: Bearer $key" --max-time 10 2>/dev/null) || keys_data='{"keys":[]}'
+      -H "Authorization: Bearer $key" "${cf_m_args[@]+"${cf_m_args[@]}"}" --max-time 10 2>/dev/null) || keys_data='{"keys":[]}'
     logs_data=$(curl -s "$url/spend/logs?start_date=$today" \
-      -H "Authorization: Bearer $key" --max-time 10 2>/dev/null) || logs_data='[]'
+      -H "Authorization: Bearer $key" "${cf_m_args[@]+"${cf_m_args[@]}"}" --max-time 10 2>/dev/null) || logs_data='[]'
 
     # Header
     echo "Rockport Monitor                                    $now"
@@ -1159,6 +1219,14 @@ EOF
 
 # All commands need these tools
 check_dependencies
+
+# Pre-cache CF Access credentials for commands that make API calls
+case "${1:-}" in
+  status|key|models|spend|monitor|setup-claude)
+    load_env
+    ensure_cf_access_cached
+    ;;
+esac
 
 case "${1:-}" in
   init)     cmd_init ;;

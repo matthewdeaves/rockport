@@ -121,14 +121,37 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'eu-west-2' }}
 
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.14"
+
+      - name: Terraform init
+        run: terraform init
+        working-directory: terraform
+
+      - name: Get credentials
+        id: creds
+        working-directory: terraform
+        run: |
+          KEY=$(aws ssm get-parameter --name /rockport/master-key --with-decryption --query Parameter.Value --output text --region "$AWS_REGION")
+          echo "::add-mask::$KEY"
+          echo "master_key=$KEY" >> "$GITHUB_OUTPUT"
+          CF_ID=$(terraform output -raw cf_access_client_id 2>/dev/null || true)
+          CF_SECRET=$(terraform output -raw cf_access_client_secret 2>/dev/null || true)
+          if [[ -n "$CF_SECRET" ]]; then echo "::add-mask::$CF_SECRET"; fi
+          echo "cf_client_id=$CF_ID" >> "$GITHUB_OUTPUT"
+          echo "cf_client_secret=$CF_SECRET" >> "$GITHUB_OUTPUT"
+
       - name: Wait for bootstrap
         run: |
           URL="${{ needs.deploy.outputs.tunnel_url }}"
-          KEY=$(aws ssm get-parameter --name /rockport/master-key --with-decryption --query Parameter.Value --output text --region "$AWS_REGION")
-          echo "::add-mask::$KEY"
+          CF_ARGS=()
+          if [[ -n "${{ steps.creds.outputs.cf_client_id }}" ]]; then
+            CF_ARGS=(-H "CF-Access-Client-Id: ${{ steps.creds.outputs.cf_client_id }}" -H "CF-Access-Client-Secret: ${{ steps.creds.outputs.cf_client_secret }}")
+          fi
           echo "Waiting for instance to become healthy..."
           for i in $(seq 1 30); do
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL/health" -H "Authorization: Bearer $KEY" --max-time 5 2>/dev/null || true)
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL/health" -H "Authorization: Bearer ${{ steps.creds.outputs.master_key }}" "${CF_ARGS[@]+"${CF_ARGS[@]}"}" --max-time 5 2>/dev/null || true)
             if [[ "$HTTP_CODE" == "200" ]]; then
               echo "Instance healthy after $((i * 10)) seconds"
               break
@@ -137,14 +160,7 @@ jobs:
             sleep 10
           done
 
-      - name: Get master key
-        id: key
-        run: |
-          KEY=$(aws ssm get-parameter --name /rockport/master-key --with-decryption --query Parameter.Value --output text --region "$AWS_REGION")
-          echo "::add-mask::$KEY"
-          echo "master_key=$KEY" >> "$GITHUB_OUTPUT"
-
       - name: Run smoke tests
         run: |
           chmod +x tests/smoke-test.sh
-          ./tests/smoke-test.sh "${{ needs.deploy.outputs.tunnel_url }}" "${{ steps.key.outputs.master_key }}"
+          ./tests/smoke-test.sh "${{ needs.deploy.outputs.tunnel_url }}" "${{ steps.creds.outputs.master_key }}" "${{ steps.creds.outputs.cf_client_id }}" "${{ steps.creds.outputs.cf_client_secret }}"
