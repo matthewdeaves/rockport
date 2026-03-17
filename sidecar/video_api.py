@@ -433,12 +433,6 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
 
         if model_name == "nova-reel":
             if req.image:
-                if duration != 6:
-                    raise HTTPException(status_code=400, detail={
-                        "error": {"type": "validation_error",
-                                  "message": "Single-shot with image is fixed at 6 seconds. "
-                                             "Remove 'duration' or set it to 6."}
-                    })
                 parsed_image = parse_nova_reel_image(req.image)
         elif model_name == "luma-ray2":
             if req.image:
