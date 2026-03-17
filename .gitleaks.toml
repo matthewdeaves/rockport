@@ -6,4 +6,6 @@ description = "False positives — placeholder and intentionally-invalid keys in
 stopwords = [
   "sk-your-key",
   "sk-invalid-key-12345",
+  "sk-not-a-real-key",
+  "invalid-key-12345",
 ]

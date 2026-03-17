@@ -39,6 +39,51 @@ load_env() {
   fi
 }
 
+get_artifacts_bucket() {
+  local region account_id
+  region="$(get_region)"
+  account_id=$(aws sts get-caller-identity --query Account --output text --region "$region")
+  echo "rockport-artifacts-${account_id}-${region}"
+}
+
+package_and_upload_artifact() {
+  # Package sidecar/ + config/ into a tarball and upload to S3
+  local region bucket
+  region="$(get_region)"
+  bucket="$(get_artifacts_bucket)"
+
+  local tmpdir
+  tmpdir=$(mktemp -d)
+
+  # Create artifact directory structure
+  mkdir -p "$tmpdir/rockport-artifact/sidecar"
+  mkdir -p "$tmpdir/rockport-artifact/config"
+
+  # Copy sidecar Python files
+  cp "$SCRIPT_DIR/../sidecar/"*.py "$tmpdir/rockport-artifact/sidecar/"
+
+  # Copy config files (litellm config, systemd units)
+  cp "$CONFIG_DIR/litellm-config.yaml" "$tmpdir/rockport-artifact/config/"
+  cp "$CONFIG_DIR/litellm.service" "$tmpdir/rockport-artifact/config/"
+  cp "$CONFIG_DIR/cloudflared.service" "$tmpdir/rockport-artifact/config/"
+  cp "$CONFIG_DIR/rockport-video.service" "$tmpdir/rockport-artifact/config/"
+
+  # Create tarball
+  tar czf "$tmpdir/rockport-artifact.tar.gz" -C "$tmpdir" rockport-artifact/
+
+  # Upload to S3
+  echo "  Uploading artifact to s3://$bucket/deploy/rockport-artifact.tar.gz..."
+  aws s3 cp "$tmpdir/rockport-artifact.tar.gz" \
+    "s3://$bucket/deploy/rockport-artifact.tar.gz" \
+    --region "$region" --quiet || {
+    echo "ERROR: Failed to upload artifact to S3" >&2
+    rm -rf "$tmpdir"
+    return 1
+  }
+  echo "  Artifact uploaded."
+  rm -rf "$tmpdir"
+}
+
 get_region() {
   if [[ -n "$CACHED_REGION" ]]; then
     echo "$CACHED_REGION"
@@ -649,6 +694,28 @@ cmd_status() {
       [[ -n "$m" ]] && echo "  ✗ $m"
     done
   fi
+
+  # Instance resource usage via SSM
+  echo ""
+  echo "Instance:"
+  local stats
+  stats=$(ssm_run "free -m && echo === && uptime && echo === && nproc" 30 2>/dev/null) || stats=""
+  if [[ -n "$stats" ]]; then
+    local mem_used mem_total mem_pct swap_used swap_total load cpus upstr
+    mem_total=$(echo "$stats" | awk '/^Mem:/{print $2}')
+    mem_used=$(echo "$stats" | awk '/^Mem:/{print $3}')
+    swap_total=$(echo "$stats" | awk '/^Swap:/{print $2}')
+    swap_used=$(echo "$stats" | awk '/^Swap:/{print $3}')
+    mem_pct=$((mem_used * 100 / mem_total))
+    load=$(echo "$stats" | grep "load average" | sed 's/.*load average: //')
+    cpus=$(echo "$stats" | tail -1)
+    upstr=$(echo "$stats" | grep "load average" | sed 's/.*up //;s/,.*load.*//')
+    echo "  Memory:   ${mem_used}/${mem_total}MB (${mem_pct}%)  Swap: ${swap_used}/${swap_total}MB"
+    echo "  CPU:      load ${load} (${cpus} vCPU)"
+    echo "  Uptime:   ${upstr}"
+  else
+    echo "  (could not retrieve instance stats)"
+  fi
 }
 
 cmd_key_create() {
@@ -1003,29 +1070,27 @@ cmd_monitor() {
 }
 
 cmd_config_push() {
-  local instance_id
+  local instance_id region
   instance_id="$(get_instance_id)"
+  region="$(get_region)"
   echo "Pushing config to instance $instance_id..."
 
-  local config_b64 video_api_b64 db_b64
-  config_b64=$(base64 "$CONFIG_DIR/litellm-config.yaml" | tr -d '\n')
-  video_api_b64=$(base64 "$SCRIPT_DIR/../sidecar/video_api.py" | tr -d '\n')
-  db_b64=$(base64 "$SCRIPT_DIR/../sidecar/db.py" | tr -d '\n')
+  # Upload artifact to S3
+  package_and_upload_artifact
 
-  # Use JSON file for parameters to avoid shell quoting issues
+  # Tell the instance to download and extract the artifact via SSM
+  local artifacts_bucket
+  artifacts_bucket="$(get_artifacts_bucket)"
+
   local params_file
   params_file=$(mktemp)
   trap 'rm -f "$params_file"' RETURN
-  # Stop sidecar first to avoid 502s while LiteLLM restarts, then update files,
-  # restart LiteLLM, wait for readiness, and start sidecar (ExecStartPre also waits)
-  jq -n --arg b64 "$config_b64" --arg vapi "$video_api_b64" --arg db "$db_b64" \
-    '{"commands":["systemctl stop rockport-video 2>/dev/null || true && echo \($b64) | base64 -d > /etc/litellm/config.yaml && chown litellm:litellm /etc/litellm/config.yaml && echo \($vapi) | base64 -d > /opt/rockport-video/video_api.py && echo \($db) | base64 -d > /opt/rockport-video/db.py && chown -R litellm:litellm /opt/rockport-video && systemctl restart litellm && for i in $(seq 1 60); do curl -sf http://127.0.0.1:4000/health/readiness >/dev/null 2>&1 && break; sleep 2; done && systemctl start rockport-video && echo Config and sidecar pushed and services restarted"]}' \
+  # Stop sidecar, download artifact, extract, restart services
+  jq -n --arg bucket "$artifacts_bucket" --arg region "$region" \
+    '{"commands":["systemctl stop rockport-video 2>/dev/null || true && aws s3 cp s3://\($bucket)/deploy/rockport-artifact.tar.gz /tmp/rockport-artifact.tar.gz --region \($region) && rm -rf /tmp/rockport-artifact && tar xzf /tmp/rockport-artifact.tar.gz -C /tmp && cp /tmp/rockport-artifact/config/litellm-config.yaml /etc/litellm/config.yaml && chown litellm:litellm /etc/litellm/config.yaml && cp /tmp/rockport-artifact/sidecar/*.py /opt/rockport-video/ && chown -R litellm:litellm /opt/rockport-video && cp /tmp/rockport-artifact/config/litellm.service /etc/systemd/system/litellm.service && cp /tmp/rockport-artifact/config/cloudflared.service /etc/systemd/system/cloudflared.service && cp /tmp/rockport-artifact/config/rockport-video.service /etc/systemd/system/rockport-video.service && systemctl daemon-reload && rm -rf /tmp/rockport-artifact /tmp/rockport-artifact.tar.gz && systemctl restart litellm && for i in $(seq 1 60); do curl -sf http://127.0.0.1:4000/health/readiness >/dev/null 2>&1 && break; sleep 2; done && systemctl start rockport-video && echo Config and sidecar pushed and services restarted"]}' \
     > "$params_file"
 
-  local instance_id region command_id
-  instance_id="$(get_instance_id)"
-  region="$(get_region)"
-
+  local command_id
   command_id=$(aws ssm send-command \
     --instance-ids "$instance_id" \
     --region "$region" \
@@ -1076,11 +1141,33 @@ cmd_deploy() {
   ensure_master_key "$region"
   ensure_state_backend
 
+  # Ensure artifacts bucket exists before uploading
+  local artifacts_bucket
+  artifacts_bucket="$(get_artifacts_bucket)"
+  if ! aws s3api head-bucket --bucket "$artifacts_bucket" --region "$region" 2>/dev/null; then
+    echo "  Creating artifacts bucket (first deploy)..."
+    # Terraform will create it properly; do a minimal create for the upload
+    aws s3api create-bucket --bucket "$artifacts_bucket" --region "$region" \
+      --create-bucket-configuration LocationConstraint="$region" --no-cli-pager
+    aws s3api put-public-access-block --bucket "$artifacts_bucket" --region "$region" \
+      --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+  fi
+
+  # Package and upload deploy artifact to S3 (before terraform apply)
+  package_and_upload_artifact
+
   cd "$TERRAFORM_DIR"
   terraform init -upgrade \
     -backend-config="bucket=$bucket" \
     -backend-config="region=$region" \
     -backend-config="use_lockfile=true"
+
+  # Import artifacts bucket into state if pre-created by this script
+  if ! terraform state show aws_s3_bucket.artifacts &>/dev/null; then
+    echo "  Importing artifacts bucket into Terraform state..."
+    terraform import aws_s3_bucket.artifacts "$artifacts_bucket"
+  fi
+
   terraform apply
 
   echo

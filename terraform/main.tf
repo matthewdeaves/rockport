@@ -159,6 +159,15 @@ resource "aws_iam_role_policy" "s3_video_bucket" {
           aws_s3_bucket.video_us_west_2.arn
         ]
       },
+      {
+        Sid    = "ArtifactsRead"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:HeadObject"
+        ]
+        Resource = "${aws_s3_bucket.artifacts.arn}/*"
+      },
     ]
   })
 }
@@ -207,12 +216,7 @@ resource "aws_instance" "rockport" {
     tunnel_token_ssm_path     = aws_ssm_parameter.tunnel_token.name
     litellm_version           = var.litellm_version
     cloudflared_version       = var.cloudflared_version
-    litellm_config            = file("${path.module}/../config/litellm-config.yaml")
-    litellm_service           = file("${path.module}/../config/litellm.service")
-    cloudflared_service       = file("${path.module}/../config/cloudflared.service")
-    video_sidecar_db          = file("${path.module}/../sidecar/db.py")
-    video_sidecar_api         = file("${path.module}/../sidecar/video_api.py")
-    video_sidecar_service     = file("${path.module}/../config/rockport-video.service")
+    artifacts_bucket          = aws_s3_bucket.artifacts.id
     video_bucket_name         = aws_s3_bucket.video.id
     video_bucket_us_west_2    = aws_s3_bucket.video_us_west_2.id
     video_max_concurrent_jobs = var.video_max_concurrent_jobs
