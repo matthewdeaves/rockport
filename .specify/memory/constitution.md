@@ -8,8 +8,9 @@ Infrastructure cost (excluding Bedrock token charges) MUST stay
 under £100/month, target under £15/month. One operator, ~8
 hours/day Claude Code usage, handful of accounts.
 
-- EC2 `t4g.small` on-demand (2GB RAM, ~£10.53/month) MUST be
-  the compute target. 2GB is the minimum for LiteLLM proxy +
+- EC2 `t3.small` on-demand (2GB RAM) MUST be the compute
+  target. ARM/Graviton (t4g) is incompatible with LiteLLM's
+  Prisma client. 2GB is the minimum for LiteLLM proxy +
   PostgreSQL on the same instance.
 - No load balancers (ALB, NLB).
 - No NAT Gateways. Public subnet with security group.
@@ -140,8 +141,8 @@ Rockport is a LiteLLM proxy on EC2 with Bedrock. Nothing more.
 AWS `eu-west-2` (London) for compute and Bedrock. Cloudflare
 (existing account, free plan) for DNS, TLS, and tunnel ingress.
 
-- **Compute**: EC2 `t4g.small` on-demand (2 vCPU, 2GB RAM).
-  No public IP.
+- **Compute**: EC2 `t3.small` on-demand (2 vCPU, 2GB RAM).
+  No public IP. ARM/Graviton incompatible with Prisma.
 - **LLM backend**: Amazon Bedrock only. Required models MUST
   be explicitly enabled via Bedrock model access grants in
   the AWS account before deployment.

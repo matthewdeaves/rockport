@@ -13,7 +13,7 @@ Add video generation to Rockport via a lightweight FastAPI sidecar service runni
 **Primary Dependencies**: FastAPI, uvicorn, boto3, psycopg2 (FastAPI/uvicorn already installed as LiteLLM dependencies; boto3 available via AWS CLI; psycopg2 needs install)
 **Storage**: PostgreSQL 15 (existing instance, new `rockport_video_jobs` table) + S3 (new bucket in us-east-1 for video output)
 **Testing**: bash smoke tests (matching existing pattern in `tests/smoke-test.sh`)
-**Target Platform**: Amazon Linux 2023 on EC2 t4g.small (ARM64)
+**Target Platform**: Amazon Linux 2023 on EC2 t3.small (x86_64)
 **Project Type**: Web service (REST API sidecar)
 **Performance Goals**: <2s job submission response; video generation time determined by Bedrock (~90s for 6s video)
 **Constraints**: 256MB memory limit for sidecar; must coexist with LiteLLM (1280MB) + cloudflared (256MB) on 2GB instance + 512MB swap

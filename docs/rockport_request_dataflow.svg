@@ -91,12 +91,14 @@
   <circle cx="30" cy="88" r="12" fill="#58a6ff"/>
   <text x="30" y="93" text-anchor="middle" fill="#0d1117" font-size="10" font-weight="bold">1</text>
 
-  <rect x="20" y="104" width="136" height="90" rx="4" fill="#0d1f38" stroke="#58a6ff" stroke-width="1.5"/>
-  <text x="88" y="122" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="bold">Client Request</text>
-  <text x="88" y="140" text-anchor="middle" fill="#8b949e" font-size="9">llm.example.com</text>
-  <text x="88" y="155" text-anchor="middle" fill="#8b949e" font-size="9">Authorization:</text>
-  <text x="88" y="169" text-anchor="middle" fill="#8b949e" font-size="9">Bearer sk-...</text>
-  <text x="88" y="184" text-anchor="middle" fill="#8b949e" font-size="8">HTTPS POST /v1/messages</text>
+  <rect x="20" y="104" width="136" height="104" rx="4" fill="#0d1f38" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="88" y="120" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="bold">Client Request</text>
+  <text x="88" y="136" text-anchor="middle" fill="#8b949e" font-size="9">llm.example.com</text>
+  <text x="88" y="150" text-anchor="middle" fill="#8b949e" font-size="9">Authorization:</text>
+  <text x="88" y="163" text-anchor="middle" fill="#8b949e" font-size="9">Bearer sk-...</text>
+  <text x="88" y="178" text-anchor="middle" fill="#f78166" font-size="8">CF-Access-Client-Id</text>
+  <text x="88" y="190" text-anchor="middle" fill="#f78166" font-size="8">CF-Access-Client-Secret</text>
+  <text x="88" y="203" text-anchor="middle" fill="#8b949e" font-size="8">HTTPS POST /v1/messages</text>
 
   <!-- ═══════════════════════════════════════════════════════════ -->
   <!-- STEP 2: CLOUDFLARE EDGE (y=76) -->
@@ -113,6 +115,11 @@
   <text x="259" y="184" text-anchor="middle" fill="#f78166" font-size="10" font-weight="bold">WAF Path Check</text>
   <text x="259" y="200" text-anchor="middle" fill="#8b949e" font-size="9">evaluate request path</text>
   <text x="259" y="214" text-anchor="middle" fill="#8b949e" font-size="9">against allowlist rules</text>
+
+  <rect x="178" y="234" width="162" height="56" rx="4" fill="#261510" stroke="#f78166" stroke-width="1.5"/>
+  <text x="259" y="252" text-anchor="middle" fill="#f78166" font-size="10" font-weight="bold">Access Auth</text>
+  <text x="259" y="268" text-anchor="middle" fill="#8b949e" font-size="9">validate service token</text>
+  <text x="259" y="282" text-anchor="middle" fill="#8b949e" font-size="9">CF-Access-Client-Id/Secret</text>
 
   <!-- ═══════════════════════════════════════════════════════════ -->
   <!-- STEP 3: CF TUNNEL (y=76) -->
@@ -219,10 +226,14 @@
   <!-- ═══════════════════════════════════════════════════════════ -->
 
   <!-- WAF 403 (aligns with step 2 WAF box) -->
-  <rect x="1373" y="170" width="404" height="56" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
-  <text x="1380" y="188" fill="#f85149" font-size="10" font-weight="bold">Step 2: WAF Block → 403 Forbidden</text>
-  <text x="1380" y="206" fill="#8b949e" font-size="9">path not on allowlist · response returned to client immediately</text>
-  <text x="1380" y="218" fill="#8b949e" font-size="8">request does not reach tunnel or EC2</text>
+  <rect x="1373" y="170" width="404" height="44" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
+  <text x="1380" y="186" fill="#f85149" font-size="10" font-weight="bold">Step 2: WAF Block → 403 Forbidden</text>
+  <text x="1380" y="202" fill="#8b949e" font-size="9">path not on allowlist · blocked before tunnel</text>
+
+  <!-- Access 403 -->
+  <rect x="1373" y="220" width="404" height="44" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
+  <text x="1380" y="236" fill="#f85149" font-size="10" font-weight="bold">Step 2: Access Denied → 403 Forbidden</text>
+  <text x="1380" y="252" fill="#8b949e" font-size="9">missing or invalid CF-Access service token</text>
 
   <!-- 5a 401 -->
   <rect x="1373" y="238" width="404" height="52" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
@@ -313,8 +324,8 @@
   <text x="168" y="144" text-anchor="middle" fill="#58a6ff" font-size="8">HTTPS</text>
 
   <!-- 2→3: CF Edge → CF Tunnel -->
-  <line x1="340" y1="240" x2="368" y2="140" stroke="#f78166" stroke-width="2" marker-end="url(#ah-orange)"/>
-  <text x="358" y="200" fill="#f78166" font-size="8">route</text>
+  <line x1="340" y1="290" x2="368" y2="140" stroke="#f78166" stroke-width="2" marker-end="url(#ah-orange)"/>
+  <text x="358" y="220" fill="#f78166" font-size="8">route</text>
 
   <!-- 3→4: CF Tunnel → cloudflared -->
   <line x1="494" y1="139" x2="523" y2="139" stroke="#f78166" stroke-width="2" marker-end="url(#ah-orange)"/>
@@ -334,7 +345,10 @@
   <!-- ═══════════════════════════════════════════════════════════ -->
 
   <!-- WAF → Error -->
-  <line x1="1156" y1="197" x2="1373" y2="197" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
+  <line x1="1156" y1="190" x2="1373" y2="190" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
+
+  <!-- Access → Error -->
+  <line x1="1156" y1="240" x2="1373" y2="240" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
 
   <!-- 5a → Error -->
   <line x1="1156" y1="122" x2="1373" y2="264" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
@@ -400,8 +414,8 @@
 
   <!-- 5V-d: Concurrent job limit  y=1014..1078 -->
   <rect x="523" y="1014" width="640" height="64" rx="4" fill="#0a1a1a" stroke="#39d2c0" stroke-width="1"/>
-  <text x="533" y="1032" fill="#39d2c0" font-size="9" font-weight="bold">d.  Concurrent Job Limit: max 3 in-progress per key</text>
-  <text x="533" y="1048" fill="#8b949e" font-size="9">count in-progress jobs in PostgreSQL rockport_video_jobs table</text>
+  <text x="533" y="1032" fill="#39d2c0" font-size="9" font-weight="bold">d.  Concurrent Job Limit: max 3 in-progress per key (atomic)</text>
+  <text x="533" y="1048" fill="#8b949e" font-size="9">advisory lock + count + insert in single transaction (no TOCTOU race)</text>
   <!-- PG badge -->
   <rect x="533" y="1058" width="140" height="18" rx="3" fill="#1a1a0a" stroke="#e3b341" stroke-width="1"/>
   <text x="603" y="1071" text-anchor="middle" fill="#e3b341" font-size="8">PostgreSQL :5432</text>

@@ -74,14 +74,14 @@ Wait — actually, this adds nginx as a new dependency, which adds complexity. S
 
 This is configured via the Cloudflare dashboard (Zero Trust > Networks > Tunnels > Public Hostname). No nginx needed, no code changes to LiteLLM.
 
-## R7: Memory constraints on t4g.small (2GB)
+## R7: Memory constraints on t3.small (2GB)
 
 **Decision**: Reduce LiteLLM MemoryMax from 1536M to 1280M, allocate 256M to the sidecar.
 
 **Rationale**: Current allocation: LiteLLM 1536M + cloudflared 256M = 1792M on a 2048M instance. With 512M swap already configured, there's headroom. The sidecar is lightweight (FastAPI + boto3, no ML models). Reducing LiteLLM to 1280M and giving the sidecar 256M keeps total at 1792M. LiteLLM typically uses 400-600M in practice.
 
 **Alternatives considered**:
-- Upgrade to t4g.medium (4GB): Violates Constitution I (cost)
+- Upgrade to t3.medium (4GB): Violates Constitution I (cost)
 - No memory limit on sidecar: Risky on a shared instance
 
 ## R8: S3 bucket cost estimate

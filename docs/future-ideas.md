@@ -1,13 +1,13 @@
 # Future Ideas
 
-## Cloudflare Access for pre-authentication
+## Additional rate limiting at the Cloudflare edge
 
-For an additional security layer, you can put a Cloudflare Access application in front of the tunnel. This requires authentication before traffic reaches LiteLLM.
+Cloudflare Rate Limiting rules could throttle requests before they reach the tunnel, protecting against brute-force key guessing or abuse from a single IP. The current setup relies on LiteLLM's per-key rate limits (60 RPM / 200K TPM), which only apply after the request reaches the proxy. Edge rate limiting would reduce load on the instance during an attack.
 
-**Email verification** — Gate the domain behind a one-time-password sent to allowed email addresses. Any request without a valid Cloudflare Access JWT is blocked at the edge. The downside is that Claude Code doesn't natively handle Cloudflare Access authentication, so you'd need a service token passed as a header, or use `cloudflared access` to create a local tunnel on the client side.
+## SNS notifications on instance stop
 
-**mTLS (mutual TLS)** — Require client certificates signed by a CA you upload. Only clients presenting a valid certificate can connect. Strongest option but adds certificate distribution and rotation complexity.
+When the idle-stop Lambda stops the instance, it could publish to an SNS topic to notify the operator. Currently stops are visible in CloudWatch but don't trigger a notification. Useful if you want a push alert when the instance goes idle.
 
-**Service tokens** — Create a Cloudflare Access service token (client ID + secret) and configure Claude Code to send it as headers. Adds a second credential layer without mTLS complexity. Configure via Cloudflare Zero Trust dashboard > Access > Applications.
+## Cloudflare Access with identity provider
 
-For a personal or small-team proxy where the API keys are closely held, the current setup (key auth + Cloudflare DDoS protection + no inbound ports) is sufficient. Cloudflare Access adds value when sharing access more broadly or for compliance requirements.
+The current setup uses a service token (machine-to-machine). For broader team access, you could add an identity provider (e.g. GitHub OAuth, Google) so team members authenticate via browser before accessing the proxy. Not needed for the current single-operator setup but useful if sharing access more broadly.

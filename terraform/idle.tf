@@ -48,18 +48,33 @@ data "archive_file" "idle_shutdown" {
 
         total_bytes = sum(dp['Sum'] for dp in metrics['Datapoints'])
 
+        # Check CPU utilisation as a second signal
+        cpu_metrics = cw.get_metric_statistics(
+            Namespace='AWS/EC2',
+            MetricName='CPUUtilization',
+            Dimensions=[{'Name': 'InstanceId', 'Value': instance_id}],
+            StartTime=start,
+            EndTime=now,
+            Period=300,
+            Statistics=['Average']
+        )
+        cpu_datapoints = cpu_metrics.get('Datapoints', [])
+        avg_cpu = (sum(dp['Average'] for dp in cpu_datapoints) / len(cpu_datapoints)) if cpu_datapoints else 0
+
         # cloudflared keepalives: ~6KB/min = ~180KB/30min
         # A single LLM request: typically 50KB-5MB+
         # 500KB threshold distinguishes idle from active use
         threshold = int(os.environ.get('IDLE_THRESHOLD_BYTES', '500000'))
+        cpu_threshold = float(os.environ.get('IDLE_CPU_THRESHOLD_PERCENT', '10'))
 
-        if total_bytes < threshold:
-            print(f'Idle: {total_bytes} bytes in {idle_minutes}min, stopping')
+        # Only stop if BOTH network and CPU are below thresholds
+        if total_bytes < threshold and avg_cpu < cpu_threshold:
+            print(f'Idle: {total_bytes} bytes, {avg_cpu:.1f}% CPU in {idle_minutes}min, stopping')
             ec2.stop_instances(InstanceIds=[instance_id])
-            return {'status': 'stopped', 'bytes': int(total_bytes)}
+            return {'status': 'stopped', 'bytes': int(total_bytes), 'cpu_percent': round(avg_cpu, 1)}
 
-        print(f'Active: {total_bytes} bytes in {idle_minutes}min')
-        return {'status': 'active', 'bytes': int(total_bytes)}
+        print(f'Active: {total_bytes} bytes, {avg_cpu:.1f}% CPU in {idle_minutes}min')
+        return {'status': 'active', 'bytes': int(total_bytes), 'cpu_percent': round(avg_cpu, 1)}
     PYTHON
     filename = "index.py"
   }
@@ -167,4 +182,21 @@ resource "aws_lambda_permission" "idle_check" {
   function_name = aws_lambda_function.idle_shutdown[0].function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.idle_check[0].arn
+}
+
+resource "aws_cloudwatch_metric_alarm" "idle_shutdown_errors" {
+  count               = var.enable_idle_shutdown ? 1 : 0
+  alarm_name          = "rockport-idle-shutdown-errors"
+  alarm_description   = "Alerts when the idle-shutdown Lambda fails consecutively, meaning idle detection has stopped working"
+  namespace           = "AWS/Lambda"
+  metric_name         = "Errors"
+  dimensions          = { FunctionName = aws_lambda_function.idle_shutdown[0].function_name }
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+
+  tags = local.common_tags
 }

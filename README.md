@@ -18,7 +18,7 @@ OpenAI-compatible LiteLLM proxy on EC2 that routes any application to Bedrock mo
 - Zero inbound security group rules — all traffic flows through Cloudflare Tunnel
 - Daily EBS snapshots with 7-day retention
 - Auto-recovery on system failure
-- Auto-stop after 30 minutes of inactivity (with 10-minute grace period after boot)
+- Auto-stop after 30 minutes of inactivity (checks both network and CPU; 10-minute grace period after boot)
 - Daily Bedrock budget alerts + monthly overall AWS budget alerts
 - `rockport` CLI for key management, logs, deploys, start/stop
 
@@ -36,7 +36,7 @@ Create a token at https://dash.cloudflare.com/profile/api-tokens with these perm
 - **Zone / DNS / Edit**
 - **Zone / Zone WAF / Edit**
 - **Account / Cloudflare Tunnel / Edit**
-- **Account / Zero Trust / Edit**
+- **Account / Zero Trust / Edit** (for Cloudflare Access service token authentication)
 
 You'll also need your Cloudflare **Zone ID** and **Account ID** (found on the domain overview page).
 
@@ -148,7 +148,7 @@ Launch Claude Code. Default model routes to Opus 4.6.
 
 ## Idle auto-stop
 
-The instance automatically stops after 30 minutes of inactivity to save costs. When you need it again:
+The instance automatically stops after 30 minutes of inactivity to save costs. The idle check considers both network traffic (NetworkIn < 500KB) and CPU utilisation (< 10%) — a high-CPU workload with low network traffic won't be stopped. A CloudWatch alarm fires if the idle-stop Lambda itself fails consecutively. When you need it again:
 
 ```bash
 ./scripts/rockport.sh start
@@ -349,28 +349,37 @@ Rockport is designed so that the proxy has no direct internet exposure. Every la
 
 **Secrets handling** — The master key and tunnel token are stored as SSM SecureString parameters (encrypted at rest with AWS KMS). The database password is generated on the instance during bootstrap, stored in SSM for recovery, and never appears in logs. Environment files are written with `umask 077` to prevent brief permission windows.
 
-**Systemd hardening** — Both LiteLLM and cloudflared run as dedicated non-root users with `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`, and memory limits. The `litellm` user's home directory is `/var/lib/litellm` (not `/home/litellm`) so prisma cache is accessible under `ProtectHome=yes`.
+**Systemd hardening** — All services (LiteLLM, cloudflared, video sidecar) run as dedicated non-root users with `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`, `SystemCallFilter=@system-service`, `PrivateDevices=yes`, `RestrictNamespaces=yes`, `CapabilityBoundingSet=` (all capabilities dropped), `ProtectControlGroups=yes`, `RestrictSUIDSGID=yes`, and memory limits. The `litellm` user's home directory is `/var/lib/litellm` (not `/home/litellm`) so prisma cache is accessible under `ProtectHome=yes`.
 
 **IMDSv2 enforced** — The instance metadata service requires session tokens (hop limit 1), preventing SSRF-based credential theft.
 
 **Transport security** — HSTS (6 months max-age) and "Always Use HTTPS" are enabled in Cloudflare, enforcing HTTPS-only access. HTTP requests are redirected with 301.
 
-**Least-privilege IAM** — The deployer IAM policies (`terraform/deployer-policies/`) scopes EC2 and SSM mutating actions to resources tagged `Project=rockport`. Read-only Describe actions use `Resource: *` as required by AWS. The instance role is limited to Bedrock invoke and SSM parameter access.
+**Least-privilege IAM** — The deployer IAM policies (`terraform/deployer-policies/`) scope EC2 and SSM mutating actions to resources tagged `Project=rockport`. Read-only Describe actions use `Resource: *` as required by AWS. An explicit Deny statement prevents the deployer from attaching any AWS-managed policy (e.g. `AdministratorAccess`) to rockport roles — only rockport-prefixed custom policies are allowed, blocking privilege escalation via the CI/CD pipeline. The instance role is limited to Bedrock invoke and SSM parameter access.
 
 **CI security scanning** — Every push runs Trivy (IaC misconfiguration) and Checkov (policy-as-code) against the Terraform. Skipped checks are documented with justifications in `.checkov.yaml`.
 
+**Cloudflare Access pre-authentication** — A Cloudflare Access application (`terraform/access.tf`) requires a service token for all requests. Clients must send `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers or Cloudflare returns 403 before traffic reaches the tunnel. This adds a second credential layer beyond API keys — even if an API key leaks, requests are blocked without the service token. Token values are sensitive Terraform outputs. To rotate: create a new service token, update all clients, then remove the old one.
+
+**Database authentication** — PostgreSQL uses SCRAM-SHA-256 for all client authentication (not md5). Connections are localhost-only with no TLS (traffic never leaves the kernel's loopback interface).
+
 ### What's exposed
 
-A Cloudflare WAF allowlist restricts the proxy to only the paths Claude Code and the admin CLI need. All other paths (admin UI, API docs, debug endpoints, SCIM, SSO, etc.) are blocked with 403 at the edge. On the allowed paths, all requests without a valid key return 401. The remaining attack surface is:
+All requests require both a valid Cloudflare Access service token and a valid LiteLLM API key. A Cloudflare WAF allowlist further restricts traffic to only the paths Claude Code and the admin CLI need. All other paths (admin UI, API docs, debug endpoints, SCIM, SSO, etc.) are blocked with 403 at the edge. The remaining attack surface is:
 
 - Brute-force key guessing (mitigated by key length — master key is `sk-` + 48 hex characters; virtual keys use LiteLLM's default token format)
 - Cloudflare-level DDoS (mitigated by Cloudflare's built-in protection)
-
-See [docs/future-ideas.md](docs/future-ideas.md) for additional hardening options like Cloudflare Access pre-authentication.
+- Service token compromise (mitigated by token rotation via Terraform)
 
 ## Smoke tests
 
 ```bash
+# With CF Access headers (required when Cloudflare Access is enabled)
+./tests/smoke-test.sh https://<your-domain> sk-<your-key> <cf-client-id> <cf-client-secret>
+
+# Or via environment variables
+export CF_ACCESS_CLIENT_ID=<cf-client-id>
+export CF_ACCESS_CLIENT_SECRET=<cf-client-secret>
 ./tests/smoke-test.sh https://<your-domain> sk-<your-key>
 ```
 
