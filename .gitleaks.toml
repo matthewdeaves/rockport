@@ -2,11 +2,7 @@
 useDefault = true
 
 [[allowlists]]
-description = "False positives — placeholder and intentionally-invalid keys in docs and tests"
+description = "False positives — placeholder keys in docs"
 stopwords = [
   "sk-your-key",
-  "sk-invalid-key-12345",
-  "Bearer sk-invalid-key-12345",
 ]
-regexTarget = "match"
-regexes = ['''sk-invalid-key-12345''']
