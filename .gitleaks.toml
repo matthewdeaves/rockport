@@ -1,9 +1,9 @@
 [extend]
 useDefault = true
 
-[allowlist]
-description = "Allowlist for false positives"
-paths = [
-  '''specs/''',
-  '''tests/smoke-test\.sh''',
+[[allowlists]]
+description = "False positives — placeholder and intentionally-invalid keys in docs and tests"
+stopwords = [
+  "sk-your-key",
+  "sk-invalid-key-12345",
 ]
