@@ -83,7 +83,7 @@ tests/smoke-test.sh     # Post-deploy verification
 - Cloudflare Tunnel routes `/v1/videos/*` to `http://localhost:4001` — managed in `terraform/tunnel.tf`
 - Video sidecar MemoryMax is 256MB; LiteLLM reduced to 1280MB to fit on t3.small (2GB + 512MB swap)
 - Single-shot (one prompt, 6-120s) and multi-shot (2-20 per-shot prompts, 6s each) modes supported
-- Image-to-video: single-shot with image supports 6-120s (same as text-to-video); multi-shot uses `MULTI_SHOT_MANUAL` taskType with `multiShotManualParams.shots`
+- Image-to-video: Nova Reel single-shot with image is fixed at 6 seconds (Bedrock TEXT_VIDEO constraint); multi-shot uses `MULTI_SHOT_MANUAL` taskType with `multiShotManualParams.shots`
 - Nova Reel image requirements: exactly 1280x720, PNG or JPEG, no transparent pixels (opaque alpha channels are automatically stripped), max 10MB, submitted as data URIs. Bedrock format: `{format: "png"|"jpeg", source: {bytes: "<raw-base64>"}}`
 - Ray2 image requirements: 512x512 to 4096x4096, PNG or JPEG, max 25MB, data URIs. Bedrock format: `keyframes.frame0/frame1` with `{type: "image", source: {type: "base64", media_type, data}}`. Supports start + optional end frame
 - Ray2 extra params: `aspect_ratio` (7 options), `resolution` (540p/720p), `loop` (bool). No multi-shot, no seed. Requires Marketplace subscription

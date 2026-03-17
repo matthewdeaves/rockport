@@ -12,6 +12,7 @@ import base64
 import hashlib
 import io
 import json
+import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
@@ -108,6 +109,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Rockport Video API", docs_url=None, redoc_url=None, lifespan=lifespan)
 
+logger = logging.getLogger("rockport-video")
+
 
 # --- Auth ---
 
@@ -132,7 +135,8 @@ def authenticate(authorization: str = Header(...)) -> dict:
             headers={"Authorization": f"Bearer {MASTER_KEY}"},
             timeout=10,
         )
-    except httpx.RequestError:
+    except httpx.RequestError as exc:
+        logger.error("Auth service unreachable: %s: %s", type(exc).__name__, exc)
         raise HTTPException(status_code=502, detail={
             "error": {"type": "upstream_error", "message": "Could not reach auth service"}
         })
@@ -433,6 +437,12 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
 
         if model_name == "nova-reel":
             if req.image:
+                if duration != 6:
+                    raise HTTPException(status_code=400, detail={
+                        "error": {"type": "validation_error",
+                                  "message": "Nova Reel image-to-video requires exactly 6 seconds. "
+                                             "Remove 'duration' or set it to 6."}
+                    })
                 parsed_image = parse_nova_reel_image(req.image)
         elif model_name == "luma-ray2":
             if req.image:
@@ -479,10 +489,12 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
             modelInput=model_input,
             outputDataConfig={"s3OutputDataConfig": {"s3Uri": s3_output_uri}},
         )
-    except ClientError:
+    except ClientError as exc:
+        error_msg = exc.response.get("Error", {}).get("Message", str(exc)) if hasattr(exc, "response") else str(exc)
+        logger.error("Bedrock start_async_invoke failed: %s", error_msg)
         raise HTTPException(status_code=502, detail={
             "error": {"type": "upstream_error",
-                      "message": "Video generation request failed. Check image format and dimensions."}
+                      "message": f"Video generation request failed: {error_msg}"}
         })
 
     invocation_arn = response["invocationArn"]

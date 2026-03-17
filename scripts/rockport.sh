@@ -1016,8 +1016,10 @@ cmd_config_push() {
   local params_file
   params_file=$(mktemp)
   trap 'rm -f "$params_file"' RETURN
+  # Stop sidecar first to avoid 502s while LiteLLM restarts, then update files,
+  # restart LiteLLM, wait for readiness, and start sidecar (ExecStartPre also waits)
   jq -n --arg b64 "$config_b64" --arg vapi "$video_api_b64" --arg db "$db_b64" \
-    '{"commands":["echo \($b64) | base64 -d > /etc/litellm/config.yaml && chown litellm:litellm /etc/litellm/config.yaml && echo \($vapi) | base64 -d > /opt/rockport-video/video_api.py && echo \($db) | base64 -d > /opt/rockport-video/db.py && chown -R litellm:litellm /opt/rockport-video && systemctl restart litellm && (systemctl restart rockport-video 2>/dev/null || true) && echo Config and sidecar pushed and services restarted"]}' \
+    '{"commands":["systemctl stop rockport-video 2>/dev/null || true && echo \($b64) | base64 -d > /etc/litellm/config.yaml && chown litellm:litellm /etc/litellm/config.yaml && echo \($vapi) | base64 -d > /opt/rockport-video/video_api.py && echo \($db) | base64 -d > /opt/rockport-video/db.py && chown -R litellm:litellm /opt/rockport-video && systemctl restart litellm && for i in $(seq 1 60); do curl -sf http://127.0.0.1:4000/health/readiness >/dev/null 2>&1 && break; sleep 2; done && systemctl start rockport-video && echo Config and sidecar pushed and services restarted"]}' \
     > "$params_file"
 
   local instance_id region command_id

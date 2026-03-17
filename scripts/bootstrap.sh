@@ -22,6 +22,13 @@ if [[ ! -f /swapfile ]]; then
   echo "/swapfile swap swap defaults 0 0" >> /etc/fstab
   sysctl vm.swappiness=10
   echo "vm.swappiness=10" >> /etc/sysctl.d/99-rockport.conf
+  # Increase UDP buffers for cloudflared QUIC tunnel (large request payloads)
+  sysctl -w net.core.rmem_max=7500000
+  sysctl -w net.core.wmem_max=7500000
+  cat >> /etc/sysctl.d/99-rockport.conf <<SYSEOF
+net.core.rmem_max=7500000
+net.core.wmem_max=7500000
+SYSEOF
 else
   echo "Swap already exists, skipping."
 fi
