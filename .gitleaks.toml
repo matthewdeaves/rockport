@@ -9,6 +9,6 @@ stopwords = [
 ]
 
 [[allowlists]]
-description = "Smoke test curl auth headers use shell variables, not real secrets"
+description = "Smoke test curl auth header with intentionally-invalid key (not a real secret)"
 regexTarget = "match"
-regexes = ['''\$VALID_KEY''']
+regexes = ['''Bearer sk-invalid-key-12345''']
