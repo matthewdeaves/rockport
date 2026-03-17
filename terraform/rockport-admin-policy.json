@@ -75,6 +75,22 @@
       ]
     },
     {
+      "Sid": "S3ArtifactsBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:CreateBucket",
+        "s3:ListBucket",
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:PutBucketPublicAccessBlock",
+        "s3:HeadBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::rockport-artifacts-*",
+        "arn:aws:s3:::rockport-artifacts-*/*"
+      ]
+    },
+    {
       "Sid": "AccountDiscovery",
       "Effect": "Allow",
       "Action": "sts:GetCallerIdentity",

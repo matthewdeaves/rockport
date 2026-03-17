@@ -127,7 +127,9 @@
       ],
       "Resource": [
         "arn:aws:s3:::rockport-video-*",
-        "arn:aws:s3:::rockport-video-*/*"
+        "arn:aws:s3:::rockport-video-*/*",
+        "arn:aws:s3:::rockport-artifacts-*",
+        "arn:aws:s3:::rockport-artifacts-*/*"
       ]
     },
     {

@@ -11,6 +11,7 @@ MASTER_KEY_SSM_PATH="${master_key_ssm_path}"
 TUNNEL_TOKEN_SSM_PATH="${tunnel_token_ssm_path}"
 LITELLM_VERSION="${litellm_version}"
 CLOUDFLARED_VERSION="${cloudflared_version}"
+ARTIFACTS_BUCKET="${artifacts_bucket}"
 
 # --- Swap ---
 if [[ ! -f /swapfile ]]; then
@@ -170,11 +171,15 @@ chown -R litellm:litellm /usr/local/lib/python3.11/site-packages/litellm_proxy_e
 sudo -u litellm prisma generate \
   --schema /usr/local/lib/python3.11/site-packages/litellm/proxy/schema.prisma
 
-# Config
+# --- Download deploy artifact from S3 ---
+echo "Downloading deploy artifact from S3..."
+aws s3 cp "s3://$ARTIFACTS_BUCKET/deploy/rockport-artifact.tar.gz" /tmp/rockport-artifact.tar.gz \
+  --region "$REGION" || { echo "FATAL: Failed to download deploy artifact from S3"; exit 1; }
+
+# Extract config files
 mkdir -p /etc/litellm
-cat > /etc/litellm/config.yaml <<'LITELLMCONF'
-${litellm_config}
-LITELLMCONF
+tar xzf /tmp/rockport-artifact.tar.gz -C /tmp rockport-artifact/
+cp /tmp/rockport-artifact/config/litellm-config.yaml /etc/litellm/config.yaml
 chown -R litellm:litellm /etc/litellm
 
 # Env file — written inside subshell with restrictive umask to prevent brief exposure
@@ -190,9 +195,7 @@ ENVEOF
 chown litellm:litellm /etc/litellm/env
 
 # Systemd unit
-cat > /etc/systemd/system/litellm.service <<'LITELLMSVC'
-${litellm_service}
-LITELLMSVC
+cp /tmp/rockport-artifact/config/litellm.service /etc/systemd/system/litellm.service
 
 # --- Video Generation Sidecar ---
 echo "Installing video sidecar dependencies..."
@@ -200,21 +203,7 @@ pip3.11 install psycopg2-binary Pillow httpx
 
 echo "Setting up video sidecar..."
 mkdir -p /opt/rockport-video
-cat > /opt/rockport-video/db.py <<'VIDEODB'
-${video_sidecar_db}
-VIDEODB
-cat > /opt/rockport-video/video_api.py <<'VIDEOAPI'
-${video_sidecar_api}
-VIDEOAPI
-cat > /opt/rockport-video/image_api.py <<'IMAGEAPI'
-${video_sidecar_image_api}
-IMAGEAPI
-cat > /opt/rockport-video/prompt_validation.py <<'PROMPTVAL'
-${video_sidecar_prompt_val}
-PROMPTVAL
-cat > /opt/rockport-video/image_resize.py <<'IMAGERESIZE'
-${video_sidecar_image_resize}
-IMAGERESIZE
+cp /tmp/rockport-artifact/sidecar/*.py /opt/rockport-video/
 chown -R litellm:litellm /opt/rockport-video
 
 # Create video jobs table in litellm database
@@ -254,9 +243,10 @@ VIDENVEOF
 )
 
 # Systemd unit for video sidecar
-cat > /etc/systemd/system/rockport-video.service <<'VIDEOSVC'
-${video_sidecar_service}
-VIDEOSVC
+cp /tmp/rockport-artifact/config/rockport-video.service /etc/systemd/system/rockport-video.service
+
+# Cleanup
+rm -rf /tmp/rockport-artifact /tmp/rockport-artifact.tar.gz
 
 # --- Cloudflared ---
 echo "Installing cloudflared..."
@@ -291,9 +281,7 @@ ENVEOF
 chown cloudflared:cloudflared /etc/cloudflared/env
 
 # Systemd unit
-cat > /etc/systemd/system/cloudflared.service <<'CFLDSVC'
-${cloudflared_service}
-CFLDSVC
+cp /tmp/rockport-artifact/config/cloudflared.service /etc/systemd/system/cloudflared.service
 
 # --- Start services ---
 echo "Starting services..."
