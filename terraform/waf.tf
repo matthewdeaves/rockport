@@ -31,6 +31,7 @@ resource "cloudflare_ruleset" "waf_block_sensitive" {
       "not starts_with(http.request.uri.path, \"/v1/embeddings\")",
       "not starts_with(http.request.uri.path, \"/v1/images/generations\")",
       "not starts_with(http.request.uri.path, \"/v1/videos\")",
+      "not starts_with(http.request.uri.path, \"/v1/images/\")",
       "not starts_with(http.request.uri.path, \"/chat/completions\")",
       "not starts_with(http.request.uri.path, \"/completions\")",
       "not starts_with(http.request.uri.path, \"/models\")",

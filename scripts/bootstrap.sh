@@ -206,6 +206,15 @@ VIDEODB
 cat > /opt/rockport-video/video_api.py <<'VIDEOAPI'
 ${video_sidecar_api}
 VIDEOAPI
+cat > /opt/rockport-video/image_api.py <<'IMAGEAPI'
+${video_sidecar_image_api}
+IMAGEAPI
+cat > /opt/rockport-video/prompt_validation.py <<'PROMPTVAL'
+${video_sidecar_prompt_val}
+PROMPTVAL
+cat > /opt/rockport-video/image_resize.py <<'IMAGERESIZE'
+${video_sidecar_image_resize}
+IMAGERESIZE
 chown -R litellm:litellm /opt/rockport-video
 
 # Create video jobs table in litellm database

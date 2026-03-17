@@ -352,3 +352,36 @@ def log_spend(
                 """,
                 (cost, api_key_hash),
             )
+
+
+def log_image_spend(
+    api_key_hash: str,
+    model: str,
+    cost: float,
+    request_id: str,
+) -> None:
+    """Write image operation spend to LiteLLM_SpendLogs and increment key spend.
+
+    Same pattern as video spend logging, but simpler — no job tracking table,
+    no duration/mode metadata. Image operations are synchronous.
+    """
+    with _get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO "LiteLLM_SpendLogs"
+                    (request_id, api_key, model, spend, total_tokens,
+                     prompt_tokens, completion_tokens, "startTime", metadata)
+                VALUES (%s, %s, %s, %s, 0, 0, 0, NOW(), %s)
+                """,
+                (request_id, api_key_hash, model,
+                 Decimal(str(cost)), json.dumps({"type": "image"})),
+            )
+            cur.execute(
+                """
+                UPDATE "LiteLLM_VerificationToken"
+                SET spend = spend + %s
+                WHERE token = %s
+                """,
+                (Decimal(str(cost)), api_key_hash),
+            )

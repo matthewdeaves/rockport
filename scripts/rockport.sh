@@ -1007,10 +1007,13 @@ cmd_config_push() {
   instance_id="$(get_instance_id)"
   echo "Pushing config to instance $instance_id..."
 
-  local config_b64 video_api_b64 db_b64
+  local config_b64 video_api_b64 db_b64 image_api_b64 prompt_val_b64 image_resize_b64
   config_b64=$(base64 "$CONFIG_DIR/litellm-config.yaml" | tr -d '\n')
   video_api_b64=$(base64 "$SCRIPT_DIR/../sidecar/video_api.py" | tr -d '\n')
   db_b64=$(base64 "$SCRIPT_DIR/../sidecar/db.py" | tr -d '\n')
+  image_api_b64=$(base64 "$SCRIPT_DIR/../sidecar/image_api.py" | tr -d '\n')
+  prompt_val_b64=$(base64 "$SCRIPT_DIR/../sidecar/prompt_validation.py" | tr -d '\n')
+  image_resize_b64=$(base64 "$SCRIPT_DIR/../sidecar/image_resize.py" | tr -d '\n')
 
   # Use JSON file for parameters to avoid shell quoting issues
   local params_file
@@ -1019,7 +1022,8 @@ cmd_config_push() {
   # Stop sidecar first to avoid 502s while LiteLLM restarts, then update files,
   # restart LiteLLM, wait for readiness, and start sidecar (ExecStartPre also waits)
   jq -n --arg b64 "$config_b64" --arg vapi "$video_api_b64" --arg db "$db_b64" \
-    '{"commands":["systemctl stop rockport-video 2>/dev/null || true && echo \($b64) | base64 -d > /etc/litellm/config.yaml && chown litellm:litellm /etc/litellm/config.yaml && echo \($vapi) | base64 -d > /opt/rockport-video/video_api.py && echo \($db) | base64 -d > /opt/rockport-video/db.py && chown -R litellm:litellm /opt/rockport-video && systemctl restart litellm && for i in $(seq 1 60); do curl -sf http://127.0.0.1:4000/health/readiness >/dev/null 2>&1 && break; sleep 2; done && systemctl start rockport-video && echo Config and sidecar pushed and services restarted"]}' \
+    --arg imgapi "$image_api_b64" --arg pval "$prompt_val_b64" --arg imgresize "$image_resize_b64" \
+    '{"commands":["systemctl stop rockport-video 2>/dev/null || true && echo \($b64) | base64 -d > /etc/litellm/config.yaml && chown litellm:litellm /etc/litellm/config.yaml && echo \($vapi) | base64 -d > /opt/rockport-video/video_api.py && echo \($db) | base64 -d > /opt/rockport-video/db.py && echo \($imgapi) | base64 -d > /opt/rockport-video/image_api.py && echo \($pval) | base64 -d > /opt/rockport-video/prompt_validation.py && echo \($imgresize) | base64 -d > /opt/rockport-video/image_resize.py && chown -R litellm:litellm /opt/rockport-video && systemctl restart litellm && for i in $(seq 1 60); do curl -sf http://127.0.0.1:4000/health/readiness >/dev/null 2>&1 && break; sleep 2; done && systemctl start rockport-video && echo Config and sidecar pushed and services restarted"]}' \
     > "$params_file"
 
   local instance_id region command_id

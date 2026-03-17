@@ -28,6 +28,9 @@ from PIL import Image
 from pydantic import BaseModel, Field
 
 import db
+import image_api
+import image_resize
+import prompt_validation
 
 # Limit Pillow decompression to accommodate Ray2's 4096x4096 max
 Image.MAX_IMAGE_PIXELS = 4096 * 4096 * 2
@@ -103,11 +106,15 @@ async def lifespan(app: FastAPI):
     for region in regions:
         bedrock_clients[region] = boto3.client("bedrock-runtime", region_name=region)
         s3_clients[region] = boto3.client("s3", region_name=region, config=BotoConfig(signature_version="s3v4"))
+    # Initialize image API clients and config
+    image_api.init_clients()
+    image_api.configure(LITELLM_URL, MASTER_KEY)
     yield
     db.close_pool()
 
 
 app = FastAPI(title="Rockport Video API", docs_url=None, redoc_url=None, lifespan=lifespan)
+app.include_router(image_api.router)
 
 logger = logging.getLogger("rockport-video")
 
@@ -151,7 +158,20 @@ def authenticate(authorization: str = Header(...)) -> dict:
         "key_hash": key_hash,
         "spend": info.get("spend", 0),
         "max_budget": info.get("max_budget"),
+        "models": info.get("models", []),
     }
+
+
+def is_claude_only_key(auth: dict) -> bool:
+    """Check if an API key is restricted to Anthropic-only models (--claude-only).
+
+    Returns True if the key's models list is non-empty and contains only
+    Anthropic model identifiers (claude-*).
+    """
+    models = auth.get("models", [])
+    if not models:
+        return False  # No model restriction = unrestricted key
+    return all(m.startswith("claude-") or "anthropic" in m.lower() for m in models)
 
 
 # --- Request models ---
@@ -172,24 +192,36 @@ class VideoGenerationRequest(BaseModel):
     aspect_ratio: str | None = None
     resolution: str | None = None
     loop: bool | None = None
+    resize_mode: str | None = None
+    pad_color: str | None = None
 
 
 # --- Image validation ---
 
-def validate_image_nova_reel(data_uri: str) -> tuple[bytes, str]:
-    """Validate a Nova Reel image: exactly 1280x720, PNG or JPEG, max 10MB.
+def validate_image_nova_reel(data_uri: str, resize_mode: str = "scale", pad_color: str = "black") -> tuple[bytes, str, dict | None]:
+    """Validate a Nova Reel image: auto-resize to 1280x720 if needed, PNG or JPEG, max 10MB.
 
-    Returns (raw_bytes, format_str) where format_str is 'png' or 'jpeg'.
+    Returns (raw_bytes, format_str, resize_metadata) where:
+    - format_str is 'png' or 'jpeg'
+    - resize_metadata is a dict with original dimensions if resize was applied, or None
     If the image has a fully-opaque alpha channel, it is stripped automatically.
     """
     max_bytes = VIDEO_MODELS["nova-reel"]["image_max_bytes"]
     raw, img = _decode_image(data_uri, max_bytes)
 
+    # Auto-resize if not exactly 1280x720
+    resize_metadata = None
     if img.size != (1280, 720):
-        raise HTTPException(status_code=400, detail={
-            "error": {"type": "validation_error",
-                      "message": f"Image must be 1280x720 (got {img.size[0]}x{img.size[1]})"}
-        })
+        raw, resize_metadata = image_resize.resize_image(raw, resize_mode, pad_color)
+        # Re-open the resized image for further validation
+        img = Image.open(io.BytesIO(raw))
+        img.load()
+        # Re-check size limit after resize
+        if len(raw) > max_bytes:
+            raise HTTPException(status_code=400, detail={
+                "error": {"type": "validation_error",
+                          "message": f"Image exceeds 10MB after resize ({len(raw)} bytes)"}
+            })
 
     fmt = img.format
     # Alpha channel handling (PNG only — JPEG never has alpha)
@@ -207,7 +239,7 @@ def validate_image_nova_reel(data_uri: str) -> tuple[bytes, str]:
         img.save(buf, format=fmt)
         raw = buf.getvalue()
 
-    return raw, fmt.lower()
+    return raw, fmt.lower(), resize_metadata
 
 
 def validate_image_ray2(data_uri: str) -> tuple[bytes, str]:
@@ -271,10 +303,10 @@ def _decode_image(data_uri: str, max_bytes: int) -> tuple[bytes, Image.Image]:
     return raw, img
 
 
-def parse_nova_reel_image(data_uri: str) -> tuple[str, str]:
-    """Parse and validate a Nova Reel image, returning (raw_base64, format_str)."""
-    raw_bytes, fmt = validate_image_nova_reel(data_uri)
-    return base64.b64encode(raw_bytes).decode("ascii"), fmt
+def parse_nova_reel_image(data_uri: str, resize_mode: str = "scale", pad_color: str = "black") -> tuple[str, str, dict | None]:
+    """Parse and validate a Nova Reel image, returning (raw_base64, format_str, resize_metadata)."""
+    raw_bytes, fmt, resize_meta = validate_image_nova_reel(data_uri, resize_mode, pad_color)
+    return base64.b64encode(raw_bytes).decode("ascii"), fmt, resize_meta
 
 
 def parse_ray2_image(data_uri: str) -> tuple[str, str]:
@@ -352,6 +384,36 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
         })
     model = VIDEO_MODELS[model_name]
 
+    # --- Validate resize_mode and pad_color ---
+    resize_mode = req.resize_mode or "scale"
+    pad_color = req.pad_color or "black"
+    if resize_mode not in image_resize.VALID_MODES:
+        raise HTTPException(status_code=400, detail={
+            "error": {"type": "validation_error",
+                      "message": f"Invalid resize_mode '{resize_mode}'. Must be one of: {', '.join(sorted(image_resize.VALID_MODES))}"}
+        })
+    if pad_color not in image_resize.VALID_PAD_COLORS:
+        raise HTTPException(status_code=400, detail={
+            "error": {"type": "validation_error",
+                      "message": f"Invalid pad_color '{pad_color}'. Must be 'black' or 'white'"}
+        })
+
+    # --- Prompt validation (Nova Reel only) ---
+    if model_name == "nova-reel":
+        if req.prompt:
+            error = prompt_validation.validate_nova_reel_prompt(req.prompt)
+            if error:
+                raise HTTPException(status_code=400, detail=error)
+        if req.shots:
+            for i, shot in enumerate(req.shots):
+                error = prompt_validation.validate_nova_reel_prompt(shot.prompt, shot_number=i + 1)
+                if error:
+                    raise HTTPException(status_code=400, detail=error)
+
+    # Track resize metadata for response
+    resize_applied_list = []
+    resize_applied_single = None
+
     # --- Determine mode and validate ---
     if req.prompt and req.shots:
         raise HTTPException(status_code=400, detail={
@@ -380,9 +442,14 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
             })
         duration = 6 * num_shots
         parsed_images: dict[int, tuple[str, str]] = {}
+        resize_applied_list: list[dict | None] = []
         for i, shot in enumerate(req.shots):
             if shot.image:
-                parsed_images[i] = parse_nova_reel_image(shot.image)
+                raw_b64, fmt, resize_meta = parse_nova_reel_image(shot.image, resize_mode, pad_color)
+                parsed_images[i] = (raw_b64, fmt)
+                resize_applied_list.append(resize_meta)
+            else:
+                resize_applied_list.append(None)
         prompt_store = json.dumps([s.prompt for s in req.shots])
         resolution = None
     else:
@@ -435,6 +502,7 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
         parsed_image: tuple[str, str] | None = None
         parsed_end_image: tuple[str, str] | None = None
 
+        resize_applied_single = None
         if model_name == "nova-reel":
             if req.image:
                 if duration != 6:
@@ -443,7 +511,8 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
                                   "message": "Nova Reel image-to-video requires exactly 6 seconds. "
                                              "Remove 'duration' or set it to 6."}
                     })
-                parsed_image = parse_nova_reel_image(req.image)
+                raw_b64, fmt, resize_applied_single = parse_nova_reel_image(req.image, resize_mode, pad_color)
+                parsed_image = (raw_b64, fmt)
         elif model_name == "luma-ray2":
             if req.image:
                 parsed_image = parse_ray2_image(req.image)
@@ -522,6 +591,12 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
                 "limit": MAX_CONCURRENT_JOBS,
             }
         })
+
+    # Add resize metadata to response
+    if mode == "multi_shot":
+        job["resize_applied"] = resize_applied_list if any(r for r in resize_applied_list) else None
+    else:
+        job["resize_applied"] = resize_applied_single
 
     return job
 

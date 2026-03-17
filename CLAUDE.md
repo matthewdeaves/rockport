@@ -97,3 +97,8 @@ tests/smoke-test.sh     # Post-deploy verification
 - PostgreSQL 15 — LiteLLM keys/spend + video job tracking (`rockport_video_jobs` table with `model` column)
 - S3 — Terraform state (eu-west-2) + video output (us-east-1 for Nova Reel, us-west-2 for Ray2, both 7-day lifecycle)
 - Bash — admin CLI, bootstrap, smoke tests
+- Python 3.11 + FastAPI, uvicorn, boto3, Pillow, psycopg2, pydantic, httpx (all existing in sidecar) (008-image-video-enhancements)
+- PostgreSQL 15 (existing — spend logging to LiteLLM_SpendLogs and LiteLLM_VerificationToken) (008-image-video-enhancements)
+
+## Recent Changes
+- 008-image-video-enhancements: Added Python 3.11 + FastAPI, uvicorn, boto3, Pillow, psycopg2, pydantic, httpx (all existing in sidecar)
