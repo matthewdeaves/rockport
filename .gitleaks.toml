@@ -2,15 +2,10 @@
 useDefault = true
 
 [[allowlists]]
-description = "False positives — placeholder keys in docs and tests"
+description = "False positives — placeholder and intentionally-invalid keys in docs and tests"
 stopwords = [
   "sk-your-key",
   "sk-invalid-key-12345",
+  "sk-not-a-real-key",
+  "invalid-key-12345",
 ]
-
-# curl-auth-header rule flags the intentionally-invalid test key in smoke tests.
-# Fingerprint targets the exact finding (commit:file:rule:line) without blanket-excluding files.
-[[allowlists]]
-description = "Smoke test auth rejection uses intentionally-invalid key"
-regexTarget = "line"
-regexes = ['''Bearer sk-invalid-key-12345''']

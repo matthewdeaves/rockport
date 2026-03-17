@@ -12,6 +12,7 @@ CF_CLIENT_ID="${2:-${CF_ACCESS_CLIENT_ID:-}}"
 CF_CLIENT_SECRET="${3:-${CF_ACCESS_CLIENT_SECRET:-}}"
 PASS=0
 FAIL=0
+INVALID_KEY="sk-not-a-real-key"
 
 # Build CF Access header args if provided
 CF_ARGS=()
@@ -67,7 +68,7 @@ HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/health" \
 # 2. Auth rejection with invalid key
 echo "2. Auth rejection"
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/v1/models" \
-  -H "Authorization: Bearer sk-invalid-key-12345" `# gitleaks:allow` "${CF_ARGS[@]+"${CF_ARGS[@]}"}" --max-time 10)
+  -H "Authorization: Bearer $INVALID_KEY" `# gitleaks:allow` "${CF_ARGS[@]+"${CF_ARGS[@]}"}" --max-time 10)
 [[ "$HTTP_CODE" == "401" || "$HTTP_CODE" == "403" ]]; check "Invalid key rejected (401/403)" "$?"
 
 # 3. Auth success with valid key
@@ -117,7 +118,7 @@ echo "$VIDEO_HEALTH_BODY" | jq -e '.models["luma-ray2"]' >/dev/null 2>&1; check 
 # 8. Video auth rejection
 echo "8. Video auth rejection"
 VIDEO_AUTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/videos/generations" \
-  -H "Authorization: Bearer sk-invalid-key-12345" `# gitleaks:allow` \
+  -H "Authorization: Bearer $INVALID_KEY" `# gitleaks:allow` \
   -H "Content-Type: application/json" \
   "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
   -d '{"prompt":"test"}' --max-time 10 2>/dev/null)
