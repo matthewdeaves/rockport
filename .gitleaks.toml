@@ -9,6 +9,6 @@ stopwords = [
 ]
 
 [[allowlists]]
-description = "Smoke tests use shell variables in curl auth headers, not real secrets"
-paths = ["tests/smoke-test.sh"]
+description = "Smoke test curl auth headers use shell variables, not real secrets"
 regexTarget = "match"
+regexes = ['''\$VALID_KEY''']
