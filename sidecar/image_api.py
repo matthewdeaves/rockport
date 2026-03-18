@@ -257,8 +257,20 @@ def invoke_stability_model(client, model_id: str, payload: dict) -> list[str]:
         raise HTTPException(status_code=502, detail={
             "error": {"type": "upstream_error", "message": f"Image service request failed: {error_msg}"}
         })
+    except Exception as exc:
+        logger.error("Stability AI unexpected error for %s: %s: %s", model_id, type(exc).__name__, exc)
+        raise HTTPException(status_code=502, detail={
+            "error": {"type": "upstream_error", "message": f"Image service request failed: {type(exc).__name__}"}
+        })
 
     result = json.loads(response["body"].read())
+
+    # Check for error in response body
+    if result.get("error"):
+        logger.error("Stability AI %s returned error: %s", model_id, result["error"])
+        raise HTTPException(status_code=502, detail={
+            "error": {"type": "upstream_error", "message": f"Image service error: {result['error']}"}
+        })
 
     # Check finish_reasons for errors
     finish_reasons = result.get("finish_reasons", [])
@@ -272,7 +284,7 @@ def invoke_stability_model(client, model_id: str, payload: dict) -> list[str]:
                 "error": {"type": "upstream_error", "message": "Stability AI inference error"}
             })
 
-    return result.get("images", [])
+    return result.get("images") or []
 
 
 def _make_image_response(images: list[str], model: str, cost: float) -> dict:
@@ -372,9 +384,19 @@ def create_image_variation(req: ImageVariationRequest, authorization: str = Head
         raise HTTPException(status_code=502, detail={
             "error": {"type": "upstream_error", "message": f"Image variation request failed: {error_msg}"}
         })
+    except Exception as exc:
+        logger.error("Nova Canvas IMAGE_VARIATION unexpected error: %s: %s", type(exc).__name__, exc)
+        raise HTTPException(status_code=502, detail={
+            "error": {"type": "upstream_error", "message": f"Image variation request failed: {type(exc).__name__}"}
+        })
 
     result = json.loads(response["body"].read())
-    images = result.get("images", [])
+    if result.get("error"):
+        logger.error("Nova Canvas IMAGE_VARIATION returned error: %s", result["error"])
+        raise HTTPException(status_code=502, detail={
+            "error": {"type": "upstream_error", "message": f"Image variation request failed: {result['error']}"}
+        })
+    images = result.get("images") or []
 
     request_id = str(uuid.uuid4())
     db.log_image_spend(auth["key_hash"], "nova-canvas-variation", cost, request_id)
@@ -418,9 +440,19 @@ def remove_background(req: BackgroundRemovalRequest, authorization: str = Header
         raise HTTPException(status_code=502, detail={
             "error": {"type": "upstream_error", "message": f"Background removal failed: {error_msg}"}
         })
+    except Exception as exc:
+        logger.error("Nova Canvas BACKGROUND_REMOVAL unexpected error: %s: %s", type(exc).__name__, exc)
+        raise HTTPException(status_code=502, detail={
+            "error": {"type": "upstream_error", "message": f"Background removal failed: {type(exc).__name__}"}
+        })
 
     result = json.loads(response["body"].read())
-    images = result.get("images", [])
+    if result.get("error"):
+        logger.error("Nova Canvas BACKGROUND_REMOVAL returned error: %s", result["error"])
+        raise HTTPException(status_code=502, detail={
+            "error": {"type": "upstream_error", "message": f"Background removal failed: {result['error']}"}
+        })
+    images = result.get("images") or []
 
     request_id = str(uuid.uuid4())
     db.log_image_spend(auth["key_hash"], "nova-canvas-background-removal", cost, request_id)
@@ -508,9 +540,19 @@ def outpaint_image(req: OutpaintRequest, authorization: str = Header(...)):
         raise HTTPException(status_code=502, detail={
             "error": {"type": "upstream_error", "message": f"Outpainting request failed: {error_msg}"}
         })
+    except Exception as exc:
+        logger.error("Nova Canvas OUTPAINTING unexpected error: %s: %s", type(exc).__name__, exc)
+        raise HTTPException(status_code=502, detail={
+            "error": {"type": "upstream_error", "message": f"Outpainting request failed: {type(exc).__name__}"}
+        })
 
     result = json.loads(response["body"].read())
-    images = result.get("images", [])
+    if result.get("error"):
+        logger.error("Nova Canvas OUTPAINTING returned error: %s", result["error"])
+        raise HTTPException(status_code=502, detail={
+            "error": {"type": "upstream_error", "message": f"Outpainting request failed: {result['error']}"}
+        })
+    images = result.get("images") or []
 
     request_id = str(uuid.uuid4())
     db.log_image_spend(auth["key_hash"], "nova-canvas-outpaint", cost, request_id)
