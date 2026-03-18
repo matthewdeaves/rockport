@@ -13,3 +13,11 @@ AVD-AWS-0066
 # S3 video bucket uses SSE-S3 (AES256) not CMK — Bedrock writes directly to this bucket,
 # contents are ephemeral (7-day lifecycle), and CMK adds unnecessary cost/complexity
 AVD-AWS-0132
+
+# S3 bucket logging disabled — artifacts bucket is internal-only, video buckets are ephemeral
+# (7-day lifecycle). A dedicated log bucket adds cost for minimal audit value
+AVD-AWS-0089
+
+# S3 versioning disabled on video buckets — write-once ephemeral output auto-deleted after 7 days,
+# versioning would double storage costs for throwaway data
+AVD-AWS-0090

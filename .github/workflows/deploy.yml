@@ -3,10 +3,10 @@ name: Deploy
 on:
   push:
     branches: [main]
-    paths: ["terraform/**", "config/**", "scripts/**"]
+    paths: ["terraform/**", "config/**", "scripts/**", "sidecar/**", "tests/**"]
   pull_request:
     branches: [main]
-    paths: ["terraform/**", "config/**", "scripts/**"]
+    paths: ["terraform/**", "config/**", "scripts/**", "sidecar/**", "tests/**"]
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-2' }}
@@ -150,17 +150,17 @@ jobs:
             CF_ARGS=(-H "CF-Access-Client-Id: ${{ steps.creds.outputs.cf_client_id }}" -H "CF-Access-Client-Secret: ${{ steps.creds.outputs.cf_client_secret }}")
           fi
           echo "Waiting for instance to become healthy..."
-          for i in $(seq 1 30); do
+          for i in $(seq 1 20); do
             HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL/health" -H "Authorization: Bearer ${{ steps.creds.outputs.master_key }}" "${CF_ARGS[@]+"${CF_ARGS[@]}"}" --max-time 5 2>/dev/null || true)
             if [[ "$HTTP_CODE" == "200" ]]; then
               echo "Instance healthy after $((i * 10)) seconds"
               break
             fi
-            echo "Attempt $i/30: HTTP $HTTP_CODE — retrying in 10s..."
+            echo "Attempt $i/20: HTTP $HTTP_CODE — retrying in 10s..."
             sleep 10
           done
 
       - name: Run smoke tests
         run: |
           chmod +x tests/smoke-test.sh
-          ./tests/smoke-test.sh "${{ needs.deploy.outputs.tunnel_url }}" "${{ steps.creds.outputs.master_key }}" "${{ steps.creds.outputs.cf_client_id }}" "${{ steps.creds.outputs.cf_client_secret }}"
+          ./tests/smoke-test.sh "${{ needs.deploy.outputs.tunnel_url }}" "${{ steps.creds.outputs.cf_client_id }}" "${{ steps.creds.outputs.cf_client_secret }}"

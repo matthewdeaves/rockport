@@ -137,6 +137,23 @@ install_checkov() {
   esac
 }
 
+install_shellcheck() {
+  if command -v shellcheck &>/dev/null; then
+    echo "✓ ShellCheck already installed ($(shellcheck --version 2>&1 | grep '^version:'))"
+    return
+  fi
+  echo "Installing ShellCheck..."
+  case "$OS" in
+    Darwin)
+      install_brew
+      brew install shellcheck
+      ;;
+    Linux)
+      sudo apt-get update && sudo apt-get install -y shellcheck
+      ;;
+  esac
+}
+
 install_gitleaks() {
   if command -v gitleaks &>/dev/null; then
     echo "✓ Gitleaks already installed ($(gitleaks version 2>&1))"
@@ -174,6 +191,7 @@ install_terraform
 install_gh_cli
 install_trivy
 install_checkov
+install_shellcheck
 install_gitleaks
 setup_git_hooks
 
@@ -185,6 +203,7 @@ echo "Terraform:   $(terraform --version 2>/dev/null | head -1)"
 echo "GitHub CLI:  $(gh --version 2>/dev/null | head -1)"
 echo "Trivy:       $(trivy --version 2>&1 | head -1)"
 echo "Checkov:     $(checkov --version 2>/dev/null || echo 'not found')"
+echo "ShellCheck:  $(shellcheck --version 2>&1 | grep '^version:' || echo 'not found')"
 echo "Gitleaks:    $(gitleaks version 2>/dev/null || echo 'not found')"
 
 echo ""

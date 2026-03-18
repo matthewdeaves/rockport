@@ -45,6 +45,11 @@ variable "instance_type" {
   description = "EC2 instance type"
   type        = string
   default     = "t3.small"
+
+  validation {
+    condition     = !can(regex("^[a-z]+[0-9]+g[a-z]*\\.", var.instance_type))
+    error_message = "Graviton (ARM) instances are incompatible with Prisma. Use x86 instances (e.g. t3.small)."
+  }
 }
 
 variable "tunnel_subdomain" {
@@ -80,12 +85,22 @@ variable "bedrock_daily_budget" {
   description = "Daily Bedrock spend limit in USD"
   type        = number
   default     = 10
+
+  validation {
+    condition     = var.bedrock_daily_budget > 0
+    error_message = "Daily budget must be greater than zero."
+  }
 }
 
 variable "monthly_budget" {
   description = "Overall monthly AWS budget in USD (EC2, EBS, Bedrock, etc.)"
   type        = number
   default     = 30
+
+  validation {
+    condition     = var.monthly_budget > 0
+    error_message = "Monthly budget must be greater than zero."
+  }
 }
 
 variable "enable_idle_shutdown" {
@@ -98,16 +113,31 @@ variable "idle_timeout_minutes" {
   description = "Minutes of inactivity before auto-stopping the instance"
   type        = number
   default     = 30
+
+  validation {
+    condition     = var.idle_timeout_minutes >= 5
+    error_message = "Idle timeout must be at least 5 minutes (Lambda checks every 5 minutes)."
+  }
 }
 
 variable "idle_threshold_bytes" {
   description = "Network traffic threshold in bytes below which instance is considered idle"
   type        = number
   default     = 500000
+
+  validation {
+    condition     = var.idle_threshold_bytes >= 0
+    error_message = "Idle threshold bytes must not be negative."
+  }
 }
 
 variable "video_max_concurrent_jobs" {
   description = "Maximum concurrent video generation jobs per API key"
   type        = number
   default     = 3
+
+  validation {
+    condition     = var.video_max_concurrent_jobs >= 1
+    error_message = "Must allow at least 1 concurrent video job per key."
+  }
 }

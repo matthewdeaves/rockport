@@ -1,12 +1,46 @@
 #!/bin/bash
-# Scan staged changes for secrets before committing
+# Pre-commit checks: secrets scan, shell lint, Terraform format/validate
+
+FAILED=0
+
+# 1. Gitleaks — scan staged changes for secrets
 if command -v gitleaks &>/dev/null; then
-  gitleaks git --pre-commit --staged --verbose 2>&1
-  if [[ $? -ne 0 ]]; then
-    echo "ERROR: gitleaks detected secrets in staged changes. Commit blocked."
-    echo "Fix the issues above or use 'git commit --no-verify' to bypass (not recommended)."
-    exit 1
+  if ! gitleaks git --pre-commit --staged --verbose 2>&1; then
+    echo "ERROR: gitleaks detected secrets in staged changes."
+    FAILED=1
   fi
 else
-  echo "WARNING: gitleaks not installed — skipping secrets scan. Install: https://github.com/gitleaks/gitleaks#installing"
+  echo "WARNING: gitleaks not installed — skipping secrets scan. Run ./scripts/setup.sh"
+fi
+
+# 2. ShellCheck — lint staged shell scripts
+if command -v shellcheck &>/dev/null; then
+  STAGED_SH=$(git diff --cached --name-only --diff-filter=ACM -- '*.sh')
+  if [[ -n "$STAGED_SH" ]]; then
+    if ! echo "$STAGED_SH" | xargs shellcheck; then
+      echo "ERROR: ShellCheck found issues in staged shell scripts."
+      FAILED=1
+    fi
+  fi
+else
+  echo "WARNING: shellcheck not installed — skipping shell lint. Run ./scripts/setup.sh"
+fi
+
+# 3. Terraform fmt — check staged .tf files
+if command -v terraform &>/dev/null; then
+  STAGED_TF=$(git diff --cached --name-only --diff-filter=ACM -- '*.tf')
+  if [[ -n "$STAGED_TF" ]]; then
+    if ! terraform fmt -check -recursive terraform/ 2>/dev/null; then
+      echo "ERROR: Terraform files need formatting. Run: terraform fmt -recursive terraform/"
+      FAILED=1
+    fi
+  fi
+else
+  echo "WARNING: terraform not installed — skipping fmt check. Run ./scripts/setup.sh"
+fi
+
+if [[ "$FAILED" -ne 0 ]]; then
+  echo ""
+  echo "Pre-commit checks failed. Fix the issues above or use 'git commit --no-verify' to bypass (not recommended)."
+  exit 1
 fi

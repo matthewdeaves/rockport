@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.5"
+  required_version = "~> 1.5"
 
   backend "s3" {
     # Bucket/region/use_lockfile are set via -backend-config in rockport.sh deploy

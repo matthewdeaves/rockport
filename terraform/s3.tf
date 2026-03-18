@@ -1,5 +1,7 @@
 # S3 bucket for deploy artifacts (sidecar code, config, systemd units).
 # Used by bootstrap (first boot) and config push (runtime updates).
+# No access logging: internal-only bucket with no sensitive data, accessed only by the EC2 instance
+# and deploy pipeline. Adding logging would require a dedicated log bucket for minimal benefit.
 
 resource "aws_s3_bucket" "artifacts" {
   bucket        = "rockport-artifacts-${data.aws_caller_identity.current.account_id}-${var.region}"
@@ -83,6 +85,9 @@ resource "aws_s3_bucket_lifecycle_configuration" "artifacts" {
 # S3 buckets for video generation output.
 # Each video model requires its bucket to be in the same region as the Bedrock endpoint.
 # Nova Reel: us-east-1, Luma Ray2: us-west-2.
+# No access logging: ephemeral video output with 7-day lifecycle, not worth a dedicated log bucket.
+# No versioning: videos are write-once ephemeral output, auto-deleted after 7 days.
+# Versioning would double storage costs for throwaway data.
 
 provider "aws" {
   alias  = "us_east_1"

@@ -7,6 +7,8 @@ OpenAI-compatible LiteLLM proxy on EC2 behind Cloudflare Tunnel, routing any app
 ```
 terraform/              # All infrastructure (EC2, IAM, SG, tunnel, snapshots, monitoring, idle shutdown)
 terraform/.build/       # Lambda zip artifacts (gitignored)
+terraform/lambda/       # Lambda function source code (idle_shutdown.py)
+terraform/moved.tf      # Moved blocks template for safe resource renames
 terraform/access.tf     # Cloudflare Access application + service token (edge pre-auth)
 terraform/s3.tf         # S3 buckets for video output (us-east-1 + us-west-2)
 config/                 # LiteLLM config, systemd units, PostgreSQL tuning
@@ -66,7 +68,7 @@ tests/smoke-test.sh     # Post-deploy verification
 - Instance auto-stops after 30min of inactivity by default (Lambda checks both NetworkIn and CPUUtilization — instance is only stopped when both are below threshold). A CloudWatch alarm fires if the idle-stop Lambda itself fails consecutively
 - Region is read from `terraform.tfvars` by rockport.sh — no hardcoded region in the CLI
 - cloudflared version is pinned via `cloudflared_version` variable for stability
-- The admin CLI requires `aws`, `terraform`, and `jq` — run `./scripts/setup.sh` to install all tools
+- The admin CLI requires `aws`, `terraform`, and `jq` — run `./scripts/setup.sh` to install all tools (also installs shellcheck, trivy, checkov, gitleaks)
 - Three SSM parameters are managed: `/rockport/master-key` (by init), `/rockport/tunnel-token` (by Terraform), `/rockport/db-password` (by bootstrap)
 - CI/CD uses GitHub OIDC for AWS authentication — set the `AWS_ROLE_ARN` secret in GitHub to the IAM role ARN
 - The LiteLLM admin UI is intentionally disabled (`disable_admin_ui: true`) — all admin is via the CLI
@@ -93,8 +95,7 @@ tests/smoke-test.sh     # Post-deploy verification
 - Luma Ray2 Marketplace subscription must be activated manually before first use (same pattern as SD3.5 Large)
 - Per-key concurrent job limit defaults to 3 (configurable via `VIDEO_MAX_CONCURRENT_JOBS` env var)
 - Video sidecar concurrent job limit enforced atomically via `pg_advisory_xact_lock(hashtext(api_key_hash))` — count and insert happen in a single transaction, preventing TOCTOU races. Different API keys use different lock IDs so they don't block each other
-- Video sidecar accepted risks: `ListAsyncInvokes` IAM may need `Resource: "*"` — health check will fail if so, fix on first deploy
-- Bootstrap runs `prisma migrate deploy` before LiteLLM starts — avoids slow per-migration baseline resolve (~10s x 108 migrations) on first boot
+- Bootstrap runs `prisma migrate deploy` before LiteLLM starts — avoids slow per-migration baseline resolve (~10s x 108 migrations) on first boot. Full bootstrap completes in ~3 minutes
 - Image service endpoints on sidecar (:4001): `/v1/images/variations`, `/v1/images/background-removal`, `/v1/images/outpaint` (Nova Canvas); `/v1/images/structure`, `/v1/images/sketch`, `/v1/images/style-transfer`, `/v1/images/remove-background`, `/v1/images/search-replace`, `/v1/images/upscale`, `/v1/images/style-guide` (Stability AI). All enforce auth, budgets, and block --claude-only keys
 - Nova Reel auto-resize: images not exactly 1280x720 are automatically resized. Five modes: `scale` (default), `crop-center`, `crop-top`, `crop-bottom`, `fit` (with pad). Controlled via `resize_mode` and `pad_color` params
 - Nova Reel prompt validation: rejects prompts with negation words (model interprets them positively), camera keywords before the final clause, and prompts shorter than 50 characters

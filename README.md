@@ -53,7 +53,7 @@ Serverless foundation models auto-enable on first invocation. For Stability AI i
 ./scripts/setup.sh
 ```
 
-This installs AWS CLI v2, Session Manager plugin, Terraform, jq, and GitHub CLI. Or install them manually.
+This installs AWS CLI v2, Session Manager plugin, Terraform, jq, GitHub CLI, ShellCheck, Trivy, Checkov, and Gitleaks. Or install them manually.
 
 ### 2. Configure AWS credentials
 
@@ -106,12 +106,12 @@ If you already have a `terraform.tfvars` from a previous setup, init will ask wh
 ./scripts/rockport.sh deploy
 ```
 
-Takes ~2 minutes for Terraform, then ~5 minutes for the EC2 instance to bootstrap (installs PostgreSQL, LiteLLM, cloudflared).
+Takes ~2 minutes for Terraform, then ~3 minutes for the EC2 instance to bootstrap (installs PostgreSQL, LiteLLM, cloudflared).
 
 ### 5. Verify and configure Claude Code
 
 ```bash
-# Wait for bootstrap (~5 min), then check health:
+# Wait for bootstrap (~3 min), then check health:
 ./scripts/rockport.sh status
 
 # Generate a key and get Claude Code config:
@@ -178,6 +178,7 @@ All settings are in `terraform/terraform.tfvars`. These variables have defaults 
 | `enable_idle_shutdown` | `true` | Auto-stop instance after inactivity |
 | `idle_timeout_minutes` | `30` | Minutes of inactivity before auto-stop |
 | `idle_threshold_bytes` | `500000` | Network bytes below which instance is considered idle |
+| `video_max_concurrent_jobs` | `3` | Maximum concurrent video generation jobs per API key |
 
 Model configuration is in `config/litellm-config.yaml`. After editing, push changes to the running instance:
 
@@ -352,6 +353,7 @@ Two GitHub Actions workflows run on push to `main`:
 **Validate** (`validate.yml`) — runs on every push and PR:
 - `terraform fmt -check` and `terraform validate`
 - ShellCheck on all `.sh` files
+- Gitleaks secrets scan
 - Trivy IaC security scan
 - Checkov policy-as-code scan
 
@@ -402,13 +404,15 @@ All requests require both a valid Cloudflare Access service token and a valid Li
 
 ```bash
 # With CF Access headers (required when Cloudflare Access is enabled)
-./tests/smoke-test.sh https://<your-domain> sk-<your-key> <cf-client-id> <cf-client-secret>
+./tests/smoke-test.sh https://<your-domain> <cf-client-id> <cf-client-secret>
 
 # Or via environment variables
 export CF_ACCESS_CLIENT_ID=<cf-client-id>
 export CF_ACCESS_CLIENT_SECRET=<cf-client-secret>
-./tests/smoke-test.sh https://<your-domain> sk-<your-key>
+./tests/smoke-test.sh https://<your-domain>
 ```
+
+The smoke test creates and cleans up its own temporary API key via the admin CLI. It costs ~$0.05 per run (one chat + one image generation call).
 
 ## Teardown
 
