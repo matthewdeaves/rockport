@@ -7,11 +7,11 @@ locals {
   }
 
   # Bedrock regions: primary region + all EU regions for cross-region inference profiles
-  # + us-west-2 and us-east-1 for image generation models.
-  # The eu. prefix on model IDs can route to ANY EU region, so all must be in IAM policy.
+  # + all US regions for Stability AI us. inference profiles + image/video models.
+  # The eu./us. prefix on model IDs can route to ANY region in that geography.
   bedrock_regions = distinct(concat(
     [var.region],
-    ["eu-west-1", "eu-west-2", "eu-west-3", "eu-central-1", "eu-central-2", "eu-north-1", "eu-south-1", "eu-south-2", "us-west-2", "us-east-1"]
+    ["eu-west-1", "eu-west-2", "eu-west-3", "eu-central-1", "eu-central-2", "eu-north-1", "eu-south-1", "eu-south-2", "us-east-1", "us-east-2", "us-west-1", "us-west-2"]
   ))
 }
 

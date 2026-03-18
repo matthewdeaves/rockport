@@ -337,9 +337,9 @@ def log_spend(
             cur.execute(
                 """
                 INSERT INTO "LiteLLM_SpendLogs"
-                    (request_id, api_key, model, spend, total_tokens,
+                    (request_id, call_type, api_key, model, spend, total_tokens,
                      prompt_tokens, completion_tokens, "startTime", metadata)
-                VALUES (%s, %s, %s, %s, 0, 0, 0, %s, %s)
+                VALUES (%s, 'image_generation', %s, %s, %s, 0, 0, 0, %s, %s)
                 """,
                 (job_id, api_key_hash, model, cost,
                  start_time, metadata),
@@ -370,9 +370,9 @@ def log_image_spend(
             cur.execute(
                 """
                 INSERT INTO "LiteLLM_SpendLogs"
-                    (request_id, api_key, model, spend, total_tokens,
+                    (request_id, call_type, api_key, model, spend, total_tokens,
                      prompt_tokens, completion_tokens, "startTime", metadata)
-                VALUES (%s, %s, %s, %s, 0, 0, 0, NOW(), %s)
+                VALUES (%s, 'image_generation', %s, %s, %s, 0, 0, 0, NOW(), %s)
                 """,
                 (request_id, api_key_hash, model,
                  Decimal(str(cost)), json.dumps({"type": "image"})),
