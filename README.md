@@ -134,8 +134,12 @@ Launch Claude Code. Default model routes to Opus 4.6.
 ./scripts/rockport.sh key list                      # List all keys with spend
 ./scripts/rockport.sh key info <key>                # Key details + spend
 ./scripts/rockport.sh key revoke <key>              # Revoke a key
-./scripts/rockport.sh spend                         # Global spend summary
+./scripts/rockport.sh spend                         # Combined infra + model usage summary
 ./scripts/rockport.sh spend keys                    # Spend breakdown by key
+./scripts/rockport.sh spend models                  # Spend breakdown by model
+./scripts/rockport.sh spend daily [N]               # Daily spend for last N days (default 30)
+./scripts/rockport.sh spend today                   # Today's spend by key and model
+./scripts/rockport.sh spend infra [N]               # AWS infrastructure costs for last N months (default 3)
 ./scripts/rockport.sh monitor                       # Key status + recent requests
 ./scripts/rockport.sh monitor --live                # Live dashboard (auto-refresh)
 ./scripts/rockport.sh config push                   # Push config to instance + restart
@@ -197,7 +201,7 @@ Image generation uses the OpenAI-compatible `/v1/images/generations` endpoint. P
 
 | Model | Dimensions | Constraint | Default |
 |-------|-----------|------------|---------|
-| Nova Canvas | 320–2048 per side | Must be divisible by 64, max 4.1MP total | 1024x1024 |
+| Nova Canvas | 320–4096 per side | Must be divisible by 16 | 1024x1024 |
 | Titan Image v2 | Preset sizes | 256, 512, 768, 1024, 1152, 1408 combinations | 512x512 |
 | SD3.5 Large | Fixed 1024x1024 | `size` parameter ignored, returns JPEG not PNG | 1024x1024 |
 

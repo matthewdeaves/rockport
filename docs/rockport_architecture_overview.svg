@@ -217,7 +217,7 @@
   <text x="1680" y="300" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="bold">titan-image-generator-v2</text>
   <text x="1680" y="314" text-anchor="middle" fill="#8b949e" font-size="8">image generation</text>
   <rect x="1596" y="334" width="168" height="40" rx="3" fill="#0f2018" stroke="#3fb950" stroke-width="1"/>
-  <text x="1680" y="350" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="bold">stable-diffusion-3.5-large</text>
+  <text x="1680" y="350" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="bold">sd3.5-large</text>
   <text x="1680" y="364" text-anchor="middle" fill="#8b949e" font-size="8">image generation</text>
   <rect x="1596" y="384" width="168" height="40" rx="3" fill="#0f2018" stroke="#58a6ff" stroke-width="1.5"/>
   <text x="1680" y="400" text-anchor="middle" fill="#58a6ff" font-size="9" font-weight="bold">luma-ray2</text>

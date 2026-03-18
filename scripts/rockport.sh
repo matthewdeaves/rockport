@@ -879,53 +879,362 @@ cmd_spend() {
         if length == 0 then "  No keys found."
         else
           "Spend by Key (current budget period)",
-          "─────────────────────────────────────────",
+          "─────────────────────────────────────────────────────────────────",
+          "  Key                       Spend       Budget       Created",
+          "  ─────────────────────────────────────────────────────────────",
           (sort_by(.spend // 0) | reverse | . as $keys |
             ($keys[] |
               (.key_alias // .key_name // "unnamed") as $name |
-              ($name | if length > 24 then .[0:24] else .[0:24] + (" " * ([24 - length, 0] | max)) end) as $padded |
-              "  \($padded)  $\(.spend // 0 | . * 100 | round / 100)" +
-              (if .max_budget then "  / $\(.max_budget)/day" else "" end)
+              ($name | if length > 24 then .[0:24] else . + (" " * ([24 - length, 0] | max)) end) as $pad_name |
+              ("$\(.spend // 0 | . * 10000 | round / 10000)" |
+                if length > 10 then .[0:10] else . + (" " * ([10 - length, 0] | max)) end) as $pad_spend |
+              (if .max_budget then "$\(.max_budget)/day" else "unlimited" end |
+                if length > 11 then .[0:11] else . + (" " * ([11 - length, 0] | max)) end) as $pad_budget |
+              (.created_at // "" | split("T")[0]) as $created |
+              "  \($pad_name)  \($pad_spend)  \($pad_budget)  \($created)"
             ),
             "",
-            "  Total:                            $\($keys | map(.spend // 0) | add | . * 100 | round / 100)"
+            "  Total:                      $\($keys | map(.spend // 0) | add | . * 10000 | round / 10000)"
           )
         end'
+      ;;
+    models)
+      echo "Fetching spend logs..."
+      local logs
+      logs=$(api_call GET "/spend/logs?start_date=2020-01-01")
+
+      echo "$logs" | jq -r '
+        map(select(.model_group != null and .model_group != "")) |
+        [group_by(.model_group)[] |
+          {model: .[0].model_group,
+           spend: (map(.spend // 0) | add),
+           requests: length,
+           tokens: (map(.total_tokens // 0) | add)}] |
+        sort_by(.spend) | reverse |
+        if length == 0 then "  No model spend recorded."
+        else
+          "Spend by Model (all time)",
+          "─────────────────────────────────────────────────────────────────",
+          "  Model                     Spend       Requests     Tokens",
+          "  ─────────────────────────────────────────────────────────────",
+          (.[] |
+            (.model | if length > 28 then .[0:28] else . + (" " * ([28 - length, 0] | max)) end) as $pad_model |
+            ("$\(.spend | . * 10000 | round / 10000)" |
+              if length > 10 then .[0:10] else . + (" " * ([10 - length, 0] | max)) end) as $pad_spend |
+            (.requests | tostring |
+              if length > 11 then .[0:11] else . + (" " * ([11 - length, 0] | max)) end) as $pad_req |
+            (if .tokens > 0 then (.tokens | tostring) else "-" end) as $tokens |
+            "  \($pad_model)  \($pad_spend)  \($pad_req)  \($tokens)"
+          ),
+          "",
+          "  Total:                      $\(map(.spend) | add | . * 10000 | round / 10000)"
+        end'
+      ;;
+    daily)
+      echo "Fetching spend logs..."
+      local logs days
+      days="${2:-30}"
+      local start_date
+      start_date=$(date -u -d "$days days ago" +%Y-%m-%d 2>/dev/null || date -u -v-"${days}"d +%Y-%m-%d)
+      logs=$(api_call GET "/spend/logs?start_date=$start_date")
+
+      echo "$logs" | jq -r --arg days "$days" '
+        map(select(.model_group != null and .model_group != "")) |
+        [group_by(.startTime[:10])[] |
+          {date: .[0].startTime[:10],
+           spend: (map(.spend // 0) | add),
+           requests: length,
+           tokens: (map(.total_tokens // 0) | add)}] |
+        sort_by(.date) | reverse |
+        if length == 0 then "  No spend recorded in the last \($days) days."
+        else
+          "Daily Spend (last \($days) days)",
+          "─────────────────────────────────────────────────────────────────",
+          "  Date           Spend       Requests     Tokens",
+          "  ─────────────────────────────────────────────────────────────",
+          (.[] |
+            (.date | . + (" " * ([13 - length, 0] | max))) as $pad_date |
+            ("$\(.spend | . * 10000 | round / 10000)" |
+              if length > 10 then .[0:10] else . + (" " * ([10 - length, 0] | max)) end) as $pad_spend |
+            (.requests | tostring |
+              if length > 11 then .[0:11] else . + (" " * ([11 - length, 0] | max)) end) as $pad_req |
+            (if .tokens > 0 then (.tokens | tostring) else "-" end) as $tokens |
+            "  \($pad_date)  \($pad_spend)  \($pad_req)  \($tokens)"
+          ),
+          "",
+          "  Total:           $\(map(.spend) | add | . * 10000 | round / 10000)"
+        end'
+      ;;
+    today)
+      echo "Fetching today's spend..."
+      local today
+      today=$(date -u +%Y-%m-%d)
+      local logs
+      logs=$(api_call GET "/spend/logs?start_date=$today")
+
+      echo "$logs" | jq -r '
+        map(select(.model_group != null and .model_group != "")) |
+        if length == 0 then "\nNo spend recorded today."
+        else
+          [group_by(.metadata.user_api_key_alias // "unknown")[] |
+            {key: (.[0].metadata.user_api_key_alias // "unknown"),
+             items: [group_by(.model_group)[] |
+               {model: .[0].model_group,
+                spend: (map(.spend // 0) | add),
+                requests: length,
+                tokens: (map(.total_tokens // 0) | add)}] | sort_by(.spend) | reverse,
+             total_spend: (map(.spend // 0) | add),
+             total_requests: length}] |
+          sort_by(.total_spend) | reverse |
+          "\nToday'\''s Spend (\(map(.total_requests) | add) requests, $\(map(.total_spend) | add | . * 10000 | round / 10000) total)",
+          "─────────────────────────────────────────────────────────────────",
+          (.[] |
+            "\n  \(.key)  (\(.total_requests) requests, $\(.total_spend | . * 10000 | round / 10000))",
+            (.items[] |
+              "    \(.model | if length > 22 then .[0:22] else . + (" " * ([22 - length, 0] | max)) end)  $\(.spend | . * 10000 | round / 10000 | tostring | if length > 8 then .[0:8] else . end)  \(.requests) req" +
+              (if .tokens > 0 then "  \(.tokens) tok" else "" end)
+            )
+          )
+        end'
+      ;;
+    infra)
+      # AWS costs from Cost Explorer (gross + credits)
+      local months="${2:-3}"
+      local start_date end_date
+      start_date=$(date -u -d "$months months ago" +%Y-%m-01 2>/dev/null || date -u -v-"${months}"m +%Y-%m-01)
+      end_date=$(date -u +%Y-%m-%d)
+
+      echo "Fetching AWS costs (last $months months)..."
+      # Gross costs by service (excluding credit records)
+      local ce_gross
+      ce_gross=$(env -u AWS_PROFILE aws ce get-cost-and-usage \
+        --time-period "Start=$start_date,End=$end_date" \
+        --granularity MONTHLY \
+        --metrics UnblendedCost \
+        --group-by Type=DIMENSION,Key=SERVICE \
+        --filter '{"Not":{"Dimensions":{"Key":"RECORD_TYPE","Values":["Credit"]}}}' \
+        --region us-east-1 \
+        --output json 2>&1) || {
+        if echo "$ce_gross" | grep -q "AccessDeniedException"; then
+          echo "ERROR: Missing ce:GetCostAndUsage permission."
+          echo "Update the RockportAdmin IAM policy (see terraform/rockport-admin-policy.json)"
+          echo "and re-apply it in the AWS console."
+        else
+          echo "ERROR: $ce_gross"
+        fi
+        return 1
+      }
+      # Credits/usage by record type
+      local ce_totals
+      ce_totals=$(env -u AWS_PROFILE aws ce get-cost-and-usage \
+        --time-period "Start=$start_date,End=$end_date" \
+        --granularity MONTHLY \
+        --metrics UnblendedCost \
+        --group-by Type=DIMENSION,Key=RECORD_TYPE \
+        --region us-east-1 \
+        --output json 2>/dev/null) || true
+
+      echo "$ce_gross" | jq -r '
+        .ResultsByTime | reverse |
+        if length == 0 then "  No cost data found."
+        else
+          "AWS Costs (gross, before credits)",
+          "─────────────────────────────────────────────────────────────────",
+          (.[] |
+            .TimePeriod.Start[:7] as $month |
+            [.Groups[] |
+              {service: .Keys[0],
+               cost: (.Metrics.UnblendedCost.Amount | tonumber)}] |
+            sort_by(.cost) | reverse |
+            map(select(.cost > 0.005)) |
+            if length == 0 then
+              "\n  \($month):  $0.00"
+            else
+              "\n  \($month):" as $header |
+              ($header,
+              (.[] |
+                (.service |
+                gsub(" \\(Amazon Bedrock Edition\\)"; "") |
+                gsub("Amazon Elastic Compute Cloud - Compute"; "EC2 Compute") |
+                gsub("Amazon Simple Storage Service"; "S3") |
+                gsub("Amazon Virtual Private Cloud"; "VPC") |
+                gsub("AWS Key Management Service"; "KMS") |
+                gsub("Amazon Simple Notification Service"; "SNS") |
+                gsub("Amazon Simple Queue Service"; "SQS") |
+                if length > 42 then .[0:42] else . + (" " * ([42 - length, 0] | max)) end) as $pad_svc |
+                "    \($pad_svc)  $\(.cost | . * 100 | round / 100)"
+              ),
+              "    ──────────────────────────────────────────────────",
+              "    Total                                               $\(map(.cost) | add | . * 100 | round / 100)")
+            end
+          ),
+          ""
+        end'
+
+      # Show credit summary
+      if [[ -n "${ce_totals:-}" ]]; then
+        echo "$ce_totals" | jq -r '
+          [.ResultsByTime[].Groups[] | {type: .Keys[0], cost: (.Metrics.UnblendedCost.Amount | tonumber)}] |
+          (map(select(.type == "Usage")) | map(.cost) | add // 0) as $gross |
+          (map(select(.type == "Credit")) | map(.cost) | add // 0) as $credits |
+          if $credits < 0 then
+            "Account Totals (all months shown)",
+            "─────────────────────────────────────────────────────────────────",
+            "  Gross usage:    $\($gross | . * 100 | round / 100)",
+            "  Credits:       -$\($credits | fabs | . * 100 | round / 100)",
+            "  Net cost:       $\($gross + $credits | . * 100 | round / 100)",
+            ""
+          else empty end'
+      fi
       ;;
     *)
       # Default: combined summary
       echo "Rockport Spend Summary"
-      echo "═══════════════════════════════════════════════"
+      echo "═══════════════════════════════════════════════════════════════════"
       echo
 
+      # --- AWS costs (Cost Explorer) — gross usage + credits ---
+      local infra_available=true ce_end
+      ce_end=$(date -u +%Y-%m-%d)
+      local ce_start
+      ce_start=$(date -u -d "3 months ago" +%Y-%m-01 2>/dev/null || date -u -v-3m +%Y-%m-01)
+      # CE needs admin credentials — the rockport profile is the deployer which may
+      # lack ce:GetCostAndUsage. Unset AWS_PROFILE so it falls back to default creds.
+      # Gross costs by service (excluding credit records)
+      local ce_gross
+      ce_gross=$(env -u AWS_PROFILE aws ce get-cost-and-usage \
+        --time-period "Start=$ce_start,End=$ce_end" \
+        --granularity MONTHLY \
+        --metrics UnblendedCost \
+        --group-by Type=DIMENSION,Key=SERVICE \
+        --filter '{"Not":{"Dimensions":{"Key":"RECORD_TYPE","Values":["Credit"]}}}' \
+        --region us-east-1 \
+        --output json 2>/dev/null) || infra_available=false
+      # Credits/usage totals by record type
+      local ce_totals
+      if [[ "$infra_available" == "true" ]]; then
+        ce_totals=$(env -u AWS_PROFILE aws ce get-cost-and-usage \
+          --time-period "Start=$ce_start,End=$ce_end" \
+          --granularity MONTHLY \
+          --metrics UnblendedCost \
+          --group-by Type=DIMENSION,Key=RECORD_TYPE \
+          --region us-east-1 \
+          --output json 2>/dev/null) || infra_available=false
+      fi
+
+      # --- Model usage costs (LiteLLM) ---
       local global
       global=$(api_call GET "/global/spend") || { echo "Could not fetch spend data."; return 1; }
-      local total_spend
-      total_spend=$(echo "$global" | jq -r 'if type == "array" then (map(.spend // 0) | add) else (.spend // 0) end | . * 100 | round / 100')
-      echo "All-time spend:  \$$total_spend"
+      local model_spend
+      model_spend=$(echo "$global" | jq -r 'if type == "array" then (map(.spend // 0) | add) else (.spend // 0) end | . * 10000 | round / 10000')
+
+      # --- Totals ---
+      if [[ "$infra_available" == "true" ]]; then
+        echo "$ce_totals" | jq -r --arg model_spend "$model_spend" '
+          [.ResultsByTime[].Groups[] | {type: .Keys[0], cost: (.Metrics.UnblendedCost.Amount | tonumber)}] |
+          (map(select(.type == "Usage")) | map(.cost) | add // 0) as $gross |
+          (map(select(.type == "Credit")) | map(.cost) | add // 0) as $credits |
+          ($gross + $credits) as $net |
+          "  AWS account total (gross):  $\($gross | . * 100 | round / 100)",
+          (if $credits < 0 then
+            "  Credits applied:           -$\($credits | fabs | . * 100 | round / 100)"
+          else empty end),
+          "  AWS account total (net):    $\($net | . * 100 | round / 100)",
+          "",
+          "  LiteLLM model usage:        $\($model_spend)"'
+      else
+        echo "  LiteLLM model usage:  \$$model_spend  (Bedrock inference)"
+        echo "  AWS costs: (add ce:GetCostAndUsage to admin policy — see 'spend infra')"
+      fi
       echo
 
-      local keys
-      keys=$(api_call GET "/key/list?return_full_object=true" 2>/dev/null) || true
-
-      if [[ -n "$keys" ]]; then
-        echo "$keys" | jq -r '
-          (.keys // .) | map(select(type == "object")) |
+      # --- AWS breakdown (current month, gross costs by service) ---
+      if [[ "$infra_available" == "true" ]]; then
+        echo "$ce_gross" | jq -r '
+          .ResultsByTime | last |
+          .TimePeriod.Start[:7] as $month |
+          [.Groups[] |
+            {service: .Keys[0],
+             cost: (.Metrics.UnblendedCost.Amount | tonumber)}] |
+          sort_by(.cost) | reverse |
+          map(select(.cost > 0.005)) |
           if length == 0 then empty
           else
-            "By Key (current budget period):",
-            "───────────────────────────────────────────────",
-            (sort_by(.spend // 0) | reverse | .[] |
-              (.key_alias // .key_name // "unnamed") as $name |
-              ($name | if length > 24 then .[0:24] else .[0:24] + (" " * ([24 - length, 0] | max)) end) as $padded |
-              "  \($padded)  $\(.spend // 0 | . * 100 | round / 100)" +
-              (if .max_budget then "  / $\(.max_budget)/day" else "" end)
+            "  AWS Breakdown (\($month), gross):",
+            "  ───────────────────────────────────────────────────────────────",
+            (.[] |
+              (.service |
+                gsub(" \\(Amazon Bedrock Edition\\)"; "") |
+                gsub("Amazon Elastic Compute Cloud - Compute"; "EC2 Compute") |
+                gsub("Amazon Simple Storage Service"; "S3") |
+                gsub("Amazon Virtual Private Cloud"; "VPC") |
+                gsub("AWS Key Management Service"; "KMS") |
+                gsub("Amazon Simple Notification Service"; "SNS") |
+                gsub("Amazon Simple Queue Service"; "SQS") |
+                if length > 38 then .[0:38] else . + (" " * ([38 - length, 0] | max)) end) as $pad_svc |
+              "    \($pad_svc)  $\(.cost | . * 100 | round / 100)"
             ),
             ""
           end'
       fi
 
-      echo "Run 'rockport spend keys' for key-only view."
+      # --- Model breakdown ---
+      local logs keys
+      logs=$(api_call GET "/spend/logs?start_date=2020-01-01")
+      keys=$(api_call GET "/key/list?return_full_object=true" 2>/dev/null) || true
+
+      echo "$logs" | jq -r '
+        map(select(.model_group != null and .model_group != "")) |
+        [group_by(.model_group)[] |
+          {model: .[0].model_group,
+           spend: (map(.spend // 0) | add),
+           requests: length}] |
+        sort_by(.spend) | reverse |
+        if length == 0 then empty
+        else
+          "  Model Usage (all time):",
+          "  ───────────────────────────────────────────────────────────────",
+          (.[] |
+            (.model | if length > 28 then .[0:28] else . + (" " * ([28 - length, 0] | max)) end) as $pad_model |
+            ("$\(.spend | . * 10000 | round / 10000)" |
+              if length > 10 then .[0:10] else . + (" " * ([10 - length, 0] | max)) end) as $pad_spend |
+            "    \($pad_model)  \($pad_spend)  \(.requests) requests"
+          ),
+          ""
+        end'
+
+      # By key
+      if [[ -n "$keys" ]]; then
+        echo "$keys" | jq -r '
+          (.keys // .) | map(select(type == "object")) |
+          if length == 0 then empty
+          else
+            "  By Key:",
+            "  ───────────────────────────────────────────────────────────────",
+            (sort_by(.spend // 0) | reverse | .[] |
+              (.key_alias // .key_name // "unnamed") as $name |
+              ($name | if length > 26 then .[0:26] else . + (" " * ([26 - length, 0] | max)) end) as $padded |
+              ("$\(.spend // 0 | . * 10000 | round / 10000)" |
+                if length > 10 then .[0:10] else . + (" " * ([10 - length, 0] | max)) end) as $pad_spend |
+              (if .max_budget then "$\(.max_budget)/day" else "unlimited" end) as $budget |
+              "    \($padded)  \($pad_spend)  \($budget)"
+            ),
+            ""
+          end'
+      fi
+
+      # Today's summary
+      local today
+      today=$(date -u +%Y-%m-%d)
+      echo "$logs" | jq -r --arg today "$today" '
+        map(select(.startTime[:10] == $today and .model_group != null and .model_group != "")) |
+        if length == 0 then "  Today: no requests yet"
+        else
+          "  Today: \(length) requests  ·  $\(map(.spend // 0) | add | . * 10000 | round / 10000) spent  ·  \(map(.total_tokens // 0) | add) tokens"
+        end'
+      echo
+
+      echo "Subcommands:  spend keys | spend models | spend daily [N] | spend today | spend infra [N]"
       ;;
   esac
 }
@@ -1295,8 +1604,12 @@ Commands:
   key list            List all API keys with spend
   key info <key>      Show key details and spend
   key revoke <key>    Revoke an API key
-  spend               Summary: all-time total + current period by key
-  spend keys          Spend breakdown by key (current budget period)
+  spend               Combined infra + model usage summary
+  spend keys          Spend breakdown by key with budgets and creation dates
+  spend models        Spend breakdown by model with request/token counts
+  spend daily [N]     Daily spend for last N days (default 30)
+  spend today         Today's spend grouped by key and model
+  spend infra [N]     AWS infrastructure costs for last N months (default 3)
   monitor             Key status and recent requests [--live] [--interval N] [--count N]
   config push         Push local config to instance and restart
   logs                Stream LiteLLM logs (via SSM)

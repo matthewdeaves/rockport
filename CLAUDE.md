@@ -44,8 +44,12 @@ tests/smoke-test.sh     # Post-deploy verification
 ./scripts/rockport.sh key list      # List keys
 ./scripts/rockport.sh key info <k>  # Key details + spend
 ./scripts/rockport.sh key revoke <k># Revoke key
-./scripts/rockport.sh spend         # Global spend summary
+./scripts/rockport.sh spend         # Combined infra + model usage summary
 ./scripts/rockport.sh spend keys    # Spend breakdown by key
+./scripts/rockport.sh spend models  # Spend breakdown by model
+./scripts/rockport.sh spend daily [N] # Daily spend for last N days (default 30)
+./scripts/rockport.sh spend today   # Today's spend by key and model
+./scripts/rockport.sh spend infra [N] # AWS infra costs for last N months (default 3)
 ./scripts/rockport.sh monitor       # Key status + recent requests [--live] [--interval N] [--count N]
 ./scripts/rockport.sh config push   # Push config to instance + restart
 ./scripts/rockport.sh logs          # Stream LiteLLM journal
@@ -61,7 +65,7 @@ tests/smoke-test.sh     # Post-deploy verification
 - Bedrock inference profiles need `eu.` prefix for cross-region models; IAM policy must cover ALL EU regions (the inference profile can route to any) + us-west-2 + us-east-1 for image generation
 - The EC2 instance needs a public IP for outbound internet (SSM, Bedrock, pip) — the default VPC has no NAT gateway. The SG has zero inbound rules so the public IP is not directly reachable
 - Image generation models: Nova Canvas (us-east-1), Titan Image v2 (us-west-2), SD3.5 Large (us-west-2) — routed via per-model `aws_region_name` in litellm-config.yaml
-- Image dimensions via OpenAI `size` param: Nova Canvas requires divisible by 64 (320–2048, max 4.1MP); Titan v2 uses preset sizes (256–1408); SD3.5 Large ignores `size` (fixed 1024x1024, returns JPEG not PNG)
+- Image dimensions via OpenAI `size` param: Nova Canvas requires divisible by 16 (320–4096); Titan v2 uses preset sizes (256–1408); SD3.5 Large ignores `size` (fixed 1024x1024, returns JPEG not PNG)
 - Image-to-image: use `/v1/images/generations` with `textToImageParams.conditionImage` (Nova Canvas) — NOT `/v1/images/edits` which LiteLLM 1.82.3 doesn't support for Bedrock models
 - Cloudflare blocks requests with Python's default `Python-urllib` user-agent (403) — OpenAI SDK and curl work fine
 - `ANTHROPIC_AUTH_TOKEN` (not `ANTHROPIC_API_KEY`) is the env var for Claude Code virtual keys
