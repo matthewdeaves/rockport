@@ -61,6 +61,8 @@ VIDEO_MODELS = {
         "supports_loop": False,
         "supports_seed": True,
         "supports_end_image": False,
+        "max_prompt_length": 512,
+        "max_shot_prompt_length": 512,
         "cost_per_second": {"default": 0.08},
         "image_exact_size": (1280, 720),
         "image_min_size": None,
@@ -80,6 +82,8 @@ VIDEO_MODELS = {
         "supports_loop": True,
         "supports_seed": False,
         "supports_end_image": True,
+        "max_prompt_length": 5000,
+        "max_shot_prompt_length": None,  # no multi-shot support
         "cost_per_second": {"540p": 0.75, "720p": 1.50},
         "image_exact_size": None,
         "image_min_size": (512, 512),
@@ -177,13 +181,13 @@ def is_claude_only_key(auth: dict) -> bool:
 # --- Request models ---
 
 class ShotRequest(BaseModel):
-    prompt: str = Field(..., min_length=1, max_length=512)
+    prompt: str = Field(..., min_length=1)
     image: str | None = Field(default=None, max_length=14_000_000)
 
 
 class VideoGenerationRequest(BaseModel):
     model: str | None = None
-    prompt: str | None = Field(default=None, min_length=1, max_length=5000)
+    prompt: str | None = Field(default=None, min_length=1)
     duration: int | None = None
     image: str | None = Field(default=None, max_length=35_000_000)
     end_image: str | None = Field(default=None, max_length=35_000_000)
@@ -398,7 +402,23 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
                       "message": f"Invalid pad_color '{pad_color}'. Must be 'black' or 'white'"}
         })
 
-    # --- Prompt validation (Nova Reel only) ---
+    # --- Prompt length validation (per-model limits) ---
+    max_prompt = model["max_prompt_length"]
+    max_shot_prompt = model.get("max_shot_prompt_length")
+    if req.prompt and max_prompt and len(req.prompt) > max_prompt:
+        raise HTTPException(status_code=400, detail={
+            "error": {"type": "validation_error",
+                      "message": f"Prompt is {len(req.prompt)} characters; {model_name} allows a maximum of {max_prompt}."}
+        })
+    if req.shots and max_shot_prompt:
+        for i, shot in enumerate(req.shots):
+            if len(shot.prompt) > max_shot_prompt:
+                raise HTTPException(status_code=400, detail={
+                    "error": {"type": "validation_error",
+                              "message": f"Shot {i + 1} prompt is {len(shot.prompt)} characters; {model_name} allows a maximum of {max_shot_prompt} per shot."}
+                })
+
+    # --- Prompt content validation (Nova Reel only) ---
     if model_name == "nova-reel":
         if req.prompt:
             error = prompt_validation.validate_nova_reel_prompt(req.prompt)
