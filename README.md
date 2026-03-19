@@ -12,8 +12,8 @@ OpenAI-compatible LiteLLM proxy on EC2 that routes any application to Bedrock mo
 
 - Claude Code connects via `ANTHROPIC_BASE_URL` to your own proxy
 - Anthropic (Opus 4.6, Sonnet 4.6, Haiku 4.5), DeepSeek V3.2, Qwen3 Coder 480B, Kimi K2.5, Nova Pro/Lite/Micro on Bedrock
-- Image generation via OpenAI-compatible `/v1/images/generations` (Nova Canvas, Titan Image v2, SD3.5 Large)
-- Image services: variations, background removal, outpainting (Nova Canvas) + structure, sketch, style transfer, upscale, and more (Stability AI)
+- Image generation via OpenAI-compatible `/v1/images/generations` (Nova Canvas, Titan Image v2, SD3.5 Large, Stable Image Ultra, Stable Image Core)
+- Image services: variations, background removal, outpainting (Nova Canvas) + structure, sketch, style transfer, upscale, inpaint, erase, search & recolor, and more (Stability AI)
 - Video generation via `/v1/videos/generations` (Nova Reel v1.1 + Luma Ray2 — async jobs with presigned S3 URLs)
 - Virtual API keys with per-key budgets, rate limits, and model restrictions
 - Zero inbound security group rules — all traffic flows through Cloudflare Tunnel
@@ -29,7 +29,7 @@ Before you start, you need:
 
 1. **An AWS account** with an IAM user that has admin access (or root credentials for first-time setup)
 2. **A Cloudflare account** with a domain — you'll create an API token and a tunnel
-3. **Bedrock model access** — chat models auto-enable on first use. Stability AI image models require a one-time Marketplace subscription (use them once in the Bedrock playground to activate)
+3. **Bedrock model access** — chat models auto-enable on first use. Stability AI image models (SD3.5 Large, Stable Image Ultra, Stable Image Core, and sidecar services like inpaint/erase/upscale) and Luma Ray2 require a one-time Marketplace subscription (use them once in the Bedrock playground to activate)
 
 ### Cloudflare API token
 
@@ -43,7 +43,7 @@ You'll also need your Cloudflare **Zone ID** and **Account ID** (found on the do
 
 ### Bedrock model access
 
-Serverless foundation models auto-enable on first invocation. For Stability AI image models (SD3.5 Large), open the model in the Bedrock playground once to trigger the Marketplace subscription. Chat models (Claude, Nova, etc.) work immediately.
+Serverless foundation models auto-enable on first invocation. For Stability AI image models (SD3.5 Large, Stable Image Ultra, Stable Image Core, and all Stability AI sidecar services) and Luma Ray2, open the model in the Bedrock playground once to trigger the Marketplace subscription. Chat models (Claude, Nova, etc.) work immediately.
 
 ## Setup
 
@@ -204,6 +204,10 @@ Image generation uses the OpenAI-compatible `/v1/images/generations` endpoint. P
 | Nova Canvas | 320–4096 per side | Must be divisible by 16 | 1024x1024 |
 | Titan Image v2 | Preset sizes | 256, 512, 768, 1024, 1152, 1408 combinations | 512x512 |
 | SD3.5 Large | Fixed 1024x1024 | `size` parameter ignored, returns JPEG not PNG | 1024x1024 |
+| Stable Image Ultra | Aspect ratio based | High quality, supports image-to-image, JPEG/PNG only | 1:1 |
+| Stable Image Core | Aspect ratio based | Text-to-image only, cheap drafts, JPEG/PNG only | 1:1 |
+
+Nova Canvas also supports 8 built-in style presets via the `textToImageParams.style` field: `3D_ANIMATED_FAMILY_FILM`, `DESIGN_SKETCH`, `FLAT_VECTOR_ILLUSTRATION`, `GRAPHIC_NOVEL_ILLUSTRATION`, `MAXIMALISM`, `MIDCENTURY_RETRO`, `PHOTOREALISM`, `SOFT_DIGITAL_PAINTING`.
 
 ```bash
 curl -X POST https://<your-domain>/v1/images/generations \
@@ -251,15 +255,21 @@ Advanced image operations run on the sidecar (port 4001) and are routed via `/v1
 
 **Stability AI operations** (require Marketplace subscription):
 
-| Endpoint | Description |
-|----------|-------------|
-| `POST /v1/images/structure` | Structure-guided generation (maintain composition) |
-| `POST /v1/images/sketch` | Sketch-to-image generation |
-| `POST /v1/images/style-transfer` | Transfer style between images |
-| `POST /v1/images/remove-background` | Remove background (Stability AI model) |
-| `POST /v1/images/search-replace` | Find and replace objects in an image |
-| `POST /v1/images/upscale` | Conservative upscale (max 1MP input) |
-| `POST /v1/images/style-guide` | Style-guided generation with reference image |
+| Endpoint | Description | Cost |
+|----------|-------------|------|
+| `POST /v1/images/structure` | Structure-guided generation (maintain composition) | $0.04 |
+| `POST /v1/images/sketch` | Sketch-to-image generation | $0.04 |
+| `POST /v1/images/style-transfer` | Transfer style between images | $0.06 |
+| `POST /v1/images/remove-background` | Remove background (Stability AI model) | $0.04 |
+| `POST /v1/images/search-replace` | Find and replace objects in an image | $0.04 |
+| `POST /v1/images/upscale` | Conservative upscale (max 1MP input) | $0.06 |
+| `POST /v1/images/style-guide` | Style-guided generation with reference image | $0.04 |
+| `POST /v1/images/inpaint` | Mask regions and replace with prompt-guided content | $0.04 |
+| `POST /v1/images/erase` | Mask regions and remove objects (no prompt needed) | $0.04 |
+| `POST /v1/images/creative-upscale` | Prompt-guided upscale to 4K (max 1MP input) | $0.06 |
+| `POST /v1/images/fast-upscale` | Deterministic 4x upscale (32–1536px, no prompt) | $0.04 |
+| `POST /v1/images/search-recolor` | Find objects by description and change their colour | $0.04 |
+| `POST /v1/images/stability-outpaint` | Extend image directionally (left/right/up/down) | $0.04 |
 
 All image service endpoints authenticate via LiteLLM, enforce per-key budgets, and log spend to the unified tracking tables.
 
@@ -319,6 +329,21 @@ curl -X POST https://<your-domain>/v1/videos/generations \
 
 Each shot is 6 seconds. Shots can optionally include a per-shot `image` field (1280x720 data URI).
 
+**Automated multi-shot mode** — single prompt, model determines shot breakdown:
+
+```bash
+curl -X POST https://<your-domain>/v1/videos/generations \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mode": "multi-shot-automated",
+    "prompt": "A detailed story of a rocket launching from a coastal pad at sunrise, climbing through clouds, and reaching orbit with Earth visible below",
+    "duration": 24
+  }'
+```
+
+Duration must be 12–120 seconds (multiples of 6). Prompt can be up to 4000 characters. Nova Reel only.
+
 **Luma Ray2** — shorter clips with flexible aspect ratios and resolutions:
 
 ```bash
@@ -342,7 +367,8 @@ Ray2 supports 7 aspect ratios (16:9, 9:16, 1:1, 4:3, 3:4, 21:9, 9:21), two resol
 | Cost | $0.08/second | $0.75/s (540p), $1.50/s (720p) |
 | Resolution | 1280x720 fixed | 540p or 720p, 7 aspect ratios |
 | Duration | 6–120s (multiples of 6) | 5s or 9s |
-| Multi-shot | 2–20 shots, 6s each | Not supported |
+| Multi-shot (manual) | 2–20 shots, 6s each | Not supported |
+| Multi-shot (automated) | Single prompt, 12–120s, model picks shots | Not supported |
 | Image-to-video | Start frame (1280x720 exact, 6s only) | Start + optional end frame (512–4096px) |
 | Loop | No | Yes |
 | Seed | Yes | No |

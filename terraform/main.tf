@@ -80,6 +80,28 @@ resource "aws_iam_role_policy" "bedrock_invoke" {
   })
 }
 
+# Marketplace models (Stability AI image services, Luma Ray2) auto-activate on
+# first invoke but require these permissions to trigger the account-wide subscription.
+# Resource must be "*" — AWS does not support resource-level permissions for these actions.
+resource "aws_iam_role_policy" "marketplace_subscribe" {
+  name = "marketplace-subscribe"
+  role = aws_iam_role.rockport.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "aws-marketplace:ViewSubscriptions",
+          "aws-marketplace:Subscribe"
+        ]
+        Resource = "*"
+      },
+    ]
+  })
+}
+
 resource "aws_iam_role_policy" "ssm_get_parameter" {
   name = "ssm-get-parameter"
   role = aws_iam_role.rockport.id

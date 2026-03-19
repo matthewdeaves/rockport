@@ -292,6 +292,94 @@ IMGRM_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images
 check_code "Remove background reachable (HTTP $IMGRM_CODE)" "$IMGRM_CODE" "400" "422"
 
 
+# --- New Image Sidecar Endpoints (009) ---
+
+# 24. Inpaint endpoint reachable
+echo "24. Inpaint endpoint"
+INPAINT_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/inpaint" \
+  -H "Authorization: Bearer $VALID_KEY" \
+  -H "Content-Type: application/json" \
+  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
+  -d '{"image":"invalid","prompt":"test"}' \
+  --max-time 10 2>/dev/null)
+check_code "Inpaint reachable (HTTP $INPAINT_CODE)" "$INPAINT_CODE" "400" "422"
+
+# 25. Erase endpoint reachable
+echo "25. Erase endpoint"
+ERASE_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/erase" \
+  -H "Authorization: Bearer $VALID_KEY" \
+  -H "Content-Type: application/json" \
+  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
+  -d '{"image":"invalid"}' \
+  --max-time 10 2>/dev/null)
+check_code "Erase reachable (HTTP $ERASE_CODE)" "$ERASE_CODE" "400" "422"
+
+# 26. Creative upscale endpoint reachable
+echo "26. Creative upscale endpoint"
+CU_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/creative-upscale" \
+  -H "Authorization: Bearer $VALID_KEY" \
+  -H "Content-Type: application/json" \
+  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
+  -d '{"image":"invalid","prompt":"test"}' \
+  --max-time 10 2>/dev/null)
+check_code "Creative upscale reachable (HTTP $CU_CODE)" "$CU_CODE" "400" "422"
+
+# 27. Fast upscale endpoint reachable
+echo "27. Fast upscale endpoint"
+FU_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/fast-upscale" \
+  -H "Authorization: Bearer $VALID_KEY" \
+  -H "Content-Type: application/json" \
+  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
+  -d '{"image":"invalid"}' \
+  --max-time 10 2>/dev/null)
+check_code "Fast upscale reachable (HTTP $FU_CODE)" "$FU_CODE" "400" "422"
+
+# 28. Search & recolor endpoint reachable
+echo "28. Search & recolor endpoint"
+SR_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/search-recolor" \
+  -H "Authorization: Bearer $VALID_KEY" \
+  -H "Content-Type: application/json" \
+  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
+  -d '{"image":"invalid","prompt":"red","select_prompt":"hat"}' \
+  --max-time 10 2>/dev/null)
+check_code "Search recolor reachable (HTTP $SR_CODE)" "$SR_CODE" "400" "422"
+
+# 29. Stability outpaint endpoint reachable
+echo "29. Stability outpaint endpoint"
+SO_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/stability-outpaint" \
+  -H "Authorization: Bearer $VALID_KEY" \
+  -H "Content-Type: application/json" \
+  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
+  -d '{"image":"invalid","right":200}' \
+  --max-time 10 2>/dev/null)
+check_code "Stability outpaint reachable (HTTP $SO_CODE)" "$SO_CODE" "400" "422"
+
+# 30. Model list contains new LiteLLM models
+echo "30. New LiteLLM models"
+check "Model list contains stable-image-ultra" grep -q "stable-image-ultra" <<< "$MODELS"
+check "Model list contains stable-image-core" grep -q "stable-image-core" <<< "$MODELS"
+
+# 31. Nova Canvas style preset pass-through (free — invalid size triggers 400 before Bedrock)
+echo "31. Nova Canvas style preset"
+STYLE_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/generations" \
+  -H "Authorization: Bearer $VALID_KEY" \
+  -H "Content-Type: application/json" \
+  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
+  -d '{"model":"nova-canvas","prompt":"a red circle","n":1,"size":"99x99","textToImageParams":{"style":"PHOTOREALISM"}}' \
+  --max-time 30 2>/dev/null)
+check_code "Style preset routed correctly (HTTP $STYLE_CODE)" "$STYLE_CODE" "400" "422"
+
+# 32. Automated multi-shot video validation (free — invalid duration)
+echo "32. Automated multi-shot video"
+AUTO_MS_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/videos/generations" \
+  -H "Authorization: Bearer $VALID_KEY" \
+  -H "Content-Type: application/json" \
+  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
+  -d '{"model":"nova-reel","mode":"multi-shot-automated","prompt":"A knight walks through a medieval castle courtyard, exploring the stone walls and wooden doors","duration":7}' \
+  --max-time 10 2>/dev/null)
+check_code "Automated multi-shot validates duration (HTTP $AUTO_MS_CODE)" "$AUTO_MS_CODE" "400"
+
+
 # Summary
 echo
 echo "=== Results: $PASS passed, $FAIL failed ==="

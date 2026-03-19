@@ -230,6 +230,12 @@ STABILITY_COSTS = {
     "stability-search-replace": 0.04,
     "stability-upscale": 0.06,
     "stability-style-guide": 0.04,
+    "stability-inpaint": 0.04,
+    "stability-erase": 0.04,
+    "stability-creative-upscale": 0.06,
+    "stability-fast-upscale": 0.04,
+    "stability-search-recolor": 0.04,
+    "stability-outpaint": 0.04,
 }
 
 
@@ -318,6 +324,7 @@ class ImageVariationRequest(BaseModel):
     images: list[str] = Field(..., min_length=1, max_length=5)
     prompt: str = Field(..., min_length=1, max_length=1024)
     similarity_strength: float = Field(default=0.7, ge=0.2, le=1.0)
+    negative_text: str | None = Field(default=None, max_length=1024)
     seed: int | None = Field(default=None, ge=0, le=2_147_483_646)
     cfg_scale: float = Field(default=6.5, ge=1.1, le=10.0)
     n: int = Field(default=1, ge=1, le=5)
@@ -353,13 +360,17 @@ def create_image_variation(req: ImageVariationRequest, authorization: str = Head
         raw = base64.b64decode(b64)
         raw_images.append(base64.b64encode(raw).decode("ascii"))
 
+    variation_params = {
+        "text": req.prompt,
+        "images": raw_images,
+        "similarityStrength": req.similarity_strength,
+    }
+    if req.negative_text:
+        variation_params["negativeText"] = req.negative_text
+
     payload = {
         "taskType": "IMAGE_VARIATION",
-        "imageVariationParams": {
-            "text": req.prompt,
-            "images": raw_images,
-            "similarityStrength": req.similarity_strength,
-        },
+        "imageVariationParams": variation_params,
         "imageGenerationConfig": {
             "numberOfImages": req.n,
             "width": req.width,
@@ -463,8 +474,9 @@ def remove_background(req: BackgroundRemovalRequest, authorization: str = Header
 class OutpaintRequest(BaseModel):
     image: str
     prompt: str = Field(..., min_length=1, max_length=1024)
-    mask_prompt: str | None = None
+    mask_prompt: str | None = Field(default=None, max_length=1024)
     mask_image: str | None = None
+    negative_text: str | None = Field(default=None, max_length=1024)
     outpainting_mode: str = Field(default="PRECISE")
     seed: int | None = Field(default=None, ge=0, le=2_147_483_646)
     cfg_scale: float = Field(default=7.0, ge=1.1, le=10.0)
@@ -476,6 +488,10 @@ class OutpaintRequest(BaseModel):
 def outpaint_image(req: OutpaintRequest, authorization: str = Header(...)):
     auth = authenticate_image_request(authorization)
 
+    if req.quality not in ("standard", "premium"):
+        raise HTTPException(status_code=400, detail={
+            "error": {"type": "validation_error", "message": "quality must be 'standard' or 'premium'"}
+        })
     if req.outpainting_mode not in ("DEFAULT", "PRECISE"):
         raise HTTPException(status_code=400, detail={
             "error": {"type": "validation_error", "message": "outpainting_mode must be 'DEFAULT' or 'PRECISE'"}
@@ -505,6 +521,8 @@ def outpaint_image(req: OutpaintRequest, authorization: str = Header(...)):
         "text": req.prompt,
         "outPaintingMode": req.outpainting_mode,
     }
+    if req.negative_text:
+        outpainting_params["negativeText"] = req.negative_text
     if req.mask_prompt:
         outpainting_params["maskPrompt"] = req.mask_prompt
     elif req.mask_image:
@@ -630,6 +648,7 @@ class StructureRequest(BaseModel):
     seed: int | None = Field(default=None, ge=0, le=4_294_967_294)
     output_format: str = Field(default="png")
     style_preset: str | None = None
+    aspect_ratio: str | None = None
 
 
 @router.post("/v1/images/structure")
@@ -640,10 +659,18 @@ def structure_control(req: StructureRequest, authorization: str = Header(...)):
     check_budget(auth, cost)
 
     image_b64 = _validate_stability_image(req.image)
+    extra = {"control_strength": req.control_strength}
+    if req.aspect_ratio:
+        if req.aspect_ratio not in STABILITY_ASPECT_RATIOS:
+            raise HTTPException(status_code=400, detail={
+                "error": {"type": "validation_error",
+                          "message": f"aspect_ratio must be one of: {', '.join(sorted(STABILITY_ASPECT_RATIOS))}"}
+            })
+        extra["aspect_ratio"] = req.aspect_ratio
     payload = _build_stability_payload(
         image_b64, req.prompt, req.negative_prompt, req.seed,
         req.output_format, req.style_preset,
-        control_strength=req.control_strength,
+        **extra,
     )
 
     images = invoke_stability_model(
@@ -663,6 +690,7 @@ class SketchRequest(BaseModel):
     seed: int | None = Field(default=None, ge=0, le=4_294_967_294)
     output_format: str = Field(default="png")
     style_preset: str | None = None
+    aspect_ratio: str | None = None
 
 
 @router.post("/v1/images/sketch")
@@ -673,10 +701,18 @@ def sketch_to_image(req: SketchRequest, authorization: str = Header(...)):
     check_budget(auth, cost)
 
     image_b64 = _validate_stability_image(req.image)
+    extra = {"control_strength": req.control_strength}
+    if req.aspect_ratio:
+        if req.aspect_ratio not in STABILITY_ASPECT_RATIOS:
+            raise HTTPException(status_code=400, detail={
+                "error": {"type": "validation_error",
+                          "message": f"aspect_ratio must be one of: {', '.join(sorted(STABILITY_ASPECT_RATIOS))}"}
+            })
+        extra["aspect_ratio"] = req.aspect_ratio
     payload = _build_stability_payload(
         image_b64, req.prompt, req.negative_prompt, req.seed,
         req.output_format, req.style_preset,
-        control_strength=req.control_strength,
+        **extra,
     )
 
     images = invoke_stability_model(
@@ -769,6 +805,7 @@ class SearchReplaceRequest(BaseModel):
     output_format: str = Field(default="png")
     grow_mask: int = Field(default=5, ge=0, le=20)
     style_preset: str | None = None
+    aspect_ratio: str | None = None
 
 
 @router.post("/v1/images/search-replace")
@@ -779,11 +816,18 @@ def search_and_replace(req: SearchReplaceRequest, authorization: str = Header(..
     check_budget(auth, cost)
 
     image_b64 = _validate_stability_image(req.image)
+    extra = {"search_prompt": req.search_prompt, "grow_mask": req.grow_mask}
+    if req.aspect_ratio:
+        if req.aspect_ratio not in STABILITY_ASPECT_RATIOS:
+            raise HTTPException(status_code=400, detail={
+                "error": {"type": "validation_error",
+                          "message": f"aspect_ratio must be one of: {', '.join(sorted(STABILITY_ASPECT_RATIOS))}"}
+            })
+        extra["aspect_ratio"] = req.aspect_ratio
     payload = _build_stability_payload(
         image_b64, req.prompt, req.negative_prompt, req.seed,
         req.output_format, req.style_preset,
-        search_prompt=req.search_prompt,
-        grow_mask=req.grow_mask,
+        **extra,
     )
 
     images = invoke_stability_model(
@@ -877,6 +921,264 @@ def style_guide(req: StyleGuideRequest, authorization: str = Header(...)):
 
     images = invoke_stability_model(
         bedrock_us_west_2, "us.stability.stable-image-style-guide-v1:0", payload,
+    )
+
+    request_id = str(uuid.uuid4())
+    db.log_image_spend(auth["key_hash"], model_name, cost, request_id)
+    return _make_image_response(images, model_name, cost)
+
+
+# --- New Stability AI Endpoints (009) ---
+
+class InpaintRequest(BaseModel):
+    image: str
+    prompt: str = Field(default="", min_length=0, max_length=10000)
+    mask: str | None = None
+    grow_mask: int = Field(default=5, ge=0, le=20)
+    negative_prompt: str | None = Field(default=None, max_length=10000)
+    seed: int | None = Field(default=None, ge=0, le=4_294_967_294)
+    output_format: str = Field(default="png")
+    style_preset: str | None = None
+
+
+@router.post("/v1/images/inpaint")
+def inpaint_image(req: InpaintRequest, authorization: str = Header(...)):
+    auth = authenticate_image_request(authorization)
+    model_name = "stability-inpaint"
+    cost = calculate_stability_cost(model_name)
+    check_budget(auth, cost)
+
+    image_b64 = _validate_stability_image(req.image)
+    extra = {"grow_mask": req.grow_mask}
+    if req.mask:
+        extra["mask"] = _validate_stability_image(req.mask)
+    payload = _build_stability_payload(
+        image_b64, req.prompt, req.negative_prompt, req.seed,
+        req.output_format, req.style_preset,
+        **extra,
+    )
+
+    images = invoke_stability_model(
+        bedrock_us_west_2, "us.stability.stable-image-inpaint-v1:0", payload,
+    )
+
+    request_id = str(uuid.uuid4())
+    db.log_image_spend(auth["key_hash"], model_name, cost, request_id)
+    return _make_image_response(images, model_name, cost)
+
+
+class EraseRequest(BaseModel):
+    image: str
+    mask: str | None = None
+    grow_mask: int = Field(default=5, ge=0, le=20)
+    seed: int | None = Field(default=None, ge=0, le=4_294_967_294)
+    output_format: str = Field(default="png")
+
+
+@router.post("/v1/images/erase")
+def erase_object(req: EraseRequest, authorization: str = Header(...)):
+    auth = authenticate_image_request(authorization)
+    model_name = "stability-erase"
+    cost = calculate_stability_cost(model_name)
+    check_budget(auth, cost)
+
+    _validate_output_format(req.output_format)
+    image_b64 = _validate_stability_image(req.image)
+    payload = {"image": image_b64, "output_format": req.output_format, "grow_mask": req.grow_mask}
+    if req.mask:
+        payload["mask"] = _validate_stability_image(req.mask)
+    if req.seed is not None:
+        payload["seed"] = req.seed
+
+    images = invoke_stability_model(
+        bedrock_us_west_2, "us.stability.stable-image-erase-object-v1:0", payload,
+    )
+
+    request_id = str(uuid.uuid4())
+    db.log_image_spend(auth["key_hash"], model_name, cost, request_id)
+    return _make_image_response(images, model_name, cost)
+
+
+class CreativeUpscaleRequest(BaseModel):
+    image: str
+    prompt: str = Field(default="", min_length=0, max_length=10000)
+    creativity: float = Field(default=0.3, ge=0.1, le=0.5)
+    negative_prompt: str | None = Field(default=None, max_length=10000)
+    seed: int | None = Field(default=None, ge=0, le=4_294_967_294)
+    output_format: str = Field(default="png")
+    style_preset: str | None = None
+
+
+@router.post("/v1/images/creative-upscale")
+def creative_upscale(req: CreativeUpscaleRequest, authorization: str = Header(...)):
+    auth = authenticate_image_request(authorization)
+    model_name = "stability-creative-upscale"
+    cost = calculate_stability_cost(model_name)
+    check_budget(auth, cost)
+
+    # Creative upscale has 1MP input limit
+    b64, fmt, img = decode_and_validate_image(
+        req.image, max_bytes=25 * 1024 * 1024,
+        allowed_formats={"JPEG", "PNG", "WEBP"},
+        min_size=(64, 64),
+        max_pixels=1_048_576,
+        check_transparency=False,
+    )
+    raw = base64.b64decode(b64)
+    image_b64 = base64.b64encode(raw).decode("ascii")
+
+    payload = _build_stability_payload(
+        image_b64, req.prompt, req.negative_prompt, req.seed,
+        req.output_format, req.style_preset,
+        creativity=req.creativity,
+    )
+
+    images = invoke_stability_model(
+        bedrock_us_west_2, "us.stability.stable-creative-upscale-v1:0", payload,
+    )
+
+    request_id = str(uuid.uuid4())
+    db.log_image_spend(auth["key_hash"], model_name, cost, request_id)
+    return _make_image_response(images, model_name, cost)
+
+
+class FastUpscaleRequest(BaseModel):
+    image: str
+    output_format: str = Field(default="png")
+
+
+@router.post("/v1/images/fast-upscale")
+def fast_upscale(req: FastUpscaleRequest, authorization: str = Header(...)):
+    auth = authenticate_image_request(authorization)
+    model_name = "stability-fast-upscale"
+    cost = calculate_stability_cost(model_name)
+    check_budget(auth, cost)
+
+    _validate_output_format(req.output_format)
+    # Fast upscale: 32-1536px per side, 1024-1048576 total pixels
+    b64, fmt, img = decode_and_validate_image(
+        req.image, max_bytes=25 * 1024 * 1024,
+        allowed_formats={"JPEG", "PNG", "WEBP"},
+        min_size=(32, 32),
+        max_pixels=1_048_576,
+        check_transparency=False,
+    )
+    w, h = img.size
+    if w > 1536 or h > 1536:
+        raise HTTPException(status_code=400, detail={
+            "error": {"type": "validation_error",
+                      "message": f"Image dimensions must be at most 1536x1536 (got {w}x{h})"}
+        })
+    if w * h < 1024:
+        raise HTTPException(status_code=400, detail={
+            "error": {"type": "validation_error",
+                      "message": f"Image must have at least 1024 total pixels (got {w*h})"}
+        })
+    raw = base64.b64decode(b64)
+    image_b64 = base64.b64encode(raw).decode("ascii")
+
+    payload = {"image": image_b64, "output_format": req.output_format}
+
+    images = invoke_stability_model(
+        bedrock_us_west_2, "us.stability.stable-fast-upscale-v1:0", payload,
+    )
+
+    request_id = str(uuid.uuid4())
+    db.log_image_spend(auth["key_hash"], model_name, cost, request_id)
+    return _make_image_response(images, model_name, cost)
+
+
+class SearchRecolorRequest(BaseModel):
+    image: str
+    prompt: str = Field(..., min_length=1, max_length=10000)
+    select_prompt: str = Field(..., min_length=1, max_length=10000)
+    negative_prompt: str | None = Field(default=None, max_length=10000)
+    grow_mask: int = Field(default=5, ge=0, le=20)
+    seed: int | None = Field(default=None, ge=0, le=4_294_967_294)
+    output_format: str = Field(default="png")
+    style_preset: str | None = None
+
+
+@router.post("/v1/images/search-recolor")
+def search_recolor(req: SearchRecolorRequest, authorization: str = Header(...)):
+    auth = authenticate_image_request(authorization)
+    model_name = "stability-search-recolor"
+    cost = calculate_stability_cost(model_name)
+    check_budget(auth, cost)
+
+    image_b64 = _validate_stability_image(req.image)
+    payload = _build_stability_payload(
+        image_b64, req.prompt, req.negative_prompt, req.seed,
+        req.output_format, req.style_preset,
+        select_prompt=req.select_prompt,
+        grow_mask=req.grow_mask,
+    )
+
+    images = invoke_stability_model(
+        bedrock_us_west_2, "us.stability.stable-image-search-recolor-v1:0", payload,
+    )
+
+    request_id = str(uuid.uuid4())
+    db.log_image_spend(auth["key_hash"], model_name, cost, request_id)
+    return _make_image_response(images, model_name, cost)
+
+
+class StabilityOutpaintRequest(BaseModel):
+    image: str
+    left: int = Field(default=0, ge=0, le=2000)
+    right: int = Field(default=0, ge=0, le=2000)
+    up: int = Field(default=0, ge=0, le=2000)
+    down: int = Field(default=0, ge=0, le=2000)
+    prompt: str | None = Field(default=None, max_length=10000)
+    creativity: float = Field(default=0.5, ge=0.1, le=1.0)
+    seed: int | None = Field(default=None, ge=0, le=4_294_967_294)
+    output_format: str = Field(default="png")
+    style_preset: str | None = None
+
+
+@router.post("/v1/images/stability-outpaint")
+def stability_outpaint(req: StabilityOutpaintRequest, authorization: str = Header(...)):
+    auth = authenticate_image_request(authorization)
+    model_name = "stability-outpaint"
+    cost = calculate_stability_cost(model_name)
+    check_budget(auth, cost)
+
+    if req.left == 0 and req.right == 0 and req.up == 0 and req.down == 0:
+        raise HTTPException(status_code=400, detail={
+            "error": {"type": "validation_error",
+                      "message": "At least one of left, right, up, down must be greater than 0"}
+        })
+
+    _validate_output_format(req.output_format)
+    image_b64 = _validate_stability_image(req.image)
+
+    payload = {
+        "image": image_b64,
+        "output_format": req.output_format,
+        "creativity": req.creativity,
+    }
+    if req.left > 0:
+        payload["left"] = req.left
+    if req.right > 0:
+        payload["right"] = req.right
+    if req.up > 0:
+        payload["up"] = req.up
+    if req.down > 0:
+        payload["down"] = req.down
+    if req.prompt:
+        payload["prompt"] = req.prompt
+    if req.seed is not None:
+        payload["seed"] = req.seed
+    if req.style_preset:
+        if req.style_preset not in STABILITY_STYLE_PRESETS:
+            raise HTTPException(status_code=400, detail={
+                "error": {"type": "validation_error",
+                          "message": f"Invalid style_preset. Must be one of: {', '.join(sorted(STABILITY_STYLE_PRESETS))}"}
+            })
+        payload["style_preset"] = req.style_preset
+
+    images = invoke_stability_model(
+        bedrock_us_west_2, "us.stability.stable-outpaint-v1:0", payload,
     )
 
     request_id = str(uuid.uuid4())
