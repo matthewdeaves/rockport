@@ -23,8 +23,10 @@ sidecar/                # Video + image services sidecar (FastAPI on port 4001)
   image_resize.py       #   Auto-resize for Nova Reel (scale, crop, fit to 1280x720)
   prompt_validation.py  #   Nova Reel prompt validation (negation, camera placement, length)
   db.py                 #   PostgreSQL job tracking, spend logging
+  requirements.txt      #   Python dependencies for sidecar
 scripts/bootstrap.sh    # EC2 user_data — installs PostgreSQL, LiteLLM, cloudflared, video sidecar
 scripts/rockport.sh     # Admin CLI (init, keys, status, spend, logs, deploy, start/stop)
+scripts/setup.sh        # Install dev tools (AWS CLI, Terraform, jq, shellcheck, trivy, etc.)
 tests/smoke-test.sh     # Post-deploy verification
 .github/workflows/      # CI/CD — validate (fmt, lint, security scan) + deploy (plan/apply/smoke)
 .checkov.yaml           # Checkov skip list with justifications
@@ -37,6 +39,7 @@ tests/smoke-test.sh     # Post-deploy verification
 ./scripts/rockport.sh deploy        # terraform init + apply
 ./scripts/rockport.sh destroy       # terraform destroy (confirms, cleans up SSM params)
 ./scripts/rockport.sh status        # Health + model list
+./scripts/rockport.sh models        # List available models
 ./scripts/rockport.sh start         # Start a stopped instance
 ./scripts/rockport.sh stop          # Stop the instance
 ./scripts/rockport.sh upgrade       # Restart LiteLLM via SSM

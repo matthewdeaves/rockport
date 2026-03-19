@@ -412,42 +412,34 @@
   <rect x="1060" y="952" width="96" height="22" rx="3" fill="#1a1200" stroke="#e3b341" stroke-width="1"/>
   <text x="1108" y="967" text-anchor="middle" fill="#e3b341" font-size="9" font-weight="bold">→ 402 Budget</text>
 
-  <!-- 5V-d: Concurrent job limit  y=1014..1078 -->
+  <!-- 5V-d: Bedrock StartAsyncInvoke  y=1014..1078 -->
   <rect x="523" y="1014" width="640" height="64" rx="4" fill="#0a1a1a" stroke="#39d2c0" stroke-width="1"/>
-  <text x="533" y="1032" fill="#39d2c0" font-size="9" font-weight="bold">d.  Concurrent Job Limit: max 3 in-progress per key (atomic)</text>
-  <text x="533" y="1048" fill="#8b949e" font-size="9">advisory lock + count + insert in single transaction (no TOCTOU race)</text>
-  <!-- PG badge -->
-  <rect x="533" y="1058" width="140" height="18" rx="3" fill="#1a1a0a" stroke="#e3b341" stroke-width="1"/>
-  <text x="603" y="1071" text-anchor="middle" fill="#e3b341" font-size="8">PostgreSQL :5432</text>
-  <!-- error badge -->
-  <rect x="1060" y="1024" width="96" height="22" rx="3" fill="#1a1200" stroke="#e3b341" stroke-width="1"/>
-  <text x="1108" y="1039" text-anchor="middle" fill="#e3b341" font-size="9" font-weight="bold">→ 429 Limit</text>
-
-  <!-- 5V-e: Bedrock StartAsyncInvoke  y=1086..1150 -->
-  <rect x="523" y="1086" width="640" height="64" rx="4" fill="#0a1a1a" stroke="#39d2c0" stroke-width="1"/>
-  <text x="533" y="1104" fill="#39d2c0" font-size="9" font-weight="bold">e.  Bedrock StartAsyncInvoke → Nova Reel (us-east-1) or Luma Ray2 (us-west-2)</text>
-  <text x="533" y="1120" fill="#8b949e" font-size="9">per-model region routing · MP4 output → region-matched S3 bucket</text>
-  <text x="533" y="1138" fill="#8b949e" font-size="8">Bedrock error → 502 · returns invocationArn on success</text>
+  <text x="533" y="1032" fill="#39d2c0" font-size="9" font-weight="bold">d.  Bedrock StartAsyncInvoke → Nova Reel (us-east-1) or Luma Ray2 (us-west-2)</text>
+  <text x="533" y="1048" fill="#8b949e" font-size="9">per-model region routing · MP4 output → region-matched S3 bucket</text>
+  <text x="533" y="1066" fill="#8b949e" font-size="8">Bedrock error → 502 · returns invocationArn on success</text>
   <!-- Bedrock badge -->
-  <rect x="1060" y="1096" width="96" height="22" rx="3" fill="#0d1a12" stroke="#3fb950" stroke-width="1"/>
-  <text x="1108" y="1111" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="bold">Bedrock async</text>
+  <rect x="1060" y="1024" width="96" height="22" rx="3" fill="#0d1a12" stroke="#3fb950" stroke-width="1"/>
+  <text x="1108" y="1039" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="bold">Bedrock async</text>
 
-  <!-- 5V-f: Store job in PostgreSQL  y=1158..1210 -->
-  <rect x="523" y="1158" width="640" height="52" rx="4" fill="#0a1a1a" stroke="#39d2c0" stroke-width="1"/>
-  <text x="533" y="1176" fill="#39d2c0" font-size="9" font-weight="bold">f.  Store Job in PostgreSQL</text>
-  <text x="533" y="1192" fill="#8b949e" font-size="9">insert into rockport_video_jobs · status=in_progress · returns 202 with job_id</text>
+  <!-- 5V-e: Concurrent job limit + store  y=1086..1150 -->
+  <rect x="523" y="1086" width="640" height="64" rx="4" fill="#0a1a1a" stroke="#39d2c0" stroke-width="1"/>
+  <text x="533" y="1104" fill="#39d2c0" font-size="9" font-weight="bold">e.  Concurrent Limit + Store Job (atomic): max 3 per key</text>
+  <text x="533" y="1120" fill="#8b949e" font-size="9">advisory lock + count + insert in single transaction (no TOCTOU race)</text>
+  <text x="533" y="1138" fill="#8b949e" font-size="8">limit exceeded → 429 · success → insert into rockport_video_jobs · returns 202</text>
   <!-- PG badge -->
-  <rect x="1060" y="1168" width="96" height="22" rx="3" fill="#1a1a0a" stroke="#e3b341" stroke-width="1"/>
-  <text x="1108" y="1183" text-anchor="middle" fill="#e3b341" font-size="8">rockport_video_jobs</text>
+  <rect x="1060" y="1096" width="96" height="22" rx="3" fill="#1a1200" stroke="#e3b341" stroke-width="1"/>
+  <text x="1108" y="1111" text-anchor="middle" fill="#e3b341" font-size="9" font-weight="bold">→ 429 / insert</text>
 
-  <!-- 5V arrow to Bedrock column -->
-  <line x1="1163" y1="1107" x2="1193" y2="1107" stroke="#3fb950" stroke-width="1.5" marker-end="url(#ah-green)"/>
+  <!-- (step f removed — concurrent limit + store are atomic in step e) -->
+
+  <!-- 5V arrow to Bedrock column (step d) -->
+  <line x1="1163" y1="1035" x2="1193" y2="1035" stroke="#3fb950" stroke-width="1.5" marker-end="url(#ah-green)"/>
 
   <!-- 5V error arrows -->
   <line x1="1156" y1="819" x2="1373" y2="819" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
   <line x1="1156" y1="891" x2="1373" y2="891" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
   <line x1="1156" y1="963" x2="1373" y2="963" stroke="#e3b341" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-yellow)"/>
-  <line x1="1156" y1="1035" x2="1373" y2="1035" stroke="#e3b341" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-yellow)"/>
+  <line x1="1156" y1="1107" x2="1373" y2="1107" stroke="#e3b341" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-yellow)"/>
 
   <!-- Video error boxes (right column) -->
   <rect x="1373" y="798" width="404" height="52" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
@@ -465,16 +457,17 @@
   <text x="1380" y="964" fill="#8b949e" font-size="9">estimated cost exceeds remaining key budget</text>
   <text x="1380" y="976" fill="#8b949e" font-size="8">Nova Reel $0.08/s · Ray2 $0.75-1.50/s</text>
 
-  <rect x="1373" y="996" width="404" height="52" rx="4" fill="#1a1200" stroke="#e3b341" stroke-width="1.5"/>
-  <text x="1380" y="1014" fill="#e3b341" font-size="10" font-weight="bold">Step 5V-d: Concurrent Limit → 429</text>
-  <text x="1380" y="1030" fill="#8b949e" font-size="9">max 3 in-progress jobs per key</text>
-  <text x="1380" y="1042" fill="#8b949e" font-size="8">checked in PostgreSQL rockport_video_jobs</text>
+  <!-- Bedrock async invoke box (step d) -->
+  <rect x="1193" y="1010" width="148" height="64" rx="4" fill="#0d1a12" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="1267" y="1030" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="bold">Bedrock Async</text>
+  <text x="1267" y="1046" text-anchor="middle" fill="#8b949e" font-size="9">StartAsyncInvoke</text>
+  <text x="1267" y="1062" text-anchor="middle" fill="#8b949e" font-size="9">Nova Reel / Ray2</text>
 
-  <!-- Bedrock async invoke box -->
-  <rect x="1193" y="1082" width="148" height="64" rx="4" fill="#0d1a12" stroke="#3fb950" stroke-width="1.5"/>
-  <text x="1267" y="1102" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="bold">Bedrock Async</text>
-  <text x="1267" y="1118" text-anchor="middle" fill="#8b949e" font-size="9">StartAsyncInvoke</text>
-  <text x="1267" y="1134" text-anchor="middle" fill="#8b949e" font-size="9">Nova Reel / Ray2</text>
+  <!-- Concurrent limit error box (step e) -->
+  <rect x="1373" y="1086" width="404" height="52" rx="4" fill="#1a1200" stroke="#e3b341" stroke-width="1.5"/>
+  <text x="1380" y="1104" fill="#e3b341" font-size="10" font-weight="bold">Step 5V-e: Concurrent Limit → 429</text>
+  <text x="1380" y="1120" fill="#8b949e" font-size="9">max 3 in-progress jobs per key (atomic with insert)</text>
+  <text x="1380" y="1132" fill="#8b949e" font-size="8">advisory lock in PostgreSQL · checked after Bedrock call</text>
 
   <!-- ═══════════════════════════════════════════════════════════ -->
   <!-- STEP 5V RESPONSE: 202 + Poll flow (bottom bar) -->

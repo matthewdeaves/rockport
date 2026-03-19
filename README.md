@@ -291,7 +291,7 @@ curl -X POST https://<your-domain>/v1/videos/generations \
   }'
 ```
 
-Duration must be a multiple of 6, from 6 to 120 seconds. `seed` is optional (for reproducibility). You can also pass an optional reference image as a 1280x720 PNG or JPEG data URI in the `image` field.
+Duration must be a multiple of 6, from 6 to 120 seconds. `seed` is optional (for reproducibility). You can also pass an optional reference image as a PNG or JPEG data URI in the `image` field (auto-resized to 1280x720 if needed — see resize modes below).
 
 The POST returns `202 Accepted` with a job ID:
 
@@ -369,7 +369,7 @@ Ray2 supports 7 aspect ratios (16:9, 9:16, 1:1, 4:3, 3:4, 21:9, 9:21), two resol
 | Duration | 6–120s (multiples of 6) | 5s or 9s |
 | Multi-shot (manual) | 2–20 shots, 6s each | Not supported |
 | Multi-shot (automated) | Single prompt, 12–120s, model picks shots | Not supported |
-| Image-to-video | Start frame (1280x720 exact, 6s only) | Start + optional end frame (512–4096px) |
+| Image-to-video | Start frame (auto-resized to 1280x720, 6s only) | Start + optional end frame (512–4096px) |
 | Loop | No | Yes |
 | Seed | Yes | No |
 | Concurrent jobs per key | 3 (configurable via `VIDEO_MAX_CONCURRENT_JOBS`) | Same |
@@ -402,7 +402,7 @@ Rockport is designed so that the proxy has no direct internet exposure. Every la
 
 **Localhost-only binding** — LiteLLM listens on `127.0.0.1:4000`, not `0.0.0.0`. Even if the security group were misconfigured, the service would not accept external connections directly.
 
-**Admin UI disabled** — The LiteLLM admin dashboard is disabled via `disable_admin_ui: true` and Swagger/ReDoc docs are disabled via `NO_DOCS=True` / `NO_REDOC=True` environment variables. A Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation, image services, and the admin CLI — only `/v1/chat/completions`, `/v1/models`, `/v1/messages`, `/v1/images/generations`, `/v1/images/*`, `/v1/videos/*`, `/key/*`, `/health/*`, `/spend/*`, and a handful of other operational paths are reachable. Everything else (admin UI, OpenAPI schema, routes list, SSO, SCIM, debug endpoints, etc.) returns 403 at the Cloudflare edge.
+**Admin UI disabled** — The LiteLLM admin dashboard is disabled via `disable_admin_ui: true` and Swagger/ReDoc docs are disabled via `NO_DOCS=True` / `NO_REDOC=True` environment variables. A Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation, image services, and the admin CLI — only `/v1/chat/completions`, `/v1/models`, `/v1/messages`, `/v1/images/generations`, `/v1/images/*`, `/v1/videos/*`, `/key/*`, `/health` (exact match), `/spend/*`, and a handful of other operational paths are reachable. Everything else (admin UI, OpenAPI schema, routes list, SSO, SCIM, debug endpoints, etc.) returns 403 at the Cloudflare edge.
 
 **Key separation** — The master key (stored in SSM Parameter Store) is only used by the admin CLI. Users get virtual keys with per-key daily budgets and rate limits. Keys created with `--claude-only` (or via `setup-claude`) are restricted to Anthropic models only. Keys without this flag get access to all models including image generation. Virtual keys can only call model endpoints — they cannot create other keys, view spend, or manage the proxy.
 
