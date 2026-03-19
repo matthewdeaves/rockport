@@ -226,44 +226,44 @@
   <!-- ═══════════════════════════════════════════════════════════ -->
 
   <!-- WAF 403 (aligns with step 2 WAF box) -->
-  <rect x="1373" y="170" width="404" height="44" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
-  <text x="1380" y="186" fill="#f85149" font-size="10" font-weight="bold">Step 2: WAF Block → 403 Forbidden</text>
-  <text x="1380" y="202" fill="#8b949e" font-size="9">path not on allowlist · blocked before tunnel</text>
+  <rect x="1373" y="104" width="404" height="44" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
+  <text x="1380" y="120" fill="#f85149" font-size="10" font-weight="bold">Step 2: WAF Block → 403 Forbidden</text>
+  <text x="1380" y="136" fill="#8b949e" font-size="9">path not on allowlist · blocked before tunnel</text>
 
   <!-- Access 403 -->
-  <rect x="1373" y="220" width="404" height="44" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
-  <text x="1380" y="236" fill="#f85149" font-size="10" font-weight="bold">Step 2: Access Denied → 403 Forbidden</text>
-  <text x="1380" y="252" fill="#8b949e" font-size="9">missing or invalid CF-Access service token</text>
+  <rect x="1373" y="156" width="404" height="44" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
+  <text x="1380" y="172" fill="#f85149" font-size="10" font-weight="bold">Step 2: Access Denied → 403 Forbidden</text>
+  <text x="1380" y="188" fill="#8b949e" font-size="9">missing or invalid CF-Access service token</text>
 
   <!-- 5a 401 -->
-  <rect x="1373" y="238" width="404" height="52" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
-  <text x="1380" y="256" fill="#f85149" font-size="10" font-weight="bold">Step 5a: Invalid Key → 401</text>
-  <text x="1380" y="272" fill="#8b949e" font-size="9">key does not start with  sk-</text>
-  <text x="1380" y="284" fill="#8b949e" font-size="8">rejected before any DB lookup</text>
+  <rect x="1373" y="208" width="404" height="52" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
+  <text x="1380" y="226" fill="#f85149" font-size="10" font-weight="bold">Step 5a: Invalid Key → 401</text>
+  <text x="1380" y="242" fill="#8b949e" font-size="9">key does not start with  sk-</text>
+  <text x="1380" y="254" fill="#8b949e" font-size="8">rejected before any DB lookup</text>
 
   <!-- 5b 401 -->
-  <rect x="1373" y="304" width="404" height="52" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
-  <text x="1380" y="322" fill="#f85149" font-size="10" font-weight="bold">Step 5b: Key Not Found → 401</text>
-  <text x="1380" y="338" fill="#8b949e" font-size="9">hashed key absent or revoked in PostgreSQL</text>
-  <text x="1380" y="350" fill="#8b949e" font-size="8">spend not logged for rejected requests</text>
+  <rect x="1373" y="268" width="404" height="52" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
+  <text x="1380" y="286" fill="#f85149" font-size="10" font-weight="bold">Step 5b: Key Not Found → 401</text>
+  <text x="1380" y="302" fill="#8b949e" font-size="9">hashed key absent or revoked in PostgreSQL</text>
+  <text x="1380" y="314" fill="#8b949e" font-size="8">spend not logged for rejected requests</text>
 
   <!-- 5c 403 -->
-  <rect x="1373" y="370" width="404" height="52" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
-  <text x="1380" y="388" fill="#f85149" font-size="10" font-weight="bold">Step 5c: Model Denied → 403</text>
-  <text x="1380" y="404" fill="#8b949e" font-size="9">key restricted to specific model subset</text>
-  <text x="1380" y="416" fill="#8b949e" font-size="8">e.g. claude-only key used with nova-canvas</text>
+  <rect x="1373" y="328" width="404" height="52" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
+  <text x="1380" y="346" fill="#f85149" font-size="10" font-weight="bold">Step 5c: Model Denied → 403</text>
+  <text x="1380" y="362" fill="#8b949e" font-size="9">key restricted to specific model subset</text>
+  <text x="1380" y="374" fill="#8b949e" font-size="8">e.g. claude-only key used with nova-canvas</text>
 
   <!-- 5d 429 -->
-  <rect x="1373" y="436" width="404" height="52" rx="4" fill="#1a1200" stroke="#e3b341" stroke-width="1.5"/>
-  <text x="1380" y="454" fill="#e3b341" font-size="10" font-weight="bold">Step 5d: Rate Limited → 429</text>
-  <text x="1380" y="470" fill="#8b949e" font-size="9">60 RPM or 200K TPM window exceeded</text>
-  <text x="1380" y="482" fill="#8b949e" font-size="8">Retry-After header returned to client</text>
+  <rect x="1373" y="388" width="404" height="52" rx="4" fill="#1a1200" stroke="#e3b341" stroke-width="1.5"/>
+  <text x="1380" y="406" fill="#e3b341" font-size="10" font-weight="bold">Step 5d: Rate Limited → 429</text>
+  <text x="1380" y="422" fill="#8b949e" font-size="9">60 RPM or 200K TPM window exceeded</text>
+  <text x="1380" y="434" fill="#8b949e" font-size="8">Retry-After header returned to client</text>
 
   <!-- 5e 400 -->
-  <rect x="1373" y="502" width="404" height="52" rx="4" fill="#1a1200" stroke="#e3b341" stroke-width="1.5"/>
-  <text x="1380" y="520" fill="#e3b341" font-size="10" font-weight="bold">Step 5e: Budget Exceeded → 400</text>
-  <text x="1380" y="536" fill="#8b949e" font-size="9">daily spend limit reached for this key</text>
-  <text x="1380" y="548" fill="#8b949e" font-size="8">budget resets at midnight UTC</text>
+  <rect x="1373" y="448" width="404" height="52" rx="4" fill="#1a1200" stroke="#e3b341" stroke-width="1.5"/>
+  <text x="1380" y="466" fill="#e3b341" font-size="10" font-weight="bold">Step 5e: Budget Exceeded → 400</text>
+  <text x="1380" y="482" fill="#8b949e" font-size="9">daily spend limit reached for this key</text>
+  <text x="1380" y="494" fill="#8b949e" font-size="8">budget resets at midnight UTC</text>
 
   <!-- ═══════════════════════════════════════════════════════════ -->
   <!-- STEP 7: RESPONSE PATH (bottom bar) -->
@@ -345,25 +345,25 @@
   <!-- ═══════════════════════════════════════════════════════════ -->
 
   <!-- WAF → Error -->
-  <line x1="1156" y1="190" x2="1373" y2="190" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
+  <line x1="1156" y1="126" x2="1373" y2="126" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
 
   <!-- Access → Error -->
-  <line x1="1156" y1="240" x2="1373" y2="240" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
+  <line x1="1156" y1="178" x2="1373" y2="178" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
 
   <!-- 5a → Error -->
-  <line x1="1156" y1="122" x2="1373" y2="264" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
+  <line x1="1156" y1="136" x2="1373" y2="234" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
 
   <!-- 5b → Error -->
-  <line x1="1156" y1="230" x2="1373" y2="330" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
+  <line x1="1156" y1="230" x2="1373" y2="294" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
 
   <!-- 5c → Error -->
-  <line x1="1156" y1="306" x2="1373" y2="396" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
+  <line x1="1156" y1="306" x2="1373" y2="354" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
 
   <!-- 5d → Error -->
-  <line x1="1156" y1="390" x2="1373" y2="462" stroke="#e3b341" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-yellow)"/>
+  <line x1="1156" y1="390" x2="1373" y2="414" stroke="#e3b341" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-yellow)"/>
 
   <!-- 5e → Error -->
-  <line x1="1156" y1="474" x2="1373" y2="528" stroke="#e3b341" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-yellow)"/>
+  <line x1="1156" y1="474" x2="1373" y2="474" stroke="#e3b341" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah-yellow)"/>
 
   <!-- Bedrock → response path -->
   <path d="M 1267 204 Q 1267 640 1156 698" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="4,3" fill="none" marker-end="url(#ah-green)"/>
