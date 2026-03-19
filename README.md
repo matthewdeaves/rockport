@@ -13,7 +13,8 @@ OpenAI-compatible LiteLLM proxy on EC2 that routes any application to Bedrock mo
 - Claude Code connects via `ANTHROPIC_BASE_URL` to your own proxy
 - Anthropic (Opus 4.6, Sonnet 4.6, Haiku 4.5), DeepSeek V3.2, Qwen3 Coder 480B, Kimi K2.5, Nova Pro/Lite/Micro on Bedrock
 - Image generation via OpenAI-compatible `/v1/images/generations` (Nova Canvas, Titan Image v2, SD3.5 Large, Stable Image Ultra, Stable Image Core)
-- Image services: variations, background removal, outpainting (Nova Canvas) + structure, sketch, style transfer, upscale, inpaint, erase, search & recolor, and more (Stability AI)
+- Image editing via `/v1/images/edits` — 13 Stability AI operations (structure, sketch, style transfer, upscale, inpaint, erase, search & recolor, and more) via LiteLLM native
+- Image services via sidecar: variations, background removal, outpainting (Nova Canvas)
 - Video generation via `/v1/videos/generations` (Nova Reel v1.1 + Luma Ray2 — async jobs with presigned S3 URLs)
 - Virtual API keys with per-key budgets, rate limits, and model restrictions
 - Zero inbound security group rules — all traffic flows through Cloudflare Tunnel
@@ -29,7 +30,7 @@ Before you start, you need:
 
 1. **An AWS account** with an IAM user that has admin access (or root credentials for first-time setup)
 2. **A Cloudflare account** with a domain — you'll create an API token and a tunnel
-3. **Bedrock model access** — chat models auto-enable on first use. Stability AI image models (SD3.5 Large, Stable Image Ultra, Stable Image Core, and sidecar services like inpaint/erase/upscale) and Luma Ray2 require a one-time Marketplace subscription (use them once in the Bedrock playground to activate)
+3. **Bedrock model access** — chat models auto-enable on first use. Stability AI image models (SD3.5 Large, Stable Image Ultra, Stable Image Core, and all Stability AI image edit models) and Luma Ray2 require a one-time Marketplace subscription (use them once in the Bedrock playground to activate)
 
 ### Cloudflare API token
 
@@ -43,7 +44,7 @@ You'll also need your Cloudflare **Zone ID** and **Account ID** (found on the do
 
 ### Bedrock model access
 
-Serverless foundation models auto-enable on first invocation. For Stability AI image models (SD3.5 Large, Stable Image Ultra, Stable Image Core, and all Stability AI sidecar services) and Luma Ray2, open the model in the Bedrock playground once to trigger the Marketplace subscription. Chat models (Claude, Nova, etc.) work immediately.
+Serverless foundation models auto-enable on first invocation. For Stability AI image models (SD3.5 Large, Stable Image Ultra, Stable Image Core, and all Stability AI image edit models like inpaint, erase, upscale, etc.) and Luma Ray2, open the model in the Bedrock playground once to trigger the Marketplace subscription. Chat models (Claude, Nova, etc.) work immediately.
 
 ## Setup
 
@@ -239,13 +240,40 @@ curl -X POST https://<your-domain>/v1/images/generations \
 
 Source images must be base64-encoded PNG or JPEG. Nova Canvas requires minimum 320px per side. SD3.5 Large also supports `mode: "image-to-image"` with an `image` and `strength` parameter, but always outputs 1024x1024 JPEG — Nova Canvas is recommended for image-to-image.
 
-**Note:** `/v1/images/edits` is not supported — LiteLLM 1.82.3 only supports that endpoint for Stability AI models, not Bedrock's Nova Canvas or Titan. Use `/v1/images/generations` with `conditionImage` instead.
+**Note:** For Nova Canvas and Titan, use `/v1/images/generations` with `conditionImage` for image-to-image. `/v1/images/edits` is the Stability AI image edit endpoint (see below).
 
-#### Image service endpoints
+#### Stability AI image editing (via LiteLLM)
 
-Advanced image operations run on the sidecar (port 4001) and are routed via `/v1/images/*` (except `/v1/images/generations` which goes to LiteLLM). Keys created with `--claude-only` cannot access these endpoints.
+All 13 Stability AI image edit operations use LiteLLM's native `/v1/images/edits` endpoint with `multipart/form-data`. Specify the operation via the `model` field. Keys created with `--claude-only` cannot access these models. All require a one-time Marketplace subscription.
 
-**Nova Canvas operations:**
+| Model | Description | Cost |
+|-------|-------------|------|
+| `stability-structure` | Structure-guided generation (maintain composition) | $0.04 |
+| `stability-sketch` | Sketch-to-image generation | $0.04 |
+| `stability-style-transfer` | Transfer style between images | $0.06 |
+| `stability-remove-background` | Remove background | $0.04 |
+| `stability-search-replace` | Find and replace objects in an image | $0.04 |
+| `stability-upscale` | Conservative upscale (max 1MP input) | $0.06 |
+| `stability-style-guide` | Style-guided generation with reference image | $0.04 |
+| `stability-inpaint` | Mask regions and replace with prompt-guided content | $0.04 |
+| `stability-erase` | Mask regions and remove objects (no prompt needed) | $0.04 |
+| `stability-creative-upscale` | Prompt-guided upscale to 4K (max 1MP input) | $0.06 |
+| `stability-fast-upscale` | Deterministic 4x upscale (32–1536px, no prompt) | $0.04 |
+| `stability-search-recolor` | Find objects by description and change their colour | $0.04 |
+| `stability-outpaint` | Extend image directionally (left/right/up/down) | $0.04 |
+
+```bash
+curl -X POST https://<your-domain>/v1/images/edits \
+  -H "Authorization: Bearer $KEY" \
+  -F "model=stability-remove-background" \
+  -F "image=@photo.png"
+```
+
+Response contains `data[0].b64_json` with the base64-encoded image. LiteLLM handles auth, budget enforcement, and spend tracking natively.
+
+#### Nova Canvas sidecar endpoints
+
+Advanced Nova Canvas operations run on the sidecar (port 4001) and are routed via `/v1/images/*` (except `/v1/images/generations` and `/v1/images/edits` which go to LiteLLM). Keys created with `--claude-only` cannot access these endpoints.
 
 | Endpoint | Description |
 |----------|-------------|
@@ -253,25 +281,7 @@ Advanced image operations run on the sidecar (port 4001) and are routed via `/v1
 | `POST /v1/images/background-removal` | Remove the background from an image |
 | `POST /v1/images/outpaint` | Extend an image beyond its borders using a mask |
 
-**Stability AI operations** (require Marketplace subscription):
-
-| Endpoint | Description | Cost |
-|----------|-------------|------|
-| `POST /v1/images/structure` | Structure-guided generation (maintain composition) | $0.04 |
-| `POST /v1/images/sketch` | Sketch-to-image generation | $0.04 |
-| `POST /v1/images/style-transfer` | Transfer style between images | $0.06 |
-| `POST /v1/images/remove-background` | Remove background (Stability AI model) | $0.04 |
-| `POST /v1/images/search-replace` | Find and replace objects in an image | $0.04 |
-| `POST /v1/images/upscale` | Conservative upscale (max 1MP input) | $0.06 |
-| `POST /v1/images/style-guide` | Style-guided generation with reference image | $0.04 |
-| `POST /v1/images/inpaint` | Mask regions and replace with prompt-guided content | $0.04 |
-| `POST /v1/images/erase` | Mask regions and remove objects (no prompt needed) | $0.04 |
-| `POST /v1/images/creative-upscale` | Prompt-guided upscale to 4K (max 1MP input) | $0.06 |
-| `POST /v1/images/fast-upscale` | Deterministic 4x upscale (32–1536px, no prompt) | $0.04 |
-| `POST /v1/images/search-recolor` | Find objects by description and change their colour | $0.04 |
-| `POST /v1/images/stability-outpaint` | Extend image directionally (left/right/up/down) | $0.04 |
-
-All image service endpoints authenticate via LiteLLM, enforce per-key budgets, and log spend to the unified tracking tables.
+These endpoints authenticate via LiteLLM, enforce per-key budgets, and log spend to the unified tracking tables.
 
 ### Video generation
 
@@ -382,14 +392,13 @@ Two GitHub Actions workflows run on push to `main`:
 
 **Validate** (`validate.yml`) — runs on every push and PR:
 - `terraform fmt -check` and `terraform validate`
-- ShellCheck on all `.sh` files
 - Gitleaks secrets scan
 - Trivy IaC security scan
 - Checkov policy-as-code scan
 
-**Deploy** (`deploy.yml`) — runs on push to `main` (paths: `terraform/`, `config/`, `scripts/`):
+**Deploy** (`deploy.yml`) — runs on push to `main` (paths: `terraform/`, `config/`, `scripts/`, `sidecar/`, `tests/`):
 - `terraform plan` on PRs (comments the plan on the PR)
-- `terraform apply -auto-approve` on merge to `main`
+- Applies saved plan on merge to `main`
 - Smoke tests after deploy
 
 CI uses GitHub OIDC for AWS authentication. Set `AWS_ROLE_ARN` in GitHub repository secrets to an IAM role with OIDC trust policy. Also set `CLOUDFLARE_ZONE_ID`, `CLOUDFLARE_ACCOUNT_ID`, and `CLOUDFLARE_API_TOKEN` as secrets.
@@ -402,7 +411,7 @@ Rockport is designed so that the proxy has no direct internet exposure. Every la
 
 **Localhost-only binding** — LiteLLM listens on `127.0.0.1:4000`, not `0.0.0.0`. Even if the security group were misconfigured, the service would not accept external connections directly.
 
-**Admin UI disabled** — The LiteLLM admin dashboard is disabled via `disable_admin_ui: true` and Swagger/ReDoc docs are disabled via `NO_DOCS=True` / `NO_REDOC=True` environment variables. A Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation, image services, and the admin CLI — only `/v1/chat/completions`, `/v1/models`, `/v1/messages`, `/v1/images/generations`, `/v1/images/*`, `/v1/videos/*`, `/key/*`, `/health` (exact match), `/spend/*`, and a handful of other operational paths are reachable. Everything else (admin UI, OpenAPI schema, routes list, SSO, SCIM, debug endpoints, etc.) returns 403 at the Cloudflare edge.
+**Admin UI disabled** — The LiteLLM admin dashboard is disabled via `disable_admin_ui: true` and Swagger/ReDoc docs are disabled via `NO_DOCS=True` / `NO_REDOC=True` environment variables. A Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation, image editing, image services, and the admin CLI — only `/v1/chat/completions`, `/v1/models`, `/v1/messages`, `/v1/images/generations`, `/v1/images/edits`, `/v1/images/*`, `/v1/videos/*`, `/key/*`, `/health` (exact match), `/spend/*`, and a handful of other operational paths are reachable. Everything else (admin UI, OpenAPI schema, routes list, SSO, SCIM, debug endpoints, etc.) returns 403 at the Cloudflare edge.
 
 **Key separation** — The master key (stored in SSM Parameter Store) is only used by the admin CLI. Users get virtual keys with per-key daily budgets and rate limits. Keys created with `--claude-only` (or via `setup-claude`) are restricted to Anthropic models only. Keys without this flag get access to all models including image generation. Virtual keys can only call model endpoints — they cannot create other keys, view spend, or manage the proxy.
 

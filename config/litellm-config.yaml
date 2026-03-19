@@ -99,6 +99,112 @@ model_list:
     model_info:
       mode: image_generation
 
+  # Stability AI image edit models (via LiteLLM /v1/images/edits)
+  # Model IDs use base Bedrock IDs without us. prefix — LiteLLM handles region routing
+  - model_name: stability-structure
+    litellm_params:
+      model: bedrock/us.stability.stable-image-control-structure-v1:0
+      aws_region_name: us-west-2
+    model_info:
+      mode: image_edit
+      disable_background_health_check: true
+
+  - model_name: stability-sketch
+    litellm_params:
+      model: bedrock/us.stability.stable-image-control-sketch-v1:0
+      aws_region_name: us-west-2
+    model_info:
+      mode: image_edit
+      disable_background_health_check: true
+
+  - model_name: stability-style-transfer
+    litellm_params:
+      model: bedrock/us.stability.stable-style-transfer-v1:0
+      aws_region_name: us-west-2
+    model_info:
+      mode: image_edit
+      disable_background_health_check: true
+
+  - model_name: stability-remove-background
+    litellm_params:
+      model: bedrock/us.stability.stable-image-remove-background-v1:0
+      aws_region_name: us-west-2
+    model_info:
+      mode: image_edit
+      disable_background_health_check: true
+
+  - model_name: stability-search-replace
+    litellm_params:
+      model: bedrock/us.stability.stable-image-search-replace-v1:0
+      aws_region_name: us-west-2
+    model_info:
+      mode: image_edit
+      disable_background_health_check: true
+
+  - model_name: stability-upscale
+    litellm_params:
+      model: bedrock/us.stability.stable-conservative-upscale-v1:0
+      aws_region_name: us-west-2
+    model_info:
+      mode: image_edit
+      disable_background_health_check: true
+
+  - model_name: stability-style-guide
+    litellm_params:
+      model: bedrock/us.stability.stable-image-style-guide-v1:0
+      aws_region_name: us-west-2
+    model_info:
+      mode: image_edit
+      disable_background_health_check: true
+
+  - model_name: stability-inpaint
+    litellm_params:
+      model: bedrock/us.stability.stable-image-inpaint-v1:0
+      aws_region_name: us-west-2
+    model_info:
+      mode: image_edit
+      disable_background_health_check: true
+
+  - model_name: stability-erase
+    litellm_params:
+      model: bedrock/us.stability.stable-image-erase-object-v1:0
+      aws_region_name: us-west-2
+    model_info:
+      mode: image_edit
+      disable_background_health_check: true
+
+  - model_name: stability-creative-upscale
+    litellm_params:
+      model: bedrock/us.stability.stable-creative-upscale-v1:0
+      aws_region_name: us-west-2
+    model_info:
+      mode: image_edit
+      disable_background_health_check: true
+
+  - model_name: stability-fast-upscale
+    litellm_params:
+      model: bedrock/us.stability.stable-fast-upscale-v1:0
+      aws_region_name: us-west-2
+    model_info:
+      mode: image_edit
+      disable_background_health_check: true
+
+  - model_name: stability-search-recolor
+    litellm_params:
+      model: bedrock/us.stability.stable-image-search-recolor-v1:0
+      aws_region_name: us-west-2
+    model_info:
+      mode: image_edit
+      disable_background_health_check: true
+
+  - model_name: stability-outpaint
+    litellm_params:
+      model: bedrock/us.stability.stable-outpaint-v1:0
+      aws_region_name: us-west-2
+    model_info:
+      mode: image_edit
+      disable_background_health_check: true
+
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
   database_url: os.environ/DATABASE_URL

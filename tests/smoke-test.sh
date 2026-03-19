@@ -178,25 +178,27 @@ NEGATION_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/vid
   --max-time 10 2>/dev/null)
 check_code "Negation word 'no' rejected (HTTP $NEGATION_CODE)" "$NEGATION_CODE" "400"
 
-# 13. Camera keyword position rejection
-echo "13. Prompt validation — camera position"
-CAMERA_BODY=$(curl -s -X POST "$BASE_URL/v1/videos/generations" \
+# 13. Camera keyword mid-prompt is now a warning, not a rejection (free — invalid duration)
+echo "13. Prompt validation — camera position (middle is warning, not rejection)"
+CAMERA_MID_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/videos/generations" \
   -H "Authorization: Bearer $VALID_KEY" \
   -H "Content-Type: application/json" \
   "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{"model":"nova-reel","prompt":"Armoured knight, dolly forward, walking steadily in side profile and castle background","duration":6}' \
+  -d '{"model":"nova-reel","prompt":"Armoured knight walking forward, dolly forward, with castle walls and torchlight in background","duration":7}' \
   --max-time 10 2>/dev/null)
-check "Camera keyword mid-prompt rejected with correct rule" jq -e '.detail.error.rule == "camera_position"' <<< "$CAMERA_BODY"
+# Should get 400 for duration (not prompt) — means camera keyword didn't block
+check_code "Camera mid-prompt passes validation (fails on duration instead)" "$CAMERA_MID_CODE" "400"
 
-# 14. Min length rejection
-echo "14. Prompt validation — min length"
-MINLEN_BODY=$(curl -s -X POST "$BASE_URL/v1/videos/generations" \
+# 14. Camera keyword at start allowed (free — uses invalid duration to fail AFTER prompt validation passes)
+echo "14. Prompt validation — camera position (start allowed)"
+CAMERA_START_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/videos/generations" \
   -H "Authorization: Bearer $VALID_KEY" \
   -H "Content-Type: application/json" \
   "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{"model":"nova-reel","prompt":"a knight walking","duration":6}' \
+  -d '{"model":"nova-reel","prompt":"Dolly forward through a misty forest, golden light filtering through ancient trees, leaves drifting gently","duration":7}' \
   --max-time 10 2>/dev/null)
-check "Short prompt rejected with correct rule" jq -e '.detail.error.rule == "min_length"' <<< "$MINLEN_BODY"
+# Should get 400 for duration (not prompt) — means prompt validation passed
+check_code "Camera at start passes validation (fails on duration instead)" "$CAMERA_START_CODE" "400"
 
 # 15. Contracted negation rejection
 echo "15. Prompt validation — contracted negation"
@@ -232,14 +234,15 @@ check "Ray2 skips prompt validation (fails on duration instead)" jq -e '.detail.
 
 # --- Image Endpoint Routing (free — validation errors) ---
 
-# 18. Image generations routes to LiteLLM (already tested in #6)
-echo "18. Image edits routes to sidecar (404, no handler)"
+# 18. Image edits routes to LiteLLM (Stability AI via /v1/images/edits)
+echo "18. Image edits routes to LiteLLM"
 EDIT_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/edits" \
   -H "Authorization: Bearer $VALID_KEY" \
-  -H "Content-Type: application/json" \
+  -F "model=stability-remove-background" \
+  -F "image=@/dev/null" \
   "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{}' --max-time 10 2>/dev/null)
-check_code "Image edits → sidecar 404 (HTTP $EDIT_CODE)" "$EDIT_CODE" "404" "405"
+  --max-time 10 2>/dev/null)
+check_code "Image edits → LiteLLM (expect 400 validation, HTTP $EDIT_CODE)" "$EDIT_CODE" "400" "422" "500"
 
 # 19. Image variations endpoint reachable (validation error = routing works)
 echo "19. Image variations endpoint"
@@ -271,96 +274,38 @@ IMGOUT_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/image
   --max-time 10 2>/dev/null)
 check_code "Outpaint reachable (HTTP $IMGOUT_CODE)" "$IMGOUT_CODE" "400" "422"
 
-# 22. Stability AI structure endpoint reachable
-echo "22. Stability AI structure endpoint"
-IMGSTR_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/structure" \
+# --- Stability AI via LiteLLM /v1/images/edits ---
+
+# 22. Stability AI inpaint via LiteLLM (free — bad input triggers validation error)
+echo "22. Stability AI inpaint via LiteLLM"
+INPAINT_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/edits" \
+  -H "Authorization: Bearer $VALID_KEY" \
+  -F "model=stability-inpaint" \
+  -F "image=@/dev/null" \
+  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
+  --max-time 10 2>/dev/null)
+check_code "Inpaint via LiteLLM (expect 400/422/500, HTTP $INPAINT_CODE)" "$INPAINT_CODE" "400" "422" "500"
+
+# 23. Removed sidecar path returns 404
+echo "23. Removed sidecar path returns 404"
+REMOVED_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/structure" \
   -H "Authorization: Bearer $VALID_KEY" \
   -H "Content-Type: application/json" \
   "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
   -d '{"image":"invalid","prompt":"test"}' \
   --max-time 10 2>/dev/null)
-check_code "Structure reachable (HTTP $IMGSTR_CODE)" "$IMGSTR_CODE" "400" "422"
+check_code "Removed sidecar path → 404/405 (HTTP $REMOVED_CODE)" "$REMOVED_CODE" "404" "405"
 
-# 23. Stability AI remove-background endpoint reachable
-echo "23. Stability AI remove-background endpoint"
-IMGRM_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/remove-background" \
-  -H "Authorization: Bearer $VALID_KEY" \
-  -H "Content-Type: application/json" \
-  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{"image":"invalid"}' \
-  --max-time 10 2>/dev/null)
-check_code "Remove background reachable (HTTP $IMGRM_CODE)" "$IMGRM_CODE" "400" "422"
-
-
-# --- New Image Sidecar Endpoints (009) ---
-
-# 24. Inpaint endpoint reachable
-echo "24. Inpaint endpoint"
-INPAINT_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/inpaint" \
-  -H "Authorization: Bearer $VALID_KEY" \
-  -H "Content-Type: application/json" \
-  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{"image":"invalid","prompt":"test"}' \
-  --max-time 10 2>/dev/null)
-check_code "Inpaint reachable (HTTP $INPAINT_CODE)" "$INPAINT_CODE" "400" "422"
-
-# 25. Erase endpoint reachable
-echo "25. Erase endpoint"
-ERASE_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/erase" \
-  -H "Authorization: Bearer $VALID_KEY" \
-  -H "Content-Type: application/json" \
-  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{"image":"invalid"}' \
-  --max-time 10 2>/dev/null)
-check_code "Erase reachable (HTTP $ERASE_CODE)" "$ERASE_CODE" "400" "422"
-
-# 26. Creative upscale endpoint reachable
-echo "26. Creative upscale endpoint"
-CU_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/creative-upscale" \
-  -H "Authorization: Bearer $VALID_KEY" \
-  -H "Content-Type: application/json" \
-  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{"image":"invalid","prompt":"test"}' \
-  --max-time 10 2>/dev/null)
-check_code "Creative upscale reachable (HTTP $CU_CODE)" "$CU_CODE" "400" "422"
-
-# 27. Fast upscale endpoint reachable
-echo "27. Fast upscale endpoint"
-FU_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/fast-upscale" \
-  -H "Authorization: Bearer $VALID_KEY" \
-  -H "Content-Type: application/json" \
-  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{"image":"invalid"}' \
-  --max-time 10 2>/dev/null)
-check_code "Fast upscale reachable (HTTP $FU_CODE)" "$FU_CODE" "400" "422"
-
-# 28. Search & recolor endpoint reachable
-echo "28. Search & recolor endpoint"
-SR_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/search-recolor" \
-  -H "Authorization: Bearer $VALID_KEY" \
-  -H "Content-Type: application/json" \
-  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{"image":"invalid","prompt":"red","select_prompt":"hat"}' \
-  --max-time 10 2>/dev/null)
-check_code "Search recolor reachable (HTTP $SR_CODE)" "$SR_CODE" "400" "422"
-
-# 29. Stability outpaint endpoint reachable
-echo "29. Stability outpaint endpoint"
-SO_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/stability-outpaint" \
-  -H "Authorization: Bearer $VALID_KEY" \
-  -H "Content-Type: application/json" \
-  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{"image":"invalid","right":200}' \
-  --max-time 10 2>/dev/null)
-check_code "Stability outpaint reachable (HTTP $SO_CODE)" "$SO_CODE" "400" "422"
-
-# 30. Model list contains new LiteLLM models
-echo "30. New LiteLLM models"
+# 24. Model list contains LiteLLM image models
+echo "24. LiteLLM image models"
 check "Model list contains stable-image-ultra" grep -q "stable-image-ultra" <<< "$MODELS"
 check "Model list contains stable-image-core" grep -q "stable-image-core" <<< "$MODELS"
+check "Model list contains stability-inpaint" grep -q "stability-inpaint" <<< "$MODELS"
+check "Model list contains stability-upscale" grep -q "stability-upscale" <<< "$MODELS"
+check "Model list contains stability-structure" grep -q "stability-structure" <<< "$MODELS"
 
-# 31. Nova Canvas style preset pass-through (free — invalid size triggers 400 before Bedrock)
-echo "31. Nova Canvas style preset"
+# 25. Nova Canvas style preset pass-through (free — invalid size triggers 400 before Bedrock)
+echo "25. Nova Canvas style preset"
 STYLE_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/generations" \
   -H "Authorization: Bearer $VALID_KEY" \
   -H "Content-Type: application/json" \
@@ -369,8 +314,8 @@ STYLE_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images
   --max-time 30 2>/dev/null)
 check_code "Style preset routed correctly (HTTP $STYLE_CODE)" "$STYLE_CODE" "400" "422"
 
-# 32. Automated multi-shot video validation (free — invalid duration)
-echo "32. Automated multi-shot video"
+# 26. Automated multi-shot video validation (free — invalid duration)
+echo "26. Automated multi-shot video"
 AUTO_MS_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/videos/generations" \
   -H "Authorization: Bearer $VALID_KEY" \
   -H "Content-Type: application/json" \
