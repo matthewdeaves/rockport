@@ -64,7 +64,7 @@ tests/smoke-test.sh     # Post-deploy verification
 - Claude Code sends old model IDs (e.g. `claude-sonnet-4-5-20250929`); aliases in litellm-config.yaml map these to latest 4.6 Bedrock models
 - Bedrock inference profiles need `eu.` prefix for cross-region models; IAM policy must cover ALL EU regions (the inference profile can route to any) + us-west-2 + us-east-1 for image generation
 - The EC2 instance needs a public IP for outbound internet (SSM, Bedrock, pip) — the default VPC has no NAT gateway. The SG has zero inbound rules so the public IP is not directly reachable
-- Image generation models: Nova Canvas (us-east-1), Titan Image v2 (us-west-2), SD3.5 Large (us-west-2) — routed via per-model `aws_region_name` in litellm-config.yaml
+- Image generation models: Nova Canvas (us-east-1), Titan Image v2 (us-west-2), SD3.5 Large (us-west-2), Stable Image Ultra v1.1 (us-west-2), Stable Image Core v1.1 (us-west-2) — routed via per-model `aws_region_name` in litellm-config.yaml
 - Image dimensions via OpenAI `size` param: Nova Canvas requires divisible by 16 (320–4096); Titan v2 uses preset sizes (256–1408); SD3.5 Large ignores `size` (fixed 1024x1024, returns JPEG not PNG)
 - Image-to-image: use `/v1/images/generations` with `textToImageParams.conditionImage` (Nova Canvas) — NOT `/v1/images/edits` which LiteLLM 1.82.3 doesn't support for Bedrock models
 - Cloudflare blocks requests with Python's default `Python-urllib` user-agent (403) — OpenAI SDK and curl work fine
@@ -91,7 +91,7 @@ tests/smoke-test.sh     # Post-deploy verification
 - Video output stored in per-region S3 buckets (`rockport-video-{account}-us-east-1` for Nova Reel, `rockport-video-{account}-us-west-2` for Ray2) with 7-day lifecycle; presigned URLs expire after 1 hour. Bedrock async invoke requires same-region S3 bucket
 - Cloudflare Tunnel routes `/v1/videos/*` and `/v1/images/*` (except `/v1/images/generations`) to `http://localhost:4001`; all else to `:4000` — managed in `terraform/tunnel.tf`
 - Video sidecar MemoryMax is 256MB; LiteLLM reduced to 1280MB to fit on t3.small (2GB + 512MB swap)
-- Single-shot (one prompt, 6-120s) and multi-shot (2-20 per-shot prompts, 6s each) modes supported
+- Single-shot (one prompt, 6-120s), multi-shot (2-20 per-shot prompts, 6s each), and multi-shot-automated (single prompt, 12-120s, model determines shot breakdown) modes supported
 - Image-to-video: Nova Reel single-shot with image is fixed at 6 seconds (Bedrock TEXT_VIDEO constraint); multi-shot uses `MULTI_SHOT_MANUAL` taskType with `multiShotManualParams.shots`
 - Nova Reel image requirements: exactly 1280x720, PNG or JPEG, no transparent pixels (opaque alpha channels are automatically stripped), max 10MB, submitted as data URIs. Bedrock format: `{format: "png"|"jpeg", source: {bytes: "<raw-base64>"}}`
 - Ray2 image requirements: 512x512 to 4096x4096, PNG or JPEG, max 25MB, data URIs. Bedrock format: `keyframes.frame0/frame1` with `{type: "image", source: {type: "base64", media_type, data}}`. Supports start + optional end frame
@@ -100,7 +100,10 @@ tests/smoke-test.sh     # Post-deploy verification
 - Per-key concurrent job limit defaults to 3 (configurable via `VIDEO_MAX_CONCURRENT_JOBS` env var)
 - Video sidecar concurrent job limit enforced atomically via `pg_advisory_xact_lock(hashtext(api_key_hash))` — count and insert happen in a single transaction, preventing TOCTOU races. Different API keys use different lock IDs so they don't block each other
 - Bootstrap runs `prisma migrate deploy` before LiteLLM starts — avoids slow per-migration baseline resolve (~10s x 108 migrations) on first boot. Full bootstrap completes in ~3 minutes
-- Image service endpoints on sidecar (:4001): `/v1/images/variations`, `/v1/images/background-removal`, `/v1/images/outpaint` (Nova Canvas); `/v1/images/structure`, `/v1/images/sketch`, `/v1/images/style-transfer`, `/v1/images/remove-background`, `/v1/images/search-replace`, `/v1/images/upscale`, `/v1/images/style-guide` (Stability AI). All enforce auth, budgets, and block --claude-only keys
+- Image service endpoints on sidecar (:4001): `/v1/images/variations`, `/v1/images/background-removal`, `/v1/images/outpaint` (Nova Canvas); `/v1/images/structure`, `/v1/images/sketch`, `/v1/images/style-transfer`, `/v1/images/remove-background`, `/v1/images/search-replace`, `/v1/images/upscale`, `/v1/images/style-guide`, `/v1/images/inpaint`, `/v1/images/erase`, `/v1/images/creative-upscale`, `/v1/images/fast-upscale`, `/v1/images/search-recolor`, `/v1/images/stability-outpaint` (Stability AI). All enforce auth, budgets, and block --claude-only keys
+- New Stability AI endpoint costs: inpaint ($0.04), erase ($0.04), creative-upscale ($0.06), fast-upscale ($0.04), search-recolor ($0.04), stability-outpaint ($0.04)
+- Stable Image Ultra ($0.14/image) and Core ($0.04/image) available via `/v1/images/generations` with model names `stable-image-ultra` and `stable-image-core`
+- Nova Canvas style presets supported via `textToImageParams.style` field: 3D_ANIMATED_FAMILY_FILM, DESIGN_SKETCH, FLAT_VECTOR_ILLUSTRATION, GRAPHIC_NOVEL_ILLUSTRATION, MAXIMALISM, MIDCENTURY_RETRO, PHOTOREALISM, SOFT_DIGITAL_PAINTING
 - Nova Reel auto-resize: images not exactly 1280x720 are automatically resized. Five modes: `scale` (default), `crop-center`, `crop-top`, `crop-bottom`, `fit` (with pad). Controlled via `resize_mode` and `pad_color` params
 - Nova Reel prompt validation: rejects prompts with negation words (model interprets them positively), camera keywords before the final clause, and prompts shorter than 50 characters
 - `rockport.sh status` shows instance memory/CPU/uptime stats via SSM in addition to health checks

@@ -85,6 +85,20 @@ model_list:
     model_info:
       mode: image_generation
 
+  - model_name: stable-image-ultra
+    litellm_params:
+      model: bedrock/stability.stable-image-ultra-v1:1
+      aws_region_name: us-west-2
+    model_info:
+      mode: image_generation
+
+  - model_name: stable-image-core
+    litellm_params:
+      model: bedrock/stability.stable-image-core-v1:1
+      aws_region_name: us-west-2
+    model_info:
+      mode: image_generation
+
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
   database_url: os.environ/DATABASE_URL

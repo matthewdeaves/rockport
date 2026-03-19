@@ -17,7 +17,7 @@
 
 **Purpose**: Add cost entries and constants for all new models
 
-- [ ] T001 Add new model cost entries to STABILITY_COSTS dict in sidecar/image_api.py: stability-inpaint ($0.04), stability-erase ($0.04), stability-creative-upscale ($0.06), stability-fast-upscale ($0.04), stability-search-recolor ($0.04), stability-outpaint ($0.04)
+- [x] T001 Add new model cost entries to STABILITY_COSTS dict in sidecar/image_api.py: stability-inpaint ($0.04), stability-erase ($0.04), stability-creative-upscale ($0.06), stability-fast-upscale ($0.04), stability-search-recolor ($0.04), stability-outpaint ($0.04)
 
 ---
 
@@ -37,11 +37,11 @@
 
 ### Implementation for User Story 1
 
-- [ ] T002 [P] [US1] Add InpaintRequest Pydantic model in sidecar/image_api.py: image (str, required), prompt (str, 0-10000), mask (str|None), grow_mask (int, 0-20, default 5), negative_prompt (str|None, 10000), seed (int|None, 0-4294967294), output_format (str, default png), style_preset (str|None)
-- [ ] T003 [P] [US1] Add EraseRequest Pydantic model in sidecar/image_api.py: image (str, required), mask (str|None), grow_mask (int, 0-20, default 5), seed (int|None, 0-4294967294), output_format (str, default png)
-- [ ] T004 [US1] Implement POST /v1/images/inpaint endpoint in sidecar/image_api.py: authenticate, check budget, validate image + optional mask via _validate_stability_image, build payload with _build_stability_payload (pass mask and grow_mask as extra params), invoke us.stability.stable-image-inpaint-v1:0 via invoke_stability_model(bedrock_us_west_2, ...), log spend as stability-inpaint, return _make_image_response
-- [ ] T005 [US1] Implement POST /v1/images/erase endpoint in sidecar/image_api.py: authenticate, check budget, validate image + optional mask, build payload manually (image, mask, grow_mask, seed, output_format — NO prompt/negative_prompt/style_preset), invoke us.stability.stable-image-erase-object-v1:0, log spend as stability-erase, return _make_image_response
-- [ ] T006 [US1] Add smoke tests for inpaint and erase in tests/smoke-test.sh: POST with invalid image data to /v1/images/inpaint and /v1/images/erase, verify 400/422 response (confirms routing without API cost)
+- [x] T002 [P] [US1] Add InpaintRequest Pydantic model in sidecar/image_api.py: image (str, required), prompt (str, 0-10000), mask (str|None), grow_mask (int, 0-20, default 5), negative_prompt (str|None, 10000), seed (int|None, 0-4294967294), output_format (str, default png), style_preset (str|None)
+- [x] T003 [P] [US1] Add EraseRequest Pydantic model in sidecar/image_api.py: image (str, required), mask (str|None), grow_mask (int, 0-20, default 5), seed (int|None, 0-4294967294), output_format (str, default png)
+- [x] T004 [US1] Implement POST /v1/images/inpaint endpoint in sidecar/image_api.py: authenticate, check budget, validate image + optional mask via _validate_stability_image, build payload with _build_stability_payload (pass mask and grow_mask as extra params), invoke us.stability.stable-image-inpaint-v1:0 via invoke_stability_model(bedrock_us_west_2, ...), log spend as stability-inpaint, return _make_image_response
+- [x] T005 [US1] Implement POST /v1/images/erase endpoint in sidecar/image_api.py: authenticate, check budget, validate image + optional mask, build payload manually (image, mask, grow_mask, seed, output_format — NO prompt/negative_prompt/style_preset), invoke us.stability.stable-image-erase-object-v1:0, log spend as stability-erase, return _make_image_response
+- [x] T006 [US1] Add smoke tests for inpaint and erase in tests/smoke-test.sh: POST with invalid image data to /v1/images/inpaint and /v1/images/erase, verify 400/422 response (confirms routing without API cost)
 
 **Checkpoint**: Inpaint and erase endpoints functional and independently testable.
 
@@ -55,11 +55,11 @@
 
 ### Implementation for User Story 2
 
-- [ ] T007 [P] [US2] Add CreativeUpscaleRequest Pydantic model in sidecar/image_api.py: image (str, required), prompt (str, 0-10000), creativity (float, 0.1-0.5, default 0.3), negative_prompt (str|None, 10000), seed (int|None, 0-4294967294), output_format (str, default png), style_preset (str|None)
-- [ ] T008 [P] [US2] Add FastUpscaleRequest Pydantic model in sidecar/image_api.py: image (str, required), output_format (str, default png)
-- [ ] T009 [US2] Implement POST /v1/images/creative-upscale endpoint in sidecar/image_api.py: authenticate, check budget, validate image with custom max_pixels=1048576 (1MP limit), build payload via _build_stability_payload (pass creativity as extra param), invoke us.stability.stable-creative-upscale-v1:0, log spend as stability-creative-upscale
-- [ ] T010 [US2] Implement POST /v1/images/fast-upscale endpoint in sidecar/image_api.py: authenticate, check budget, validate image with custom constraints (32-1536px per side, 1024-1048576 total pixels), build payload manually (only image + output_format), invoke us.stability.stable-fast-upscale-v1:0, log spend as stability-fast-upscale
-- [ ] T011 [US2] Add smoke tests for creative-upscale and fast-upscale in tests/smoke-test.sh
+- [x] T007 [P] [US2] Add CreativeUpscaleRequest Pydantic model in sidecar/image_api.py: image (str, required), prompt (str, 0-10000), creativity (float, 0.1-0.5, default 0.3), negative_prompt (str|None, 10000), seed (int|None, 0-4294967294), output_format (str, default png), style_preset (str|None)
+- [x] T008 [P] [US2] Add FastUpscaleRequest Pydantic model in sidecar/image_api.py: image (str, required), output_format (str, default png)
+- [x] T009 [US2] Implement POST /v1/images/creative-upscale endpoint in sidecar/image_api.py: authenticate, check budget, validate image with custom max_pixels=1048576 (1MP limit), build payload via _build_stability_payload (pass creativity as extra param), invoke us.stability.stable-creative-upscale-v1:0, log spend as stability-creative-upscale
+- [x] T010 [US2] Implement POST /v1/images/fast-upscale endpoint in sidecar/image_api.py: authenticate, check budget, validate image with custom constraints (32-1536px per side, 1024-1048576 total pixels), build payload manually (only image + output_format), invoke us.stability.stable-fast-upscale-v1:0, log spend as stability-fast-upscale
+- [x] T011 [US2] Add smoke tests for creative-upscale and fast-upscale in tests/smoke-test.sh
 
 **Checkpoint**: Both upscale endpoints functional.
 
@@ -73,9 +73,9 @@
 
 ### Implementation for User Story 3
 
-- [ ] T012 [US3] Add SearchRecolorRequest Pydantic model in sidecar/image_api.py: image (str, required), prompt (str, 1-10000), select_prompt (str, 1-10000), negative_prompt (str|None, 10000), grow_mask (int, 0-20, default 5), seed (int|None, 0-4294967294), output_format (str, default png), style_preset (str|None)
-- [ ] T013 [US3] Implement POST /v1/images/search-recolor endpoint in sidecar/image_api.py: authenticate, check budget, validate image, build payload via _build_stability_payload (pass select_prompt and grow_mask as extra params), invoke us.stability.stable-image-search-recolor-v1:0, log spend as stability-search-recolor
-- [ ] T014 [US3] Add smoke test for search-recolor in tests/smoke-test.sh
+- [x] T012 [US3] Add SearchRecolorRequest Pydantic model in sidecar/image_api.py: image (str, required), prompt (str, 1-10000), select_prompt (str, 1-10000), negative_prompt (str|None, 10000), grow_mask (int, 0-20, default 5), seed (int|None, 0-4294967294), output_format (str, default png), style_preset (str|None)
+- [x] T013 [US3] Implement POST /v1/images/search-recolor endpoint in sidecar/image_api.py: authenticate, check budget, validate image, build payload via _build_stability_payload (pass select_prompt and grow_mask as extra params), invoke us.stability.stable-image-search-recolor-v1:0, log spend as stability-search-recolor
+- [x] T014 [US3] Add smoke test for search-recolor in tests/smoke-test.sh
 
 **Checkpoint**: Search & recolor functional.
 
@@ -89,9 +89,9 @@
 
 ### Implementation for User Story 4
 
-- [ ] T015 [US4] Add StabilityOutpaintRequest Pydantic model in sidecar/image_api.py: image (str, required), left (int, 0-2000, default 0), right (int, 0-2000, default 0), up (int, 0-2000, default 0), down (int, 0-2000, default 0), prompt (str|None, 10000), creativity (float, 0.1-1.0, default 0.5), seed (int|None, 0-4294967294), output_format (str, default png), style_preset (str|None). Add model validator: at least one of left/right/up/down must be > 0
-- [ ] T016 [US4] Implement POST /v1/images/stability-outpaint endpoint in sidecar/image_api.py: authenticate, check budget, validate image, build payload manually (image, left, right, up, down, prompt, creativity, seed, output_format, style_preset — NO negative_prompt), invoke us.stability.stable-outpaint-v1:0, log spend as stability-outpaint
-- [ ] T017 [US4] Add smoke test for stability-outpaint in tests/smoke-test.sh
+- [x] T015 [US4] Add StabilityOutpaintRequest Pydantic model in sidecar/image_api.py: image (str, required), left (int, 0-2000, default 0), right (int, 0-2000, default 0), up (int, 0-2000, default 0), down (int, 0-2000, default 0), prompt (str|None, 10000), creativity (float, 0.1-1.0, default 0.5), seed (int|None, 0-4294967294), output_format (str, default png), style_preset (str|None). Add model validator: at least one of left/right/up/down must be > 0
+- [x] T016 [US4] Implement POST /v1/images/stability-outpaint endpoint in sidecar/image_api.py: authenticate, check budget, validate image, build payload manually (image, left, right, up, down, prompt, creativity, seed, output_format, style_preset — NO negative_prompt), invoke us.stability.stable-outpaint-v1:0, log spend as stability-outpaint
+- [x] T017 [US4] Add smoke test for stability-outpaint in tests/smoke-test.sh
 
 **Checkpoint**: Stability outpaint functional alongside existing Nova Canvas outpaint.
 
@@ -105,9 +105,9 @@
 
 ### Implementation for User Story 5
 
-- [ ] T018 [P] [US5] Add stable-image-ultra model entry in config/litellm-config.yaml: model_name "stable-image-ultra", litellm_params model "bedrock/stability.stable-image-ultra-v1:1", aws_region_name us-west-2, model_info mode image_generation
-- [ ] T019 [P] [US5] Add stable-image-core model entry in config/litellm-config.yaml: model_name "stable-image-core", litellm_params model "bedrock/stability.stable-image-core-v1:1", aws_region_name us-west-2, model_info mode image_generation
-- [ ] T020 [US5] Add smoke tests for stable-image-ultra and stable-image-core in tests/smoke-test.sh: POST to /v1/images/generations with each model name and minimal prompt, verify non-error response code
+- [x] T018 [P] [US5] Add stable-image-ultra model entry in config/litellm-config.yaml: model_name "stable-image-ultra", litellm_params model "bedrock/stability.stable-image-ultra-v1:1", aws_region_name us-west-2, model_info mode image_generation
+- [x] T019 [P] [US5] Add stable-image-core model entry in config/litellm-config.yaml: model_name "stable-image-core", litellm_params model "bedrock/stability.stable-image-core-v1:1", aws_region_name us-west-2, model_info mode image_generation
+- [x] T020 [US5] Add smoke tests for stable-image-ultra and stable-image-core in tests/smoke-test.sh: POST to /v1/images/generations with each model name and minimal prompt, verify non-error response code
 
 **Checkpoint**: Ultra and Core accessible through standard image generation endpoint.
 
@@ -121,8 +121,8 @@
 
 ### Implementation for User Story 6
 
-- [ ] T021 [US6] Document Nova Canvas style preset pass-through in README.md: list 8 valid preset values (3D_ANIMATED_FAMILY_FILM, DESIGN_SKETCH, FLAT_VECTOR_ILLUSTRATION, GRAPHIC_NOVEL_ILLUSTRATION, MAXIMALISM, MIDCENTURY_RETRO, PHOTOREALISM, SOFT_DIGITAL_PAINTING), show example request body with textToImageParams.style field
-- [ ] T022 [US6] Add smoke test for Nova Canvas style preset pass-through in tests/smoke-test.sh: POST to /v1/images/generations with model nova-canvas and textToImageParams.style, verify request is accepted
+- [x] T021 [US6] Document Nova Canvas style preset pass-through in README.md: list 8 valid preset values (3D_ANIMATED_FAMILY_FILM, DESIGN_SKETCH, FLAT_VECTOR_ILLUSTRATION, GRAPHIC_NOVEL_ILLUSTRATION, MAXIMALISM, MIDCENTURY_RETRO, PHOTOREALISM, SOFT_DIGITAL_PAINTING), show example request body with textToImageParams.style field
+- [x] T022 [US6] Add smoke test for Nova Canvas style preset pass-through in tests/smoke-test.sh: POST to /v1/images/generations with model nova-canvas and textToImageParams.style, verify request is accepted
 
 **Checkpoint**: Style presets documented and verified.
 
@@ -136,9 +136,9 @@
 
 ### Implementation for User Story 7
 
-- [ ] T023 [US7] Add MULTI_SHOT_AUTOMATED mode handling in sidecar/video_api.py: accept mode "multi-shot-automated" in video generation request, validate prompt length (up to 4000 chars), build Bedrock request with taskType "MULTI_SHOT_AUTOMATED" and multiShotAutomatedParams containing text field, use same async invoke pattern as existing multi-shot manual
-- [ ] T024 [US7] Add duration parameter for automated multi-shot in sidecar/video_api.py: accept duration_seconds (12-120) for MULTI_SHOT_AUTOMATED mode, pass to durationSeconds in Bedrock request
-- [ ] T025 [US7] Add smoke test for automated multi-shot in tests/smoke-test.sh: POST video generation request with mode "multi-shot-automated" and invalid/short prompt, verify 400/422 response
+- [x] T023 [US7] Add MULTI_SHOT_AUTOMATED mode handling in sidecar/video_api.py: accept mode "multi-shot-automated" in video generation request, validate prompt length (up to 4000 chars), build Bedrock request with taskType "MULTI_SHOT_AUTOMATED" and multiShotAutomatedParams containing text field, use same async invoke pattern as existing multi-shot manual
+- [x] T024 [US7] Add duration parameter for automated multi-shot in sidecar/video_api.py: accept duration_seconds (12-120) for MULTI_SHOT_AUTOMATED mode, pass to durationSeconds in Bedrock request
+- [x] T025 [US7] Add smoke test for automated multi-shot in tests/smoke-test.sh: POST video generation request with mode "multi-shot-automated" and invalid/short prompt, verify 400/422 response
 
 **Checkpoint**: Automated multi-shot video generation functional.
 
@@ -152,11 +152,11 @@
 
 ### Implementation for User Story 8
 
-- [ ] T026 [P] [US8] Add aspect_ratio field to StructureRequest in sidecar/image_api.py: optional str, validated against STABILITY_ASPECT_RATIOS, passed as extra_param to _build_stability_payload
-- [ ] T027 [P] [US8] Add aspect_ratio field to SketchRequest in sidecar/image_api.py: same pattern as Structure
-- [ ] T028 [P] [US8] Add aspect_ratio field to SearchReplaceRequest in sidecar/image_api.py: same pattern as Structure
-- [ ] T029 [P] [US8] Add negative_text field to ImageVariationRequest in sidecar/image_api.py: optional str, max_length=1024, pass as negativeText in imageVariationParams Bedrock payload
-- [ ] T030 [US8] Fix Nova Canvas OutpaintRequest validation in sidecar/image_api.py: add explicit quality validation (must be "standard" or "premium"), add max_length=1024 on mask_prompt field, add optional negative_text field passed as negativeText in outPaintingParams
+- [x] T026 [P] [US8] Add aspect_ratio field to StructureRequest in sidecar/image_api.py: optional str, validated against STABILITY_ASPECT_RATIOS, passed as extra_param to _build_stability_payload
+- [x] T027 [P] [US8] Add aspect_ratio field to SketchRequest in sidecar/image_api.py: same pattern as Structure
+- [x] T028 [P] [US8] Add aspect_ratio field to SearchReplaceRequest in sidecar/image_api.py: same pattern as Structure
+- [x] T029 [P] [US8] Add negative_text field to ImageVariationRequest in sidecar/image_api.py: optional str, max_length=1024, pass as negativeText in imageVariationParams Bedrock payload
+- [x] T030 [US8] Fix Nova Canvas OutpaintRequest validation in sidecar/image_api.py: add explicit quality validation (must be "standard" or "premium"), add max_length=1024 on mask_prompt field, add optional negative_text field passed as negativeText in outPaintingParams
 
 **Checkpoint**: All existing endpoints expose full Bedrock API parameter surface.
 
@@ -166,10 +166,10 @@
 
 **Purpose**: Documentation, CLAUDE.md updates, final verification
 
-- [ ] T031 Update CLAUDE.md with new endpoint documentation: list all new endpoints, model IDs, parameters, and costs
-- [ ] T032 Update README.md with new Stability AI endpoint examples and model documentation
-- [ ] T033 Run full smoke test suite (tests/smoke-test.sh) and verify all new tests pass
-- [ ] T034 Deploy to live instance via `rockport.sh deploy` or `config push` and verify endpoints work end-to-end
+- [x] T031 Update CLAUDE.md with new endpoint documentation: list all new endpoints, model IDs, parameters, and costs
+- [x] T032 Update README.md with new Stability AI endpoint examples and model documentation
+- [x] T033 Run full smoke test suite (tests/smoke-test.sh) and verify all new tests pass
+- [x] T034 Deploy to live instance via `rockport.sh deploy` or `config push` and verify endpoints work end-to-end
 
 ---
 

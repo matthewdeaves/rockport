@@ -188,6 +188,7 @@ class ShotRequest(BaseModel):
 class VideoGenerationRequest(BaseModel):
     model: str | None = None
     prompt: str | None = Field(default=None, min_length=1)
+    mode: str | None = None
     duration: int | None = None
     image: str | None = Field(default=None, max_length=35_000_000)
     end_image: str | None = Field(default=None, max_length=35_000_000)
@@ -403,9 +404,10 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
         })
 
     # --- Prompt length validation (per-model limits) ---
+    # Skip for multi-shot-automated which has its own 4000-char limit checked later
     max_prompt = model["max_prompt_length"]
     max_shot_prompt = model.get("max_shot_prompt_length")
-    if req.prompt and max_prompt and len(req.prompt) > max_prompt:
+    if req.prompt and max_prompt and len(req.prompt) > max_prompt and req.mode != "multi-shot-automated":
         raise HTTPException(status_code=400, detail={
             "error": {"type": "validation_error",
                       "message": f"Prompt is {len(req.prompt)} characters; {model_name} allows a maximum of {max_prompt}."}
@@ -434,8 +436,31 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
     resize_applied_list = []
     resize_applied_single = None
 
+    # --- Validate mode field ---
+    if req.mode and req.mode not in ("single-shot", "multi-shot", "multi-shot-automated"):
+        raise HTTPException(status_code=400, detail={
+            "error": {"type": "validation_error",
+                      "message": f"Invalid mode '{req.mode}'. Must be one of: single-shot, multi-shot, multi-shot-automated"}
+        })
+
     # --- Determine mode and validate ---
-    if req.prompt and req.shots:
+    if req.mode == "multi-shot-automated":
+        if not req.prompt:
+            raise HTTPException(status_code=400, detail={
+                "error": {"type": "validation_error",
+                          "message": "multi-shot-automated mode requires a 'prompt' field."}
+            })
+        if req.shots:
+            raise HTTPException(status_code=400, detail={
+                "error": {"type": "validation_error",
+                          "message": "Cannot provide 'shots' with multi-shot-automated mode. Use 'prompt' only."}
+            })
+        if not model["supports_multi_shot"]:
+            raise HTTPException(status_code=400, detail={
+                "error": {"type": "validation_error",
+                          "message": f"multi-shot-automated mode is not supported by {model_name}. Use nova-reel."}
+            })
+    elif req.prompt and req.shots:
         raise HTTPException(status_code=400, detail={
             "error": {"type": "validation_error",
                       "message": "Cannot provide both 'prompt' and 'shots'. Use one mode."}
@@ -446,8 +471,33 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
                       "message": "Must provide either 'prompt' (single-shot) or 'shots' (multi-shot)."}
         })
 
+    # --- Multi-shot automated ---
+    if req.mode == "multi-shot-automated":
+        mode = "multi_shot_automated"
+        # Automated multi-shot: prompt up to 4000 chars, duration 12-120s
+        if len(req.prompt) > 4000:
+            raise HTTPException(status_code=400, detail={
+                "error": {"type": "validation_error",
+                          "message": f"Prompt is {len(req.prompt)} characters; multi-shot-automated allows a maximum of 4000."}
+            })
+        duration = req.duration or 12
+        if duration < 12 or duration > 120:
+            raise HTTPException(status_code=400, detail={
+                "error": {"type": "validation_error",
+                          "message": f"Duration must be 12-120 seconds for multi-shot-automated (got {duration})."}
+            })
+        if model["duration_must_be_multiple_of"] and duration % model["duration_must_be_multiple_of"] != 0:
+            mult = model["duration_must_be_multiple_of"]
+            raise HTTPException(status_code=400, detail={
+                "error": {"type": "validation_error",
+                          "message": f"Duration must be a multiple of {mult} for {model_name} (got {duration})."}
+            })
+        num_shots = 0
+        prompt_store = req.prompt
+        resolution = None
+
     # --- Multi-shot validation ---
-    if req.shots:
+    elif req.shots:
         if not model["supports_multi_shot"]:
             raise HTTPException(status_code=400, detail={
                 "error": {"type": "validation_error",
@@ -563,7 +613,9 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
     bucket = VIDEO_BUCKETS.get(region, "")
     s3_output_uri = f"s3://{bucket}/jobs/{job_id}/"
 
-    if model_name == "nova-reel":
+    if model_name == "nova-reel" and mode == "multi_shot_automated":
+        model_input = _build_nova_reel_automated_payload(req.prompt, duration, req.seed)
+    elif model_name == "nova-reel":
         model_input = _build_nova_reel_payload(req, mode, duration, parsed_images if req.shots else {},
                                                 parsed_image if not req.shots else None)
     elif model_name == "luma-ray2":
@@ -657,6 +709,22 @@ def _build_nova_reel_payload(req, mode, duration, parsed_images, parsed_image):
     if req.seed is not None:
         model_input["videoGenerationConfig"]["seed"] = req.seed
 
+    return model_input
+
+
+def _build_nova_reel_automated_payload(prompt: str, duration: int, seed: int | None) -> dict:
+    """Build Nova Reel MULTI_SHOT_AUTOMATED modelInput payload."""
+    model_input = {
+        "taskType": "MULTI_SHOT_AUTOMATED",
+        "multiShotAutomatedParams": {"text": prompt},
+        "videoGenerationConfig": {
+            "fps": 24,
+            "durationSeconds": duration,
+            "dimension": "1280x720",
+        },
+    }
+    if seed is not None:
+        model_input["videoGenerationConfig"]["seed"] = seed
     return model_input
 
 
