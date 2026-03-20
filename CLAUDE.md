@@ -9,9 +9,13 @@ terraform/              # All infrastructure (EC2, IAM, SG, tunnel, snapshots, m
 terraform/.build/       # Lambda zip artifacts (gitignored)
 terraform/lambda/       # Lambda function source code (idle_shutdown.py)
 terraform/moved.tf      # Moved blocks template for safe resource renames
+terraform/tunnel.tf     # Cloudflare Tunnel ingress rules (path→port routing)
+terraform/waf.tf        # Cloudflare WAF path allowlist
 terraform/access.tf     # Cloudflare Access application + service token (edge pre-auth)
 terraform/s3.tf         # S3 buckets for artifacts + video output (us-east-1 + us-west-2)
 terraform/cloudtrail.tf # CloudTrail management event logging (S3 bucket + trail)
+terraform/deployer-policies/ # 3 IAM policy JSONs (compute, iam-ssm, monitoring-storage)
+terraform/rockport-admin-policy.json # Bootstrap IAM policy for admin user
 config/                 # LiteLLM config, systemd units, PostgreSQL tuning
   litellm-config.yaml   #   Model definitions, budget, rate limits
   litellm.service       #   Systemd unit for LiteLLM proxy
@@ -133,4 +137,4 @@ tests/smoke-test.sh     # Post-deploy verification
 - CloudTrail — management event audit logging (eu-west-2)
 
 ## Recent Changes
-- 011-security-audit-fixes: CRIT-1 race condition fix (reserve-before-invoke), IAM model scoping, body size limits, cloudflared/artifact checksums, error sanitization, CloudTrail, pip hash pinning, SSM/document scoping, claude-only video enforcement, state bucket DenyNonSSL
+- Security audit fixes: CRIT-1 race condition fix (reserve-before-invoke), IAM model scoping, body size limits, cloudflared/artifact checksums, error sanitization, CloudTrail, pip hash pinning, SSM/document scoping, claude-only video enforcement, state bucket DenyNonSSL

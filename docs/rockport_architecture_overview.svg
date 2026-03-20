@@ -230,8 +230,9 @@
   <rect x="1596" y="434" width="168" height="40" rx="3" fill="#0f2018" stroke="#3fb950" stroke-width="1"/>
   <text x="1680" y="450" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="bold">stable-image-core</text>
   <text x="1680" y="464" text-anchor="middle" fill="#8b949e" font-size="8">image generation</text>
-  <rect x="1596" y="480" width="168" height="32" rx="3" fill="#0f2018" stroke="#58a6ff" stroke-width="1.5"/>
-  <text x="1680" y="500" text-anchor="middle" fill="#58a6ff" font-size="9" font-weight="bold">luma-ray2</text>
+  <rect x="1596" y="480" width="168" height="40" rx="3" fill="#0f2018" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="1680" y="496" text-anchor="middle" fill="#58a6ff" font-size="9" font-weight="bold">luma-ray2</text>
+  <text x="1680" y="510" text-anchor="middle" fill="#8b949e" font-size="8">video gen (async → S3)</text>
   <rect x="1396" y="400" width="170" height="44" rx="3" fill="#0f2018" stroke="#3fb950" stroke-width="1"/>
   <text x="1481" y="418" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="bold">stability-* (13)</text>
   <text x="1481" y="432" text-anchor="middle" fill="#8b949e" font-size="8">image edit (us-west-2)</text>
