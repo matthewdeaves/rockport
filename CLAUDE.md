@@ -11,6 +11,7 @@ terraform/lambda/       # Lambda function source code (idle_shutdown.py)
 terraform/moved.tf      # Moved blocks template for safe resource renames
 terraform/access.tf     # Cloudflare Access application + service token (edge pre-auth)
 terraform/s3.tf         # S3 buckets for video output (us-east-1 + us-west-2)
+terraform/cloudtrail.tf # CloudTrail management event logging (S3 bucket + trail)
 config/                 # LiteLLM config, systemd units, PostgreSQL tuning
   litellm-config.yaml   #   Model definitions, budget, rate limits
   litellm.service       #   Systemd unit for LiteLLM proxy
@@ -24,6 +25,7 @@ sidecar/                # Video + image services sidecar (FastAPI on port 4001)
   prompt_validation.py  #   Nova Reel prompt validation (negation, camera placement, length)
   db.py                 #   PostgreSQL job tracking, spend logging
   requirements.txt      #   Python dependencies for sidecar
+  requirements.lock     #   Hashed lock file (pip-compile --generate-hashes)
 scripts/bootstrap.sh    # EC2 user_data — installs PostgreSQL, LiteLLM, cloudflared, video sidecar
 scripts/rockport.sh     # Admin CLI (init, keys, status, spend, logs, deploy, start/stop)
 scripts/setup.sh        # Install dev tools (AWS CLI, Terraform, jq, shellcheck, trivy, etc.)
@@ -102,6 +104,17 @@ tests/smoke-test.sh     # Post-deploy verification
 - Luma Ray2 Marketplace subscription must be activated manually before first use (same pattern as SD3.5 Large)
 - Per-key concurrent job limit defaults to 3 (configurable via `VIDEO_MAX_CONCURRENT_JOBS` env var)
 - Video sidecar concurrent job limit enforced atomically via `pg_advisory_xact_lock(hashtext(api_key_hash))` — count and insert happen in a single transaction, preventing TOCTOU races. Different API keys use different lock IDs so they don't block each other
+- Video job status flow: `pending` (DB slot reserved, Bedrock not yet called) → `in_progress` (Bedrock invocation started, ARN set) → `completed`/`failed`. The DB slot is reserved BEFORE calling Bedrock to prevent ghost jobs
+- Sidecar body size limit: 40MB max request body enforced via raw ASGI middleware (HTTP 413). Protects 256MB MemoryMax from oversized payloads
+- CloudTrail: management events logged to `rockport-cloudtrail-{account}` S3 bucket with 90-day lifecycle, DenyNonSSL bucket policy. Defined in `terraform/cloudtrail.tf`
+- Error sanitization: all Bedrock errors in video_api.py and image_api.py are logged server-side with reference UUIDs; clients receive generic messages with reference IDs for correlation
+- Video endpoints enforce --claude-only key restriction (HTTP 403), consistent with image API behavior
+- Sidecar pip dependencies installed with `--require-hashes` from `sidecar/requirements.lock` for supply chain integrity
+- Cloudflared binary verified via pinned SHA256 hash during bootstrap (`cloudflared_sha256` variable — cloudflared releases don't include per-file checksum files)
+- Deploy artifacts verified via SHA256 checksum in bootstrap (generated during `rockport.sh deploy`/`config push`)
+- Instance IAM: Bedrock `foundation-model/*` wildcard replaced with specific model family patterns; SSM PutParameter scoped to `/rockport/db-password` only
+- Deployer IAM: SSM documents scoped to `AWS-RunShellScript` and `AWS-StartInteractiveCommand` only
+- State bucket gets DenyNonSSL policy on creation via `rockport.sh init`
 - Bootstrap runs `prisma migrate deploy` before LiteLLM starts — avoids slow per-migration baseline resolve (~10s x 108 migrations) on first boot. Full bootstrap completes in ~3 minutes
 - Nova Canvas sidecar endpoints on (:4001): `/v1/images/variations`, `/v1/images/background-removal`, `/v1/images/outpaint`. All enforce auth, budgets, and block --claude-only keys
 - Stability AI image edit operations use LiteLLM's native `/v1/images/edits` endpoint with 13 `stability-*` model names (structure, sketch, style-transfer, remove-background, search-replace, upscale, style-guide, inpaint, erase, creative-upscale, fast-upscale, search-recolor, outpaint). Costs: $0.04/image for most, $0.06 for style-transfer, upscale, creative-upscale. All in us-west-2 via `aws_region_name` in litellm-config.yaml
@@ -117,3 +130,7 @@ tests/smoke-test.sh     # Post-deploy verification
 - PostgreSQL 15 — LiteLLM keys/spend + video job tracking (`rockport_video_jobs` table with `model` column)
 - S3 — Terraform state (eu-west-2) + video output (us-east-1 for Nova Reel, us-west-2 for Ray2, both 7-day lifecycle)
 - Bash — admin CLI, bootstrap, smoke tests
+- CloudTrail — management event audit logging (eu-west-2)
+
+## Recent Changes
+- 011-security-audit-fixes: CRIT-1 race condition fix (reserve-before-invoke), IAM model scoping, body size limits, cloudflared/artifact checksums, error sanitization, CloudTrail, pip hash pinning, SSM/document scoping, claude-only video enforcement, state bucket DenyNonSSL

@@ -81,6 +81,12 @@ variable "cloudflared_version" {
   default     = "2026.3.0"
 }
 
+variable "cloudflared_sha256" {
+  description = "SHA256 hash of cloudflared-linux-amd64 binary (update when changing cloudflared_version)"
+  type        = string
+  default     = "4a9e50e6d6d798e90fcd01933151a90bf7edd99a0a55c28ad18f2e16263a5c30"
+}
+
 variable "bedrock_daily_budget" {
   description = "Daily Bedrock spend limit in USD"
   type        = number

@@ -122,7 +122,10 @@
         "ssm:SendCommand",
         "ssm:StartSession"
       ],
-      "Resource": "arn:aws:ssm:*::document/*"
+      "Resource": [
+        "arn:aws:ssm:*::document/AWS-RunShellScript",
+        "arn:aws:ssm:*::document/AWS-StartInteractiveCommand"
+      ]
     },
     {
       "Sid": "SSMSessionManage",

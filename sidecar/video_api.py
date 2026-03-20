@@ -118,6 +118,73 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Rockport Video API", docs_url=None, redoc_url=None, lifespan=lifespan)
+
+# --- Body size limit middleware (ASGI) ---
+
+MAX_BODY_SIZE = 40 * 1024 * 1024  # 40MB
+
+
+class BodySizeLimitMiddleware:
+    """Raw ASGI middleware that rejects request bodies over MAX_BODY_SIZE.
+
+    Checks Content-Length header first (rejects without reading body).
+    For chunked transfers (no Content-Length), counts bytes as they stream.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        # Check Content-Length header
+        headers = dict(scope.get("headers", []))
+        content_length = headers.get(b"content-length")
+        if content_length is not None:
+            try:
+                if int(content_length) > MAX_BODY_SIZE:
+                    await self._send_413(send)
+                    return
+            except ValueError:
+                pass
+
+        # Wrap receive to count bytes for chunked transfers
+        bytes_received = 0
+
+        async def counting_receive():
+            nonlocal bytes_received
+            message = await receive()
+            if message.get("type") == "http.request":
+                body = message.get("body", b"")
+                bytes_received += len(body)
+                if bytes_received > MAX_BODY_SIZE:
+                    raise HTTPException(status_code=413, detail={
+                        "error": {"type": "request_too_large",
+                                  "message": f"Request body exceeds {MAX_BODY_SIZE // (1024*1024)}MB limit"}
+                    })
+            return message
+
+        # If Content-Length was present and within limit, pass through without wrapping
+        if content_length is not None:
+            await self.app(scope, receive, send)
+        else:
+            await self.app(scope, counting_receive, send)
+
+    async def _send_413(self, send):
+        body = json.dumps({
+            "detail": {"error": {"type": "request_too_large",
+                                 "message": f"Request body exceeds {MAX_BODY_SIZE // (1024*1024)}MB limit"}}
+        }).encode()
+        await send({"type": "http.response.start", "status": 413,
+                     "headers": [[b"content-type", b"application/json"],
+                                 [b"content-length", str(len(body)).encode()]]})
+        await send({"type": "http.response.body", "body": body})
+
+
+app.add_middleware(BodySizeLimitMiddleware)
+
 app.include_router(image_api.router)
 
 logger = logging.getLogger("rockport-video")
@@ -193,7 +260,7 @@ class VideoGenerationRequest(BaseModel):
     image: str | None = Field(default=None, max_length=35_000_000)
     end_image: str | None = Field(default=None, max_length=35_000_000)
     shots: list[ShotRequest] | None = None
-    seed: int | None = None
+    seed: int | None = Field(default=None, ge=0, le=2_147_483_646)
     aspect_ratio: str | None = None
     resolution: str | None = None
     loop: bool | None = None
@@ -378,6 +445,15 @@ def health():
 @app.post("/v1/videos/generations", status_code=202)
 def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)):
     """Submit a video generation job (single-shot or multi-shot)."""
+    if is_claude_only_key(auth):
+        raise HTTPException(status_code=403, detail={
+            "error": {
+                "type": "forbidden",
+                "message": "This endpoint requires an unrestricted API key. "
+                           "Keys created with --claude-only cannot access video generation services.",
+            }
+        })
+
     key_hash = auth["key_hash"]
 
     # --- Resolve model ---
@@ -610,8 +686,40 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
                 }
             })
 
-    # --- Build Bedrock request ---
+    # --- Reserve DB slot BEFORE calling Bedrock (CRIT-1 fix) ---
     job_id = uuid.uuid4()
+
+    try:
+        job = db.insert_job_if_under_limit(
+            job_id=job_id,
+            api_key_hash=key_hash,
+            max_concurrent=MAX_CONCURRENT_JOBS,
+            model=model_name,
+            mode=mode,
+            prompt=prompt_store,
+            num_shots=num_shots,
+            duration_seconds=duration,
+            cost=estimated_cost,
+            resolution=resolution,
+        )
+    except Exception as exc:
+        logger.error("DB slot reservation failed: %s: %s", type(exc).__name__, exc)
+        raise HTTPException(status_code=503, detail={
+            "error": {"type": "service_unavailable",
+                      "message": "Database unavailable. Please retry."}
+        })
+
+    if job is None:
+        raise HTTPException(status_code=429, detail={
+            "error": {
+                "type": "concurrent_limit",
+                "message": f"Concurrent job limit reached ({MAX_CONCURRENT_JOBS}/{MAX_CONCURRENT_JOBS} in progress)",
+                "in_progress": MAX_CONCURRENT_JOBS,
+                "limit": MAX_CONCURRENT_JOBS,
+            }
+        })
+
+    # --- Build Bedrock request ---
     region = model["region"]
     bucket = VIDEO_BUCKETS.get(region, "")
     s3_output_uri = f"s3://{bucket}/jobs/{job_id}/"
@@ -625,7 +733,7 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
         model_input = _build_ray2_payload(req.prompt, duration, aspect_ratio, resolution,
                                            req.loop, parsed_image, parsed_end_image)
 
-    # --- Call Bedrock ---
+    # --- Call Bedrock (slot already reserved) ---
     client = bedrock_clients[region]
     try:
         response = client.start_async_invoke(
@@ -634,38 +742,18 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
             outputDataConfig={"s3OutputDataConfig": {"s3Uri": s3_output_uri}},
         )
     except ClientError as exc:
+        error_ref = str(uuid.uuid4())[:8]
         error_msg = exc.response.get("Error", {}).get("Message", str(exc)) if hasattr(exc, "response") else str(exc)
-        logger.error("Bedrock start_async_invoke failed: %s", error_msg)
+        logger.error("Bedrock start_async_invoke failed [ref=%s]: %s", error_ref, error_msg)
+        db.mark_job_failed(job_id, f"Bedrock invocation failed (ref: {error_ref})")
         raise HTTPException(status_code=502, detail={
             "error": {"type": "upstream_error",
-                      "message": f"Video generation request failed: {error_msg}"}
+                      "message": f"Video generation request failed. Reference: {error_ref}"}
         })
 
     invocation_arn = response["invocationArn"]
-
-    # --- Atomic concurrent job limit check + insert ---
-    job = db.insert_job_if_under_limit(
-        job_id=job_id,
-        api_key_hash=key_hash,
-        max_concurrent=MAX_CONCURRENT_JOBS,
-        invocation_arn=invocation_arn,
-        model=model_name,
-        mode=mode,
-        prompt=prompt_store,
-        num_shots=num_shots,
-        duration_seconds=duration,
-        cost=estimated_cost,
-        resolution=resolution,
-    )
-    if job is None:
-        raise HTTPException(status_code=429, detail={
-            "error": {
-                "type": "concurrent_limit",
-                "message": f"Concurrent job limit reached ({MAX_CONCURRENT_JOBS}/{MAX_CONCURRENT_JOBS} in progress)",
-                "in_progress": MAX_CONCURRENT_JOBS,
-                "limit": MAX_CONCURRENT_JOBS,
-            }
-        })
+    db.update_job_arn(job_id, invocation_arn)
+    job["status"] = "in_progress"
 
     # Add resize metadata to response
     if mode == "multi_shot":
@@ -770,6 +858,15 @@ def _build_ray2_payload(prompt, duration, aspect_ratio, resolution, loop, parsed
 @app.get("/v1/videos/generations/{job_id}")
 def get_video_status(job_id: str, auth: dict = Depends(authenticate)):
     """Poll job status. Always re-checks Bedrock for in-progress jobs (restart recovery)."""
+    if is_claude_only_key(auth):
+        raise HTTPException(status_code=403, detail={
+            "error": {
+                "type": "forbidden",
+                "message": "This endpoint requires an unrestricted API key. "
+                           "Keys created with --claude-only cannot access video generation services.",
+            }
+        })
+
     job = db.get_job(job_id, auth["key_hash"])
     if not job:
         raise HTTPException(status_code=404, detail={
@@ -867,7 +964,15 @@ def list_videos(
     status: str | None = Query(default=None),
 ):
     """List recent jobs for the authenticated key."""
-    valid_statuses = {"in_progress", "completed", "failed", "expired"}
+    if is_claude_only_key(auth):
+        raise HTTPException(status_code=403, detail={
+            "error": {
+                "type": "forbidden",
+                "message": "This endpoint requires an unrestricted API key. "
+                           "Keys created with --claude-only cannot access video generation services.",
+            }
+        })
+    valid_statuses = {"pending", "in_progress", "completed", "failed", "expired"}
     if status and status not in valid_statuses:
         raise HTTPException(status_code=400, detail={
             "error": {"type": "validation_error",

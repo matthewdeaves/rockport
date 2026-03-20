@@ -1,5 +1,5 @@
-# These are the only NEW dependencies — fastapi, uvicorn, boto3, pydantic
-# are already installed as LiteLLM dependencies on the EC2 instance.
-psycopg2-binary>=2.9
-Pillow>=10.0
-httpx>=0.27
+# Sidecar dependencies — exact pins for reproducibility.
+# Run `pip-compile --generate-hashes requirements.txt -o requirements.lock` to regenerate lock file.
+psycopg2-binary==2.9.10
+Pillow==11.1.0
+httpx==0.28.1
