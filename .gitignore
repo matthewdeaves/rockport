@@ -42,3 +42,10 @@ config/claude-code-settings-*.json
 
 # Secrets
 .env*
+
+# Private keys and certificates
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
