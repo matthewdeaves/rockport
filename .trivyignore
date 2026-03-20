@@ -21,3 +21,7 @@ AVD-AWS-0089
 # S3 versioning disabled on video buckets — write-once ephemeral output auto-deleted after 7 days,
 # versioning would double storage costs for throwaway data
 AVD-AWS-0090
+
+# CloudTrail KMS — default SSE-S3 encryption sufficient for management event audit logs,
+# CMK adds cost and IAM complexity with no practical security benefit for this use case
+AVD-AWS-0015
