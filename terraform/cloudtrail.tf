@@ -2,7 +2,8 @@
 # Logs to a dedicated S3 bucket in eu-west-2 with 90-day retention.
 
 resource "aws_s3_bucket" "cloudtrail" {
-  bucket = "rockport-cloudtrail-${data.aws_caller_identity.current.account_id}"
+  bucket        = "rockport-cloudtrail-${data.aws_caller_identity.current.account_id}"
+  force_destroy = true
 
   tags = merge(local.common_tags, {
     Name = "rockport-cloudtrail"
