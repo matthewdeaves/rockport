@@ -421,16 +421,19 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
                 })
 
     # --- Prompt content validation (Nova Reel only) ---
+    prompt_warnings: list[dict] = []
     if model_name == "nova-reel":
         if req.prompt:
-            error = prompt_validation.validate_nova_reel_prompt(req.prompt)
+            error, warnings = prompt_validation.validate_nova_reel_prompt(req.prompt)
             if error:
                 raise HTTPException(status_code=400, detail=error)
+            prompt_warnings.extend(warnings)
         if req.shots:
             for i, shot in enumerate(req.shots):
-                error = prompt_validation.validate_nova_reel_prompt(shot.prompt, shot_number=i + 1)
+                error, warnings = prompt_validation.validate_nova_reel_prompt(shot.prompt, shot_number=i + 1)
                 if error:
                     raise HTTPException(status_code=400, detail=error)
+                prompt_warnings.extend(warnings)
 
     # Track resize metadata for response
     resize_applied_list = []
@@ -669,6 +672,9 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
         job["resize_applied"] = resize_applied_list if any(r for r in resize_applied_list) else None
     else:
         job["resize_applied"] = resize_applied_single
+
+    if prompt_warnings:
+        job["warnings"] = prompt_warnings
 
     return job
 

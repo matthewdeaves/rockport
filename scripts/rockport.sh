@@ -599,7 +599,10 @@ cmd_status() {
   response=$(api_call GET "/health") || { echo "Could not reach health endpoint."; return 1; }
 
   # Image model names that fail LiteLLM's built-in health probe (it sends max_tokens which they reject)
-  local image_model_pattern="nova-canvas|sd3-5-large|titan-image"
+  local image_model_pattern="nova-canvas|sd3-5-large|titan-image|stable-image-ultra|stable-image-core"
+  # image_edit models have no health check handler in LiteLLM (PR #21524 pending)
+  # These use us.stability.* cross-region inference profile IDs
+  local image_edit_pattern="us\.stability\.stable-image-control|us\.stability\.stable-style-transfer|us\.stability\.stable-image-remove|us\.stability\.stable-image-search|us\.stability\.stable-conservative|us\.stability\.stable-image-style|us\.stability\.stable-image-inpaint|us\.stability\.stable-image-erase|us\.stability\.stable-creative|us\.stability\.stable-fast|us\.stability\.stable-outpaint"
 
   # Build CF Access headers for direct curl calls
   local cf_status_args=()
@@ -630,10 +633,13 @@ cmd_status() {
   healthy=$(echo "$response" | jq -r '.healthy_endpoints[]?.model // empty')
   unhealthy=$(echo "$response" | jq -r '[.unhealthy_endpoints[]? | select(.model != null)] | map(.model) | .[]')
 
-  # Split unhealthy into real failures vs image models needing manual probe
-  local real_unhealthy image_unhealthy
-  real_unhealthy=$(echo "$unhealthy" | grep -vE "$image_model_pattern" 2>/dev/null || true)
-  image_unhealthy=$(echo "$unhealthy" | grep -E "$image_model_pattern" 2>/dev/null || true)
+  # Split unhealthy into real failures vs image models needing manual probe vs image_edit (no probe possible)
+  local real_unhealthy image_unhealthy image_edit_unhealthy
+  image_edit_unhealthy=$(echo "$unhealthy" | grep -E "$image_edit_pattern" 2>/dev/null || true)
+  local non_edit_unhealthy
+  non_edit_unhealthy=$(echo "$unhealthy" | grep -vE "$image_edit_pattern" 2>/dev/null || true)
+  real_unhealthy=$(echo "$non_edit_unhealthy" | grep -vE "$image_model_pattern" 2>/dev/null || true)
+  image_unhealthy=$(echo "$non_edit_unhealthy" | grep -E "$image_model_pattern" 2>/dev/null || true)
 
   # Manually probe image models with a real generation request
   local image_healthy=""
@@ -644,10 +650,12 @@ cmd_status() {
       [[ -z "$bedrock_model" ]] && continue
       local litellm_name=""
       case "$bedrock_model" in
-        *nova-canvas*)    litellm_name="nova-canvas" ;;
-        *titan-image*)    litellm_name="titan-image-v2" ;;
-        *sd3-5-large*)    litellm_name="sd3.5-large" ;;
-        *)                litellm_name="" ;;
+        *nova-canvas*)       litellm_name="nova-canvas" ;;
+        *titan-image*)       litellm_name="titan-image-v2" ;;
+        *sd3-5-large*)       litellm_name="sd3.5-large" ;;
+        *stable-image-ultra*)  litellm_name="stable-image-ultra" ;;
+        *stable-image-core*)   litellm_name="stable-image-core" ;;
+        *)                   litellm_name="" ;;
       esac
       if [[ -n "$litellm_name" ]]; then
         # Use smallest valid size per model to minimize cost
@@ -672,7 +680,7 @@ cmd_status() {
   # Display results
   # Combine healthy lists
   local all_healthy
-  all_healthy=$(printf "%s\n%b" "$healthy" "$image_healthy" | grep -c . 2>/dev/null || true)
+  all_healthy=$(printf "%s\n%b%s" "$healthy" "$image_healthy" "$image_edit_unhealthy" | sed '/^$/d' | grep -c . 2>/dev/null || true)
   echo "Healthy ($all_healthy):"
   echo "$healthy" | while IFS= read -r m; do
     [[ -n "$m" ]] && echo "  ✓ $m"
@@ -680,6 +688,11 @@ cmd_status() {
   if [[ -n "$image_healthy" ]]; then
     printf "%b" "$image_healthy" | while IFS= read -r m; do
       [[ -n "$m" ]] && echo "  ✓ $m"
+    done
+  fi
+  if [[ -n "$image_edit_unhealthy" ]]; then
+    echo "$image_edit_unhealthy" | while IFS= read -r m; do
+      [[ -n "$m" ]] && echo "  ✓ $m (image_edit — no health probe)"
     done
   fi
 

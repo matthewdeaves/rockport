@@ -24,37 +24,23 @@ Word boundary matching required — "Nottingham", "knotted", "another" must NOT 
 
 `shot` field included only for multi-shot requests (1-indexed).
 
-### Camera Keyword Positioning
+### Camera Keyword Positioning (Warning)
 
 Camera keywords: `dolly`, `pan`, `tilt`, `track`, `orbit`, `zoom`, `following shot`, `static shot`.
 
-Must appear only after the last comma or period in the prompt. Case-insensitive matching.
+AWS recommends placing camera motion keywords at the start or end of the prompt for best results. Keywords found in the middle (between the first and last clause separators) produce a non-blocking warning in the response `warnings` array.
 
-**Error response (HTTP 400):**
+**Warning (included in 202 response, does not block request):**
 ```json
 {
-  "error": {
-    "type": "prompt_validation_error",
-    "rule": "camera_position",
-    "message": "Camera keyword '{keyword}' found before the final clause. Camera motion keywords must be placed at the end of the prompt, after the last comma or period. Move '{keyword}' to the end.",
-    "shot": null
-  }
-}
-```
-
-### Minimum Length
-
-Prompts must be at least 50 characters.
-
-**Error response (HTTP 400):**
-```json
-{
-  "error": {
-    "type": "prompt_validation_error",
-    "rule": "min_length",
-    "message": "Prompt is {length} characters (minimum 50). Short prompts give the model too much freedom, resulting in warping and morphing artefacts. Add more detail describing the subject, action, environment, and style.",
-    "shot": null
-  }
+  "warnings": [
+    {
+      "type": "prompt_quality_warning",
+      "rule": "camera_position",
+      "message": "Camera keyword '{keyword}' found in the middle of the prompt. For best results, place camera motion keywords at the start or end.",
+      "shot": null
+    }
+  ]
 }
 ```
 

@@ -1,9 +1,7 @@
 """Nova Reel prompt validation rules.
 
-Rejects prompts that will produce poor results due to known model pitfalls:
-- Negation words (Nova Reel interprets negation subjects as positive signals)
-- Camera keywords before the final clause (must be at the end)
-- Prompts shorter than 50 characters (too sparse, causes warping)
+- Negation words: rejected (Nova Reel interprets them as positive signals)
+- Camera keywords in the middle of prompts: warning (best at start or end)
 """
 
 import re
@@ -44,10 +42,8 @@ _CAMERA_WORD_PATTERNS = [
     for w in _CAMERA_WORDS
 ]
 
-MIN_PROMPT_LENGTH = 50
 
-
-def validate_nova_reel_prompt(prompt: str, shot_number: int | None = None) -> dict | None:
+def validate_nova_reel_prompt(prompt: str, shot_number: int | None = None) -> tuple[dict | None, list[dict]]:
     """Validate a Nova Reel prompt against quality rules.
 
     Args:
@@ -55,32 +51,15 @@ def validate_nova_reel_prompt(prompt: str, shot_number: int | None = None) -> di
         shot_number: 1-indexed shot number for multi-shot requests (None for single-shot).
 
     Returns:
-        Error dict matching contracts/video-prompt-validation.md format, or None if valid.
+        (error, warnings) tuple. error is a dict if the prompt must be rejected,
+        None if acceptable. warnings is a list of advisory dicts (non-blocking).
     """
-    # Check minimum length first
-    if len(prompt) < MIN_PROMPT_LENGTH:
-        return {
-            "error": {
-                "type": "prompt_validation_error",
-                "rule": "min_length",
-                "message": (
-                    f"Prompt is {len(prompt)} characters (minimum {MIN_PROMPT_LENGTH}). "
-                    "Short prompts give the model too much freedom, resulting in warping "
-                    "and morphing artefacts. Add more detail describing the subject, "
-                    "action, environment, and style."
-                ),
-                "shot": shot_number,
-            }
-        }
-
     # Check for negation words (strip apostrophes so don't→dont, can't→cant, etc.)
     normalized = prompt.replace("'", "").replace("\u2019", "")  # straight + curly apostrophe
     match = _NEGATION_PATTERN.search(normalized)
     if match:
         word = match.group(0)
-        # Show the original text around the match position for a helpful error
         pos = match.start()
-        # Find the corresponding word in the original prompt for display
         original_word = _find_original_word(prompt, pos, word)
         return {
             "error": {
@@ -93,14 +72,15 @@ def validate_nova_reel_prompt(prompt: str, shot_number: int | None = None) -> di
                 ),
                 "shot": shot_number,
             }
-        }
+        }, []
 
-    # Check camera keyword positioning
-    error = _check_camera_position(prompt, shot_number)
-    if error:
-        return error
+    # Check camera keyword positioning (advisory, not blocking)
+    warnings = []
+    warning = _check_camera_position(prompt, shot_number)
+    if warning:
+        warnings.append(warning)
 
-    return None
+    return None, warnings
 
 
 def _find_original_word(original: str, approx_pos: int, normalized_word: str) -> str:
@@ -125,51 +105,49 @@ def _find_original_word(original: str, approx_pos: int, normalized_word: str) ->
 
 
 def _check_camera_position(prompt: str, shot_number: int | None) -> dict | None:
-    """Check that camera keywords appear only after the last comma or period.
+    """Check that camera keywords appear only at the start or end of the prompt.
 
-    Trailing punctuation is stripped before finding the separator, so a prompt
-    ending with "dolly forward." correctly treats "dolly forward" as the final
-    clause (the trailing period is not a clause boundary).
+    AWS recommends placing camera movement descriptions at the start or end
+    of the prompt for best results. Keywords in the middle (between the first
+    and last clause separators) produce a warning.
     """
-    # Strip trailing punctuation so "..., dolly forward." doesn't treat
-    # the trailing period as the clause boundary
     stripped = prompt.rstrip(" .,;:!?")
 
-    # Find the position of the last comma or period in the stripped prompt
-    last_sep = max(stripped.rfind(","), stripped.rfind("."))
+    # Find all comma/period positions to identify clause boundaries
+    separators = [i for i, c in enumerate(stripped) if c in (",", ".")]
 
-    if last_sep == -1:
-        # No comma or period — the entire prompt is one clause.
-        # Camera keywords anywhere are fine (there's no "before final clause").
+    if len(separators) < 2:
+        # 0 or 1 separators — no middle section exists, so camera keywords
+        # are necessarily at the start or end. Nothing to reject.
         return None
 
-    # Text before the final clause
-    before_final = stripped[:last_sep].lower()
+    first_sep = separators[0]
+    last_sep = separators[-1]
+
+    # Middle text is between the first and last separators
+    middle = stripped[first_sep + 1:last_sep].lower()
 
     # Check multi-word phrases first
     for phrase in _CAMERA_PHRASES:
-        if phrase in before_final:
-            return _camera_error(phrase, shot_number)
+        if phrase in middle:
+            return _camera_warning(phrase, shot_number)
 
     # Check single words (pre-compiled patterns)
     for i, pattern in enumerate(_CAMERA_WORD_PATTERNS):
-        if pattern.search(before_final):
-            return _camera_error(_CAMERA_WORDS[i], shot_number)
+        if pattern.search(middle):
+            return _camera_warning(_CAMERA_WORDS[i], shot_number)
 
     return None
 
 
-def _camera_error(keyword: str, shot_number: int | None) -> dict:
-    """Build a camera position error response."""
+def _camera_warning(keyword: str, shot_number: int | None) -> dict:
+    """Build a camera position warning (advisory, non-blocking)."""
     return {
-        "error": {
-            "type": "prompt_validation_error",
-            "rule": "camera_position",
-            "message": (
-                f"Camera keyword '{keyword}' found before the final clause. "
-                "Camera motion keywords must be placed at the end of the prompt, "
-                f"after the last comma or period. Move '{keyword}' to the end."
-            ),
-            "shot": shot_number,
-        }
+        "type": "prompt_quality_warning",
+        "rule": "camera_position",
+        "message": (
+            f"Camera keyword '{keyword}' found in the middle of the prompt. "
+            "For best results, place camera motion keywords at the start or end."
+        ),
+        "shot": shot_number,
     }

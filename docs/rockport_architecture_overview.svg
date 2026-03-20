@@ -89,7 +89,7 @@
   <rect x="464" y="136" width="362" height="68" rx="4" fill="#1a1f2e" stroke="#d2a8ff" stroke-width="1.5"/>
   <text x="645" y="156" text-anchor="middle" fill="#d2a8ff" font-size="11" font-weight="bold">cloudflared</text>
   <text x="645" y="172" text-anchor="middle" fill="#8b949e" font-size="9">user: cloudflared · outbound QUIC → Cloudflare</text>
-  <text x="645" y="186" text-anchor="middle" fill="#8b949e" font-size="9">/v1/videos/* + /v1/images/* (not generations) → :4001 · else → :4000</text>
+  <text x="645" y="186" text-anchor="middle" fill="#8b949e" font-size="9">/v1/videos/* + /v1/images/* (not generations/edits) → :4001 · else → :4000</text>
 
   <!-- LiteLLM Proxy -->
   <rect x="464" y="214" width="174" height="72" rx="4" fill="#0f2018" stroke="#3fb950" stroke-width="1.5"/>
@@ -102,7 +102,7 @@
   <rect x="652" y="214" width="174" height="72" rx="4" fill="#0f1820" stroke="#58a6ff" stroke-width="1.5"/>
   <text x="739" y="234" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="bold">Sidecar</text>
   <text x="739" y="250" text-anchor="middle" fill="#8b949e" font-size="9">localhost:4001</text>
-  <text x="739" y="264" text-anchor="middle" fill="#8b949e" font-size="9">video + image services</text>
+  <text x="739" y="264" text-anchor="middle" fill="#8b949e" font-size="9">video + Nova Canvas</text>
   <text x="739" y="278" text-anchor="middle" fill="#8b949e" font-size="9">256MB MemoryMax</text>
 
   <!-- PostgreSQL -->
@@ -227,6 +227,9 @@
   <text x="1680" y="464" text-anchor="middle" fill="#8b949e" font-size="8">image generation</text>
   <rect x="1596" y="480" width="168" height="32" rx="3" fill="#0f2018" stroke="#58a6ff" stroke-width="1.5"/>
   <text x="1680" y="500" text-anchor="middle" fill="#58a6ff" font-size="9" font-weight="bold">luma-ray2</text>
+  <rect x="1396" y="400" width="170" height="44" rx="3" fill="#0f2018" stroke="#3fb950" stroke-width="1"/>
+  <text x="1481" y="418" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="bold">stability-* (13)</text>
+  <text x="1481" y="432" text-anchor="middle" fill="#8b949e" font-size="8">image edit (us-west-2)</text>
 
   <!-- ═══════════════════════════════════════════════════════════ -->
   <!-- ZONE: ADMIN (bottom) -->

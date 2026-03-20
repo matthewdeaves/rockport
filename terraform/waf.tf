@@ -4,6 +4,8 @@
 # Allowed paths:
 #   /v1/chat/completions, /v1/messages, /v1/models  — Claude Code inference
 #   /v1/images/generations                           — Image generation (text-to-image + image-to-image)
+#   /v1/images/edits                                 — Stability AI image edit operations (via LiteLLM)
+#   /v1/images/*                                     — Nova Canvas sidecar (variations, background-removal, outpaint)
 #   /chat/completions, /completions, /models          — OpenAI-compatible aliases
 #   /v1/completions, /embeddings, /v1/embeddings      — additional API endpoints
 #   /key/*, /user/*, /team/*, /spend/*, /global/spend* — admin CLI management

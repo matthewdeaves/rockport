@@ -19,7 +19,7 @@ config/                 # LiteLLM config, systemd units, PostgreSQL tuning
   postgresql-tuning.conf #  PostgreSQL memory tuning for t3.small
 sidecar/                # Video + image services sidecar (FastAPI on port 4001)
   video_api.py          #   Video endpoints, auth, validation, Bedrock client
-  image_api.py          #   Image service endpoints (variations, outpaint, Stability AI tools)
+  image_api.py          #   Nova Canvas image endpoints (variations, background-removal, outpaint)
   image_resize.py       #   Auto-resize for Nova Reel (scale, crop, fit to 1280x720)
   prompt_validation.py  #   Nova Reel prompt validation (negation, camera placement, length)
   db.py                 #   PostgreSQL job tracking, spend logging
@@ -69,7 +69,7 @@ tests/smoke-test.sh     # Post-deploy verification
 - The EC2 instance needs a public IP for outbound internet (SSM, Bedrock, pip) — the default VPC has no NAT gateway. The SG has zero inbound rules so the public IP is not directly reachable
 - Image generation models: Nova Canvas (us-east-1), Titan Image v2 (us-west-2), SD3.5 Large (us-west-2), Stable Image Ultra v1.1 (us-west-2), Stable Image Core v1.1 (us-west-2) — routed via per-model `aws_region_name` in litellm-config.yaml
 - Image dimensions via OpenAI `size` param: Nova Canvas requires divisible by 16 (320–4096); Titan v2 uses preset sizes (256–1408); SD3.5 Large ignores `size` (fixed 1024x1024, returns JPEG not PNG)
-- Image-to-image: use `/v1/images/generations` with `textToImageParams.conditionImage` (Nova Canvas) — NOT `/v1/images/edits` which LiteLLM 1.82.3 doesn't support for Bedrock models
+- Image-to-image: use `/v1/images/generations` with `textToImageParams.conditionImage` (Nova Canvas) — NOT `/v1/images/edits` which is the Stability AI edit endpoint
 - Cloudflare blocks requests with Python's default `Python-urllib` user-agent (403) — OpenAI SDK and curl work fine
 - `ANTHROPIC_AUTH_TOKEN` (not `ANTHROPIC_API_KEY`) is the env var for Claude Code virtual keys
 - Instance auto-stops after 30min of inactivity by default (Lambda checks both NetworkIn and CPUUtilization — instance is only stopped when both are below threshold). A CloudWatch alarm fires if the idle-stop Lambda itself fails consecutively
@@ -81,9 +81,9 @@ tests/smoke-test.sh     # Post-deploy verification
 - The LiteLLM admin UI is intentionally disabled (`disable_admin_ui: true`) — all admin is via the CLI
 - Swagger/ReDoc docs disabled via `NO_DOCS=True` / `NO_REDOC=True` in the LiteLLM env file
 - Cloudflare Access (`terraform/access.tf`) requires a service token for all requests — `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers must be present or Cloudflare returns 403 before traffic reaches the tunnel. Token values are Terraform outputs (sensitive). To rotate: create a new service token in Terraform, update all clients, then remove the old one
-- Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation (`/v1/images/generations`, `/v1/images/*`), video generation (`/v1/videos/*`), and the admin CLI
+- Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation (`/v1/images/generations`), image editing (`/v1/images/edits` via LiteLLM), image services (`/v1/images/*` for Nova Canvas sidecar), video generation (`/v1/videos/*`), and the admin CLI
 - `setup-claude` creates keys restricted to Anthropic models only; `key create` without `--claude-only` grants access to all models including image generation
-- Stability AI image models (SD3.5 Large) need a one-time Marketplace subscription — invoke once in the Bedrock playground to activate
+- Stability AI image models (SD3.5 Large, Stable Image Ultra, Stable Image Core, all 13 stability-* edit models) and Luma Ray2 need a one-time Marketplace subscription — invoke once in the Bedrock playground to activate
 - `deploy` auto-creates the SSM master key if missing, so `init` is not a strict prerequisite
 - The Cloudflare API token (in `terraform/.env`, gitignored) needs Zone WAF Edit + Access Edit permissions for the WAF rule and Cloudflare Access application
 - Deployer IAM is split into 3 policies under `terraform/deployer-policies/` (compute, iam-ssm, monitoring-storage) to stay under the 6144-byte per-policy limit while keeping all actions explicit (no wildcards). EC2/SSM mutating actions scoped to `aws:ResourceTag/Project=rockport`. An explicit Deny in iam-ssm.json blocks `AttachRolePolicy`/`DetachRolePolicy` for any policy ARN not matching `Rockport*` or `rockport*`, preventing privilege escalation via the deployer role
@@ -92,7 +92,7 @@ tests/smoke-test.sh     # Post-deploy verification
 - Video generation: multi-model sidecar on port 4001 supporting Nova Reel v1.1 (us-east-1, 1280x720, 6-120s, $0.08/s) and Luma Ray2 (us-west-2, 540p/720p, 5s/9s, $0.75-1.50/s). Model selected via `model` field, defaults to `nova-reel`
 - Video sidecar authenticates via LiteLLM's `/key/info` endpoint; writes spend to `LiteLLM_SpendLogs` + `LiteLLM_VerificationToken` for unified tracking
 - Video output stored in per-region S3 buckets (`rockport-video-{account}-us-east-1` for Nova Reel, `rockport-video-{account}-us-west-2` for Ray2) with 7-day lifecycle; presigned URLs expire after 1 hour. Bedrock async invoke requires same-region S3 bucket
-- Cloudflare Tunnel routes `/v1/videos/*` and `/v1/images/*` (except `/v1/images/generations`) to `http://localhost:4001`; all else to `:4000` — managed in `terraform/tunnel.tf`
+- Cloudflare Tunnel routes `/v1/videos/*` and `/v1/images/*` (except `/v1/images/generations` and `/v1/images/edits`) to `http://localhost:4001`; `/v1/images/edits` routes to LiteLLM (:4000) for Stability AI image edit operations; all else to `:4000` — managed in `terraform/tunnel.tf`
 - Video sidecar MemoryMax is 256MB; LiteLLM reduced to 1280MB to fit on t3.small (2GB + 512MB swap)
 - Single-shot (one prompt, 6-120s), multi-shot (2-20 per-shot prompts, 6s each), and multi-shot-automated (single prompt, 12-120s, model determines shot breakdown) modes supported
 - Image-to-video: Nova Reel single-shot with image is fixed at 6 seconds (Bedrock TEXT_VIDEO constraint); multi-shot uses `MULTI_SHOT_MANUAL` taskType with `multiShotManualParams.shots`
@@ -103,21 +103,17 @@ tests/smoke-test.sh     # Post-deploy verification
 - Per-key concurrent job limit defaults to 3 (configurable via `VIDEO_MAX_CONCURRENT_JOBS` env var)
 - Video sidecar concurrent job limit enforced atomically via `pg_advisory_xact_lock(hashtext(api_key_hash))` — count and insert happen in a single transaction, preventing TOCTOU races. Different API keys use different lock IDs so they don't block each other
 - Bootstrap runs `prisma migrate deploy` before LiteLLM starts — avoids slow per-migration baseline resolve (~10s x 108 migrations) on first boot. Full bootstrap completes in ~3 minutes
-- Image service endpoints on sidecar (:4001): `/v1/images/variations`, `/v1/images/background-removal`, `/v1/images/outpaint` (Nova Canvas); `/v1/images/structure`, `/v1/images/sketch`, `/v1/images/style-transfer`, `/v1/images/remove-background`, `/v1/images/search-replace`, `/v1/images/upscale`, `/v1/images/style-guide`, `/v1/images/inpaint`, `/v1/images/erase`, `/v1/images/creative-upscale`, `/v1/images/fast-upscale`, `/v1/images/search-recolor`, `/v1/images/stability-outpaint` (Stability AI). All enforce auth, budgets, and block --claude-only keys
-- New Stability AI endpoint costs: inpaint ($0.04), erase ($0.04), creative-upscale ($0.06), fast-upscale ($0.04), search-recolor ($0.04), stability-outpaint ($0.04)
+- Nova Canvas sidecar endpoints on (:4001): `/v1/images/variations`, `/v1/images/background-removal`, `/v1/images/outpaint`. All enforce auth, budgets, and block --claude-only keys
+- Stability AI image edit operations use LiteLLM's native `/v1/images/edits` endpoint with 13 `stability-*` model names (structure, sketch, style-transfer, remove-background, search-replace, upscale, style-guide, inpaint, erase, creative-upscale, fast-upscale, search-recolor, outpaint). Costs: $0.04/image for most, $0.06 for style-transfer, upscale, creative-upscale. All in us-west-2 via `aws_region_name` in litellm-config.yaml
 - Stable Image Ultra ($0.14/image) and Core ($0.04/image) available via `/v1/images/generations` with model names `stable-image-ultra` and `stable-image-core`
 - Nova Canvas style presets supported via `textToImageParams.style` field: 3D_ANIMATED_FAMILY_FILM, DESIGN_SKETCH, FLAT_VECTOR_ILLUSTRATION, GRAPHIC_NOVEL_ILLUSTRATION, MAXIMALISM, MIDCENTURY_RETRO, PHOTOREALISM, SOFT_DIGITAL_PAINTING
 - Nova Reel auto-resize: images not exactly 1280x720 are automatically resized. Five modes: `scale` (default), `crop-center`, `crop-top`, `crop-bottom`, `fit` (with pad). Controlled via `resize_mode` and `pad_color` params
-- Nova Reel prompt validation: rejects prompts with negation words (model interprets them positively), camera keywords before the final clause, and prompts shorter than 50 characters
+- Nova Reel prompt validation: rejects prompts with negation words (model interprets them positively); warns (non-blocking) when camera keywords are in the middle of the prompt (AWS recommends start or end for best results)
 - `rockport.sh status` shows instance memory/CPU/uptime stats via SSM in addition to health checks
+
 ## Active Technologies
 - Terraform (AWS provider, Cloudflare provider) — all infrastructure
-- Python 3.11 + FastAPI, uvicorn, boto3, Pillow, psycopg2, pydantic, httpx — sidecar (video + image services, multi-region clients for us-east-1 + us-west-2)
+- Python 3.11 + FastAPI, uvicorn, boto3, Pillow, psycopg2, pydantic, httpx — sidecar (video + Nova Canvas image services, us-east-1 client)
 - PostgreSQL 15 — LiteLLM keys/spend + video job tracking (`rockport_video_jobs` table with `model` column)
 - S3 — Terraform state (eu-west-2) + video output (us-east-1 for Nova Reel, us-west-2 for Ray2, both 7-day lifecycle)
 - Bash — admin CLI, bootstrap, smoke tests
-- Python 3.11 (sidecar), YAML (LiteLLM config), Bash (smoke tests), HCL (Terraform) + FastAPI, uvicorn, boto3, Pillow, pydantic, psycopg2 (all already installed) (009-complete-image-services)
-- PostgreSQL 15 (spend logging to existing LiteLLM_SpendLogs table) (009-complete-image-services)
-
-## Recent Changes
-- 009-complete-image-services: Added Python 3.11 (sidecar), YAML (LiteLLM config), Bash (smoke tests), HCL (Terraform) + FastAPI, uvicorn, boto3, Pillow, pydantic, psycopg2 (all already installed)
