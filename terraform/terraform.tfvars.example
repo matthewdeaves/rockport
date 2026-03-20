@@ -10,6 +10,7 @@ budget_alert_email    = "you@example.com"
 # tunnel_subdomain     = "llm"
 # litellm_version      = "1.82.1"
 # cloudflared_version  = "2025.2.1"
+# cloudflared_sha256   = "..."  # SHA256 of cloudflared-linux-amd64 binary (must match version)
 # bedrock_daily_budget = 10
 # monthly_budget       = 30
 # enable_idle_shutdown = true

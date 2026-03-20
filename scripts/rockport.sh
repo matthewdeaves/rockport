@@ -68,8 +68,16 @@ package_and_upload_artifact() {
   cp "$CONFIG_DIR/cloudflared.service" "$tmpdir/rockport-artifact/config/"
   cp "$CONFIG_DIR/rockport-video.service" "$tmpdir/rockport-artifact/config/"
 
+  # Copy requirements lock file if present
+  if [[ -f "$SCRIPT_DIR/../sidecar/requirements.lock" ]]; then
+    cp "$SCRIPT_DIR/../sidecar/requirements.lock" "$tmpdir/rockport-artifact/sidecar/"
+  fi
+
   # Create tarball
   tar czf "$tmpdir/rockport-artifact.tar.gz" -C "$tmpdir" rockport-artifact/
+
+  # Generate SHA256 checksum
+  (cd "$tmpdir" && sha256sum rockport-artifact.tar.gz > rockport-artifact.tar.gz.sha256)
 
   # Upload to S3
   echo "  Uploading artifact to s3://$bucket/deploy/rockport-artifact.tar.gz..."
@@ -80,7 +88,10 @@ package_and_upload_artifact() {
     rm -rf "$tmpdir"
     return 1
   }
-  echo "  Artifact uploaded."
+  aws s3 cp "$tmpdir/rockport-artifact.tar.gz.sha256" \
+    "s3://$bucket/deploy/rockport-artifact.tar.gz.sha256" \
+    --region "$region" --quiet
+  echo "  Artifact uploaded (with checksum)."
   rm -rf "$tmpdir"
 }
 
@@ -445,6 +456,26 @@ ensure_state_backend() {
       --region "$region" \
       --public-access-block-configuration \
         BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+
+    aws s3api put-bucket-policy \
+      --bucket "$bucket" \
+      --region "$region" \
+      --policy "{
+        \"Version\": \"2012-10-17\",
+        \"Statement\": [{
+          \"Sid\": \"DenyNonSSL\",
+          \"Effect\": \"Deny\",
+          \"Principal\": \"*\",
+          \"Action\": \"s3:*\",
+          \"Resource\": [
+            \"arn:aws:s3:::$bucket\",
+            \"arn:aws:s3:::$bucket/*\"
+          ],
+          \"Condition\": {
+            \"Bool\": { \"aws:SecureTransport\": \"false\" }
+          }
+        }]
+      }"
 
     echo "  State bucket ......... created ($bucket)"
   fi

@@ -57,8 +57,8 @@ def ensure_tables() -> None:
                 CREATE TABLE IF NOT EXISTS rockport_video_jobs (
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                     api_key_hash VARCHAR(128) NOT NULL,
-                    invocation_arn VARCHAR(512) UNIQUE NOT NULL,
-                    status VARCHAR(20) NOT NULL DEFAULT 'in_progress',
+                    invocation_arn VARCHAR(512) UNIQUE,
+                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
                     model VARCHAR(30) NOT NULL DEFAULT 'nova-reel',
                     mode VARCHAR(20) NOT NULL,
                     prompt TEXT NOT NULL,
@@ -76,6 +76,9 @@ def ensure_tables() -> None:
                 CREATE INDEX IF NOT EXISTS idx_video_jobs_created_at ON rockport_video_jobs (created_at);
                 ALTER TABLE rockport_video_jobs ADD COLUMN IF NOT EXISTS model VARCHAR(30) NOT NULL DEFAULT 'nova-reel';
                 ALTER TABLE rockport_video_jobs ADD COLUMN IF NOT EXISTS resolution VARCHAR(10);
+                -- Migration: make invocation_arn nullable and change default status for CRIT-1 fix
+                ALTER TABLE rockport_video_jobs ALTER COLUMN invocation_arn DROP NOT NULL;
+                ALTER TABLE rockport_video_jobs ALTER COLUMN status SET DEFAULT 'pending';
             """)
 
 
@@ -247,11 +250,38 @@ def mark_expired(job_id: str) -> None:
             )
 
 
+def update_job_arn(job_id: uuid.UUID, invocation_arn: str) -> None:
+    """Set the invocation ARN and transition status from 'pending' to 'in_progress'."""
+    with _get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE rockport_video_jobs
+                SET invocation_arn = %s, status = 'in_progress'
+                WHERE id = %s AND status = 'pending'
+                """,
+                (invocation_arn, str(job_id)),
+            )
+
+
+def mark_job_failed(job_id: uuid.UUID, error_message: str) -> None:
+    """Mark a pending or in-progress job as failed and store the error message."""
+    with _get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE rockport_video_jobs
+                SET status = 'failed', error_message = %s, cost = 0, completed_at = NOW()
+                WHERE id = %s AND status IN ('pending', 'in_progress')
+                """,
+                (error_message, str(job_id)),
+            )
+
+
 def insert_job_if_under_limit(
     job_id: uuid.UUID,
     api_key_hash: str,
     max_concurrent: int,
-    invocation_arn: str,
     model: str,
     mode: str,
     prompt: str,
@@ -259,10 +289,12 @@ def insert_job_if_under_limit(
     duration_seconds: int,
     cost: float = 0,
     resolution: str | None = None,
+    invocation_arn: str | None = None,
 ) -> dict | None:
     """Atomically check concurrent job limit and insert if under limit.
 
     Uses pg_advisory_xact_lock keyed on the API key hash to prevent TOCTOU races.
+    The job is inserted with status='pending' and invocation_arn=None by default.
     Returns the job dict if inserted, or None if the limit is reached.
     """
     with _get_conn() as conn:
@@ -270,22 +302,22 @@ def insert_job_if_under_limit(
             # Advisory lock scoped to this API key (auto-released on commit/rollback)
             cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (api_key_hash,))
 
-            # Count in-progress jobs while holding the lock
+            # Count active jobs (pending or in_progress) while holding the lock
             cur.execute(
-                "SELECT COUNT(*) FROM rockport_video_jobs WHERE api_key_hash = %s AND status = 'in_progress'",
+                "SELECT COUNT(*) FROM rockport_video_jobs WHERE api_key_hash = %s AND status IN ('pending', 'in_progress')",
                 (api_key_hash,),
             )
-            in_progress = cur.fetchone()[0]
-            if in_progress >= max_concurrent:
+            active = cur.fetchone()[0]
+            if active >= max_concurrent:
                 return None
 
-            # Insert the job
+            # Insert the job as 'pending' — Bedrock has not been called yet
             cur.execute(
                 """
                 INSERT INTO rockport_video_jobs
                     (id, api_key_hash, invocation_arn, model, mode, prompt, num_shots,
                      duration_seconds, resolution, cost, status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'in_progress')
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'pending')
                 RETURNING id, status, model, mode, duration_seconds, cost, created_at
                 """,
                 (str(job_id), api_key_hash, invocation_arn, model, mode, prompt,

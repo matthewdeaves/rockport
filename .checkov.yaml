@@ -50,3 +50,13 @@ skip-check:
   - CKV_AWS_144  # S3 cross-region replication (not needed for 7-day ephemeral data)
   # No downstream consumers need event notifications; bucket is polled by the sidecar
   - CKV2_AWS_62  # S3 event notifications (no consumers for video output events)
+
+  # --- CloudTrail: single-account, cost-optimized audit trail ---
+  # Single-account, single-region setup — no alerting pipeline to notify via SNS
+  - CKV_AWS_252  # CloudTrail SNS topic (no consumers, logs are in S3 for post-incident review)
+  # SSE-S3 (AES-256) already applied via bucket encryption config; CMK adds $1/mo
+  - CKV_AWS_35   # CloudTrail KMS CMK encryption (SSE-S3 is sufficient for audit logs)
+  # Intentionally single-region — all infra is in eu-west-2, IAM events covered by include_global_service_events
+  - CKV_AWS_67   # CloudTrail multi-region (single-region by design)
+  # Audit logs stored in S3 with 90-day lifecycle; no real-time analysis pipeline needed
+  - CKV2_AWS_10  # CloudTrail CloudWatch Logs integration (S3 is sufficient for this use case)

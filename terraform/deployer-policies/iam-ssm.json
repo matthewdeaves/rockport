@@ -71,7 +71,9 @@
         "StringNotLike": {
           "iam:PolicyARN": [
             "arn:aws:iam::*:policy/Rockport*",
-            "arn:aws:iam::*:policy/rockport*"
+            "arn:aws:iam::*:policy/rockport*",
+            "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+            "arn:aws:iam::aws:policy/service-role/AWSDataLifecycleManagerServiceRole"
           ]
         }
       }
@@ -122,7 +124,10 @@
         "ssm:SendCommand",
         "ssm:StartSession"
       ],
-      "Resource": "arn:aws:ssm:*::document/*"
+      "Resource": [
+        "arn:aws:ssm:*::document/AWS-RunShellScript",
+        "arn:aws:ssm:*::document/AWS-StartInteractiveCommand"
+      ]
     },
     {
       "Sid": "SSMSessionManage",

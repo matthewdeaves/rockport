@@ -392,6 +392,7 @@ Two GitHub Actions workflows run on push to `main`:
 
 **Validate** (`validate.yml`) — runs on every push and PR:
 - `terraform fmt -check` and `terraform validate`
+- ShellCheck on all shell scripts
 - Gitleaks secrets scan
 - Trivy IaC security scan
 - Checkov policy-as-code scan

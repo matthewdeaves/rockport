@@ -151,6 +151,11 @@
   <text x="1105" y="397" text-anchor="middle" fill="#e3b341" font-size="10" font-weight="bold">AWS Budgets + SNS</text>
   <text x="1105" y="413" text-anchor="middle" fill="#8b949e" font-size="9">daily $10 Bedrock alert · monthly $30 overall alert</text>
 
+  <!-- CloudTrail -->
+  <rect x="876" y="444" width="458" height="60" rx="3" fill="#111827" stroke="#58a6ff" stroke-width="1"/>
+  <text x="1105" y="467" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="bold">CloudTrail</text>
+  <text x="1105" y="483" text-anchor="middle" fill="#8b949e" font-size="9">management event logging · S3 bucket · 90-day retention</text>
+
   <!-- ═══════════════════════════════════════════════════════════ -->
   <!-- ZONE: BEDROCK (x=1374, w=412) -->
   <!-- ═══════════════════════════════════════════════════════════ -->
@@ -207,14 +212,14 @@
   <text x="1486" y="302" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="bold">nova-canvas</text>
   <text x="1486" y="318" text-anchor="middle" fill="#8b949e" font-size="8">image generation</text>
   <rect x="1406" y="334" width="160" height="44" rx="3" fill="#0f2018" stroke="#58a6ff" stroke-width="1.5"/>
-  <text x="1486" y="352" text-anchor="middle" fill="#58a6ff" font-size="9" font-weight="bold">nova-reel-v1:1</text>
+  <text x="1486" y="352" text-anchor="middle" fill="#58a6ff" font-size="9" font-weight="bold">nova-reel</text>
   <text x="1486" y="366" text-anchor="middle" fill="#8b949e" font-size="8">video gen (async → S3)</text>
 
   <!-- us-west-2 -->
   <rect x="1586" y="262" width="188" height="258" rx="3" fill="#0a1a10" stroke="#3fb950" stroke-width="1" stroke-dasharray="3,2"/>
   <text x="1598" y="278" fill="#3fb950" font-size="8" opacity="0.8">us-west-2</text>
   <rect x="1596" y="284" width="168" height="40" rx="3" fill="#0f2018" stroke="#3fb950" stroke-width="1"/>
-  <text x="1680" y="300" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="bold">titan-image-generator-v2</text>
+  <text x="1680" y="300" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="bold">titan-image-v2</text>
   <text x="1680" y="314" text-anchor="middle" fill="#8b949e" font-size="8">image generation</text>
   <rect x="1596" y="334" width="168" height="40" rx="3" fill="#0f2018" stroke="#3fb950" stroke-width="1"/>
   <text x="1680" y="350" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="bold">sd3.5-large</text>

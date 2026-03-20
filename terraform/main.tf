@@ -64,6 +64,41 @@ resource "aws_iam_role_policy" "bedrock_invoke" {
     Version = "2012-10-17"
     Statement = [
       {
+        Sid    = "InvokeEUCrossRegionModels"
+        Effect = "Allow"
+        Action = [
+          "bedrock:InvokeModel",
+          "bedrock:InvokeModelWithResponseStream"
+        ]
+        Resource = flatten([
+          for r in ["eu-west-1", "eu-west-2", "eu-west-3", "eu-central-1", "eu-central-2", "eu-north-1", "eu-south-1", "eu-south-2"] : [
+            "arn:aws:bedrock:${r}::foundation-model/anthropic.claude-*",
+            "arn:aws:bedrock:${r}::foundation-model/amazon.nova-*",
+            "arn:aws:bedrock:${r}::foundation-model/amazon.titan-*",
+            "arn:aws:bedrock:${r}::foundation-model/deepseek.*",
+            "arn:aws:bedrock:${r}::foundation-model/qwen.*",
+            "arn:aws:bedrock:${r}::foundation-model/moonshotai.*",
+          ]
+        ])
+      },
+      {
+        Sid    = "InvokeUSModels"
+        Effect = "Allow"
+        Action = [
+          "bedrock:InvokeModel",
+          "bedrock:InvokeModelWithResponseStream"
+        ]
+        Resource = flatten([
+          for r in ["us-east-1", "us-east-2", "us-west-1", "us-west-2"] : [
+            "arn:aws:bedrock:${r}::foundation-model/stability.*",
+            "arn:aws:bedrock:${r}::foundation-model/luma.*",
+            "arn:aws:bedrock:${r}::foundation-model/amazon.nova-*",
+            "arn:aws:bedrock:${r}::foundation-model/amazon.titan-*",
+          ]
+        ])
+      },
+      {
+        Sid    = "InferenceProfiles"
         Effect = "Allow"
         Action = [
           "bedrock:InvokeModel",
@@ -71,7 +106,6 @@ resource "aws_iam_role_policy" "bedrock_invoke" {
         ]
         Resource = flatten([
           for r in local.bedrock_regions : [
-            "arn:aws:bedrock:${r}::foundation-model/*",
             "arn:aws:bedrock:${r}:${data.aws_caller_identity.current.account_id}:inference-profile/*"
           ]
         ])
@@ -108,19 +142,27 @@ resource "aws_iam_role_policy" "ssm_get_parameter" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "ssm:GetParameter",
-        "ssm:GetParameters",
-        "ssm:PutParameter"
-      ]
-      Resource = [
-        "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/rockport/master-key",
-        "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/rockport/tunnel-token",
-        "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/rockport/db-password"
-      ]
-    }]
+    Statement = [
+      {
+        Sid    = "SSMGetParameters"
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters"
+        ]
+        Resource = [
+          "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/rockport/master-key",
+          "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/rockport/tunnel-token",
+          "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/rockport/db-password"
+        ]
+      },
+      {
+        Sid      = "SSMPutDBPassword"
+        Effect   = "Allow"
+        Action   = "ssm:PutParameter"
+        Resource = "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/rockport/db-password"
+      },
+    ]
   })
 }
 
@@ -139,9 +181,10 @@ resource "aws_iam_role_policy" "bedrock_async_invoke" {
           "bedrock:GetAsyncInvoke"
         ]
         Resource = [
-          "arn:aws:bedrock:us-east-1::foundation-model/*",
+          "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-*",
           "arn:aws:bedrock:us-east-1:${data.aws_caller_identity.current.account_id}:async-invoke/*",
-          "arn:aws:bedrock:us-west-2::foundation-model/*",
+          "arn:aws:bedrock:us-west-2::foundation-model/luma.*",
+          "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-*",
           "arn:aws:bedrock:us-west-2:${data.aws_caller_identity.current.account_id}:async-invoke/*"
         ]
       },
@@ -238,6 +281,7 @@ resource "aws_instance" "rockport" {
     tunnel_token_ssm_path     = aws_ssm_parameter.tunnel_token.name
     litellm_version           = var.litellm_version
     cloudflared_version       = var.cloudflared_version
+    cloudflared_sha256        = var.cloudflared_sha256
     artifacts_bucket          = aws_s3_bucket.artifacts.id
     video_bucket_name         = aws_s3_bucket.video.id
     video_bucket_us_west_2    = aws_s3_bucket.video_us_west_2.id

@@ -3,6 +3,7 @@
 set -euo pipefail
 
 LOG_FILE="/var/log/rockport-bootstrap.log"
+touch "$LOG_FILE" && chmod 600 "$LOG_FILE"
 exec > >(tee -a "$LOG_FILE") 2>&1
 echo "=== Rockport bootstrap started at $(date) ==="
 
@@ -11,6 +12,7 @@ MASTER_KEY_SSM_PATH="${master_key_ssm_path}"
 TUNNEL_TOKEN_SSM_PATH="${tunnel_token_ssm_path}"
 LITELLM_VERSION="${litellm_version}"
 CLOUDFLARED_VERSION="${cloudflared_version}"
+CLOUDFLARED_SHA256="${cloudflared_sha256}"
 ARTIFACTS_BUCKET="${artifacts_bucket}"
 
 # --- Swap ---
@@ -189,6 +191,20 @@ echo "Downloading deploy artifact from S3..."
 aws s3 cp "s3://$ARTIFACTS_BUCKET/deploy/rockport-artifact.tar.gz" /tmp/rockport-artifact.tar.gz \
   --region "$REGION" || { echo "FATAL: Failed to download deploy artifact from S3"; exit 1; }
 
+# Verify artifact integrity via SHA256 checksum
+if aws s3 cp "s3://$ARTIFACTS_BUCKET/deploy/rockport-artifact.tar.gz.sha256" /tmp/rockport-artifact.tar.gz.sha256 \
+  --region "$REGION" 2>/dev/null; then
+  echo "Verifying artifact checksum..."
+  (cd /tmp && sha256sum -c rockport-artifact.tar.gz.sha256) || {
+    echo "FATAL: Artifact SHA256 checksum verification failed"
+    exit 1
+  }
+  echo "Artifact checksum verified."
+  rm -f /tmp/rockport-artifact.tar.gz.sha256
+else
+  echo "WARNING: No checksum file found, skipping integrity verification."
+fi
+
 # Extract config files
 mkdir -p /etc/litellm
 tar xzf /tmp/rockport-artifact.tar.gz -C /tmp rockport-artifact/
@@ -212,7 +228,11 @@ cp /tmp/rockport-artifact/config/litellm.service /etc/systemd/system/litellm.ser
 
 # --- Video Generation Sidecar ---
 echo "Installing video sidecar dependencies..."
-pip3.11 install psycopg2-binary Pillow httpx
+if [[ -f /tmp/rockport-artifact/sidecar/requirements.lock ]]; then
+  pip3.11 install --require-hashes -r /tmp/rockport-artifact/sidecar/requirements.lock
+else
+  pip3.11 install psycopg2-binary Pillow httpx
+fi
 
 echo "Setting up video sidecar..."
 mkdir -p /opt/rockport-video
@@ -224,8 +244,8 @@ sudo -u postgres psql -d litellm -c "
   CREATE TABLE IF NOT EXISTS rockport_video_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     api_key_hash VARCHAR(128) NOT NULL,
-    invocation_arn VARCHAR(512) UNIQUE NOT NULL,
-    status VARCHAR(20) NOT NULL DEFAULT 'in_progress',
+    invocation_arn VARCHAR(512) UNIQUE,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
     mode VARCHAR(20) NOT NULL,
     prompt TEXT NOT NULL,
     num_shots INTEGER NOT NULL DEFAULT 1,
@@ -242,6 +262,8 @@ sudo -u postgres psql -d litellm -c "
   ALTER TABLE rockport_video_jobs OWNER TO litellm_user;
   ALTER TABLE rockport_video_jobs ADD COLUMN IF NOT EXISTS model VARCHAR(30) NOT NULL DEFAULT 'nova-reel';
   ALTER TABLE rockport_video_jobs ADD COLUMN IF NOT EXISTS resolution VARCHAR(10);
+  ALTER TABLE rockport_video_jobs ALTER COLUMN invocation_arn DROP NOT NULL;
+  ALTER TABLE rockport_video_jobs ALTER COLUMN status SET DEFAULT 'pending';
 "
 echo "Video jobs table ready."
 
@@ -261,18 +283,22 @@ cp /tmp/rockport-artifact/config/rockport-video.service /etc/systemd/system/rock
 # --- Cloudflared ---
 echo "Installing cloudflared..."
 curl -fsSL "https://github.com/cloudflare/cloudflared/releases/download/$CLOUDFLARED_VERSION/cloudflared-linux-amd64" \
-  -o /tmp/cloudflared
-chmod +x /tmp/cloudflared
+  -o /tmp/cloudflared-linux-amd64
 
-# Verify the binary is valid by running --version
-if /tmp/cloudflared --version | grep -q "$CLOUDFLARED_VERSION"; then
-  echo "cloudflared $CLOUDFLARED_VERSION verified."
+# Verify SHA256 checksum against pinned hash (cloudflared releases don't include per-file checksum files)
+ACTUAL_SHA256=$(sha256sum /tmp/cloudflared-linux-amd64 | awk '{print $1}')
+if [[ "$ACTUAL_SHA256" == "$CLOUDFLARED_SHA256" ]]; then
+  echo "cloudflared $CLOUDFLARED_VERSION checksum verified."
 else
-  echo "FATAL: cloudflared binary verification failed"
+  echo "FATAL: cloudflared SHA256 checksum verification failed"
+  echo "  Expected: $CLOUDFLARED_SHA256"
+  echo "  Actual:   $ACTUAL_SHA256"
   exit 1
 fi
 
-mv /tmp/cloudflared /usr/local/bin/cloudflared
+chmod +x /tmp/cloudflared-linux-amd64
+mv /tmp/cloudflared-linux-amd64 /usr/local/bin/cloudflared
+rm -f /tmp/cloudflared-linux-amd64.sha256sum
 echo "cloudflared installed."
 
 # Create cloudflared user

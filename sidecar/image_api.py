@@ -276,22 +276,28 @@ def create_image_variation(req: ImageVariationRequest, authorization: str = Head
             contentType="application/json",
         )
     except ClientError as exc:
+        error_ref = str(uuid.uuid4())[:8]
         error_msg = exc.response.get("Error", {}).get("Message", str(exc)) if hasattr(exc, "response") else str(exc)
-        logger.error("Nova Canvas IMAGE_VARIATION failed: %s", error_msg)
+        logger.error("Nova Canvas IMAGE_VARIATION failed [ref=%s]: %s", error_ref, error_msg)
         raise HTTPException(status_code=502, detail={
-            "error": {"type": "upstream_error", "message": f"Image variation request failed: {error_msg}"}
+            "error": {"type": "upstream_error",
+                      "message": f"The upstream service returned an error. Reference: {error_ref}"}
         })
     except Exception as exc:
-        logger.error("Nova Canvas IMAGE_VARIATION unexpected error: %s: %s", type(exc).__name__, exc)
+        error_ref = str(uuid.uuid4())[:8]
+        logger.error("Nova Canvas IMAGE_VARIATION unexpected error [ref=%s]: %s: %s", error_ref, type(exc).__name__, exc)
         raise HTTPException(status_code=502, detail={
-            "error": {"type": "upstream_error", "message": f"Image variation request failed: {type(exc).__name__}"}
+            "error": {"type": "upstream_error",
+                      "message": f"An unexpected error occurred. Reference: {error_ref}"}
         })
 
     result = json.loads(response["body"].read())
     if result.get("error"):
-        logger.error("Nova Canvas IMAGE_VARIATION returned error: %s", result["error"])
+        error_ref = str(uuid.uuid4())[:8]
+        logger.error("Nova Canvas IMAGE_VARIATION returned error [ref=%s]: %s", error_ref, result["error"])
         raise HTTPException(status_code=502, detail={
-            "error": {"type": "upstream_error", "message": f"Image variation request failed: {result['error']}"}
+            "error": {"type": "upstream_error",
+                      "message": f"The upstream service returned an error. Reference: {error_ref}"}
         })
     images = result.get("images") or []
 
@@ -332,22 +338,28 @@ def remove_background(req: BackgroundRemovalRequest, authorization: str = Header
             contentType="application/json",
         )
     except ClientError as exc:
+        error_ref = str(uuid.uuid4())[:8]
         error_msg = exc.response.get("Error", {}).get("Message", str(exc)) if hasattr(exc, "response") else str(exc)
-        logger.error("Nova Canvas BACKGROUND_REMOVAL failed: %s", error_msg)
+        logger.error("Nova Canvas BACKGROUND_REMOVAL failed [ref=%s]: %s", error_ref, error_msg)
         raise HTTPException(status_code=502, detail={
-            "error": {"type": "upstream_error", "message": f"Background removal failed: {error_msg}"}
+            "error": {"type": "upstream_error",
+                      "message": f"The upstream service returned an error. Reference: {error_ref}"}
         })
     except Exception as exc:
-        logger.error("Nova Canvas BACKGROUND_REMOVAL unexpected error: %s: %s", type(exc).__name__, exc)
+        error_ref = str(uuid.uuid4())[:8]
+        logger.error("Nova Canvas BACKGROUND_REMOVAL unexpected error [ref=%s]: %s: %s", error_ref, type(exc).__name__, exc)
         raise HTTPException(status_code=502, detail={
-            "error": {"type": "upstream_error", "message": f"Background removal failed: {type(exc).__name__}"}
+            "error": {"type": "upstream_error",
+                      "message": f"An unexpected error occurred. Reference: {error_ref}"}
         })
 
     result = json.loads(response["body"].read())
     if result.get("error"):
-        logger.error("Nova Canvas BACKGROUND_REMOVAL returned error: %s", result["error"])
+        error_ref = str(uuid.uuid4())[:8]
+        logger.error("Nova Canvas BACKGROUND_REMOVAL returned error [ref=%s]: %s", error_ref, result["error"])
         raise HTTPException(status_code=502, detail={
-            "error": {"type": "upstream_error", "message": f"Background removal failed: {result['error']}"}
+            "error": {"type": "upstream_error",
+                      "message": f"The upstream service returned an error. Reference: {error_ref}"}
         })
     images = result.get("images") or []
 
@@ -439,22 +451,28 @@ def outpaint_image(req: OutpaintRequest, authorization: str = Header(...)):
             contentType="application/json",
         )
     except ClientError as exc:
+        error_ref = str(uuid.uuid4())[:8]
         error_msg = exc.response.get("Error", {}).get("Message", str(exc)) if hasattr(exc, "response") else str(exc)
-        logger.error("Nova Canvas OUTPAINTING failed: %s", error_msg)
+        logger.error("Nova Canvas OUTPAINTING failed [ref=%s]: %s", error_ref, error_msg)
         raise HTTPException(status_code=502, detail={
-            "error": {"type": "upstream_error", "message": f"Outpainting request failed: {error_msg}"}
+            "error": {"type": "upstream_error",
+                      "message": f"The upstream service returned an error. Reference: {error_ref}"}
         })
     except Exception as exc:
-        logger.error("Nova Canvas OUTPAINTING unexpected error: %s: %s", type(exc).__name__, exc)
+        error_ref = str(uuid.uuid4())[:8]
+        logger.error("Nova Canvas OUTPAINTING unexpected error [ref=%s]: %s: %s", error_ref, type(exc).__name__, exc)
         raise HTTPException(status_code=502, detail={
-            "error": {"type": "upstream_error", "message": f"Outpainting request failed: {type(exc).__name__}"}
+            "error": {"type": "upstream_error",
+                      "message": f"An unexpected error occurred. Reference: {error_ref}"}
         })
 
     result = json.loads(response["body"].read())
     if result.get("error"):
-        logger.error("Nova Canvas OUTPAINTING returned error: %s", result["error"])
+        error_ref = str(uuid.uuid4())[:8]
+        logger.error("Nova Canvas OUTPAINTING returned error [ref=%s]: %s", error_ref, result["error"])
         raise HTTPException(status_code=502, detail={
-            "error": {"type": "upstream_error", "message": f"Outpainting request failed: {result['error']}"}
+            "error": {"type": "upstream_error",
+                      "message": f"The upstream service returned an error. Reference: {error_ref}"}
         })
     images = result.get("images") or []
 
