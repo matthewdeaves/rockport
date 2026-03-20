@@ -142,7 +142,7 @@
   <rect x="523" y="104" width="108" height="84" rx="4" fill="#1a1327" stroke="#d2a8ff" stroke-width="1.5"/>
   <text x="577" y="122" text-anchor="middle" fill="#d2a8ff" font-size="10" font-weight="bold">cloudflared</text>
   <text x="577" y="140" text-anchor="middle" fill="#8b949e" font-size="9">recv via tunnel</text>
-  <text x="577" y="155" text-anchor="middle" fill="#8b949e" font-size="9">/v1/videos/*,images/* (not gen/edits) → :4001</text>
+  <text x="577" y="155" text-anchor="middle" fill="#8b949e" font-size="9">/v1/videos*,images/* (not gen/edits) → :4001</text>
   <text x="577" y="169" text-anchor="middle" fill="#8b949e" font-size="9">all else → :4000</text>
   <text x="577" y="183" text-anchor="middle" fill="#58a6ff" font-size="8">path-based routing</text>
 
@@ -378,12 +378,12 @@
   <!-- Step badge -->
   <circle cx="535" cy="775" r="14" fill="#39d2c0"/>
   <text x="535" y="780" text-anchor="middle" fill="#0d1117" font-size="9" font-weight="bold">5V</text>
-  <text x="700" y="780" text-anchor="start" fill="#39d2c0" font-size="10" font-weight="bold">Video Sidecar Processing (alternate path from Step 4 when /v1/videos/*)</text>
+  <text x="700" y="780" text-anchor="start" fill="#39d2c0" font-size="10" font-weight="bold">Video Sidecar Processing (alternate path from Step 4 when /v1/videos*)</text>
 
   <!-- 4→5V: cloudflared → Video Sidecar (downward arrow from step 4 box) -->
   <path d="M 577 188 L 577 770" stroke="#d2a8ff" stroke-width="2" marker-end="url(#ah-purple)"/>
   <text x="584" y="480" fill="#d2a8ff" font-size="8">:4001</text>
-  <text x="584" y="494" fill="#d2a8ff" font-size="8">/v1/videos/*</text>
+  <text x="584" y="494" fill="#d2a8ff" font-size="8">/v1/videos*</text>
 
   <!-- 5V-a: Auth via LiteLLM  y=798..862 -->
   <rect x="523" y="798" width="640" height="64" rx="4" fill="#0a1a1a" stroke="#39d2c0" stroke-width="1"/>

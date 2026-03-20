@@ -399,7 +399,7 @@ Two GitHub Actions workflows run on push to `main`:
 
 **Deploy** (`deploy.yml`) — runs on push to `main` (paths: `terraform/`, `config/`, `scripts/`, `sidecar/`, `tests/`):
 - `terraform plan` on PRs (comments the plan on the PR)
-- Applies saved plan on merge to `main`
+- Plans and applies on merge to `main`
 - Smoke tests after deploy
 
 CI uses GitHub OIDC for AWS authentication. Set `AWS_ROLE_ARN` in GitHub repository secrets to an IAM role with OIDC trust policy. Also set `CLOUDFLARE_ZONE_ID`, `CLOUDFLARE_ACCOUNT_ID`, and `CLOUDFLARE_API_TOKEN` as secrets.
