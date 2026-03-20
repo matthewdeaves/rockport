@@ -10,7 +10,7 @@ terraform/.build/       # Lambda zip artifacts (gitignored)
 terraform/lambda/       # Lambda function source code (idle_shutdown.py)
 terraform/moved.tf      # Moved blocks template for safe resource renames
 terraform/access.tf     # Cloudflare Access application + service token (edge pre-auth)
-terraform/s3.tf         # S3 buckets for video output (us-east-1 + us-west-2)
+terraform/s3.tf         # S3 buckets for artifacts + video output (us-east-1 + us-west-2)
 terraform/cloudtrail.tf # CloudTrail management event logging (S3 bucket + trail)
 config/                 # LiteLLM config, systemd units, PostgreSQL tuning
   litellm-config.yaml   #   Model definitions, budget, rate limits
@@ -88,7 +88,7 @@ tests/smoke-test.sh     # Post-deploy verification
 - Stability AI image models (SD3.5 Large, Stable Image Ultra, Stable Image Core, all 13 stability-* edit models) and Luma Ray2 need a one-time Marketplace subscription — invoke once in the Bedrock playground to activate
 - `deploy` auto-creates the SSM master key if missing, so `init` is not a strict prerequisite
 - The Cloudflare API token (in `terraform/.env`, gitignored) needs Zone WAF Edit + Access Edit permissions for the WAF rule and Cloudflare Access application
-- Deployer IAM is split into 3 policies under `terraform/deployer-policies/` (compute, iam-ssm, monitoring-storage) to stay under the 6144-byte per-policy limit while keeping all actions explicit (no wildcards). EC2/SSM mutating actions scoped to `aws:ResourceTag/Project=rockport`. An explicit Deny in iam-ssm.json blocks `AttachRolePolicy`/`DetachRolePolicy` for any policy ARN not matching `Rockport*` or `rockport*`, preventing privilege escalation via the deployer role
+- Deployer IAM is split into 3 policies under `terraform/deployer-policies/` (compute, iam-ssm, monitoring-storage) to stay under the 6144-byte per-policy limit while keeping all actions explicit (no wildcards). EC2/SSM mutating actions scoped to `aws:ResourceTag/Project=rockport`. An explicit Deny in iam-ssm.json blocks `AttachRolePolicy`/`DetachRolePolicy` for any policy ARN not matching `Rockport*`, `rockport*`, `AmazonSSMManagedInstanceCore`, or `AWSDataLifecycleManagerServiceRole`, preventing privilege escalation via the deployer role
 - Admin IAM policy (`terraform/rockport-admin-policy.json`) is a one-time bootstrap: must be created and attached to the admin user via the AWS console (root account) before first `init`. After that, `init` self-manages it.
 - HSTS and "Always Use HTTPS" are enabled in Cloudflare (not managed by Terraform)
 - Video generation: multi-model sidecar on port 4001 supporting Nova Reel v1.1 (us-east-1, 1280x720, 6-120s, $0.08/s) and Luma Ray2 (us-west-2, 540p/720p, 5s/9s, $0.75-1.50/s). Model selected via `model` field, defaults to `nova-reel`
