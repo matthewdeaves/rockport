@@ -11,6 +11,7 @@ import base64
 import io
 import json
 import logging
+import time
 import uuid
 
 import boto3
@@ -196,9 +197,10 @@ def calculate_nova_canvas_cost(n: int, width: int = 1024, height: int = 1024, qu
 
 
 def _make_image_response(images: list[str], model: str, cost: float) -> dict:
-    """Build a standard image endpoint response."""
+    """Build an OpenAI-compatible image endpoint response."""
     return {
-        "images": [{"b64_json": img} for img in images],
+        "created": int(time.time()),
+        "data": [{"b64_json": img} for img in images],
         "model": model,
         "cost": cost,
     }
