@@ -175,9 +175,11 @@ All settings are in `terraform/terraform.tfvars`. These variables have defaults 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `region` | `eu-west-2` | AWS region |
+| `tunnel_subdomain` | `llm` | Subdomain for the Cloudflare Tunnel |
 | `instance_type` | `t3.small` | EC2 instance type |
 | `litellm_version` | `1.82.3` | LiteLLM version to install |
 | `cloudflared_version` | `2026.3.0` | Cloudflared version (pinned for stability) |
+| `cloudflared_sha256` | *(matches version)* | SHA256 of cloudflared binary — must update when changing version |
 | `bedrock_daily_budget` | `10` | Daily Bedrock spend alert threshold (USD) |
 | `monthly_budget` | `30` | Monthly overall AWS budget alert threshold (USD) |
 | `enable_idle_shutdown` | `true` | Auto-stop instance after inactivity |
@@ -398,7 +400,7 @@ Two GitHub Actions workflows run on push to `main`:
 - Checkov policy-as-code scan
 
 **Deploy** (`deploy.yml`) — runs on push to `main` (paths: `terraform/`, `config/`, `scripts/`, `sidecar/`, `tests/`):
-- `terraform plan` on PRs (comments the plan on the PR)
+- `terraform plan` on PRs (saves plan as artifact)
 - Plans and applies on merge to `main`
 - Smoke tests after deploy
 
