@@ -1529,6 +1529,16 @@ cmd_deploy() {
     terraform import aws_s3_bucket.artifacts "$artifacts_bucket"
   fi
 
+  # Import orphaned CloudWatch log group if it exists from a previous deploy
+  # (Lambda auto-creates this log group; terraform destroy removes the Lambda but not the log group)
+  if ! terraform state show 'aws_cloudwatch_log_group.idle_shutdown[0]' &>/dev/null; then
+    if aws logs describe-log-groups --log-group-name-prefix /aws/lambda/rockport-idle-shutdown --region "$region" \
+        --query 'logGroups[0].logGroupName' --output text 2>/dev/null | grep -q rockport; then
+      echo "  Importing existing idle-shutdown log group into Terraform state..."
+      terraform import 'aws_cloudwatch_log_group.idle_shutdown[0]' '/aws/lambda/rockport-idle-shutdown'
+    fi
+  fi
+
   terraform apply
 
   echo
@@ -1562,6 +1572,11 @@ cmd_destroy() {
     -backend-config="region=$region" \
     -backend-config="use_lockfile=true"
   terraform destroy
+
+  echo "Cleaning up orphaned resources..."
+  aws logs delete-log-group \
+    --log-group-name "/aws/lambda/rockport-idle-shutdown" \
+    --region "$region" 2>/dev/null && echo "  Lambda log group deleted." || echo "  Lambda log group already removed."
 
   echo "Cleaning up SSM parameters..."
   aws ssm delete-parameter \

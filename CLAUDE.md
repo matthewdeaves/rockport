@@ -28,7 +28,7 @@ sidecar/                # Video + image services sidecar (FastAPI on port 4001)
   video_api.py          #   Video endpoints, auth, validation, Bedrock client
   image_api.py          #   Nova Canvas image endpoints (variations, background-removal, outpaint)
   image_resize.py       #   Auto-resize for Nova Reel (scale, crop, fit to 1280x720)
-  prompt_validation.py  #   Nova Reel prompt validation (negation, camera placement, length)
+  prompt_validation.py  #   Nova Reel prompt validation (negation, camera placement)
   db.py                 #   PostgreSQL job tracking, spend logging
   requirements.txt      #   Python dependencies for sidecar
   requirements.lock     #   Hashed lock file (pip-compile --generate-hashes)
@@ -50,7 +50,7 @@ tests/smoke-test.sh     # Post-deploy verification
 ./scripts/rockport.sh models        # List available models
 ./scripts/rockport.sh start         # Start a stopped instance
 ./scripts/rockport.sh stop          # Stop the instance
-./scripts/rockport.sh upgrade       # Restart LiteLLM via SSM
+./scripts/rockport.sh upgrade       # Restart LiteLLM + video sidecar via SSM
 ./scripts/rockport.sh key create X  # Create virtual API key [--budget N] [--claude-only]
 ./scripts/rockport.sh key list      # List keys
 ./scripts/rockport.sh key info <k>  # Key details + spend
@@ -95,7 +95,7 @@ tests/smoke-test.sh     # Post-deploy verification
 - `deploy` auto-creates the SSM master key if missing, so `init` is not a strict prerequisite
 - The Cloudflare API token (in `terraform/.env`, gitignored) needs Zone DNS Edit, Zone WAF Edit, Account Cloudflare Tunnel Edit, and Account Zero Trust Edit permissions
 - Deployer IAM is split into 3 policies under `terraform/deployer-policies/` (compute, iam-ssm, monitoring-storage) to stay under the 6144-byte per-policy limit while keeping all actions explicit (no wildcards). EC2/SSM mutating actions scoped to `aws:ResourceTag/Project=rockport`. An explicit Deny in iam-ssm.json blocks `AttachRolePolicy`/`DetachRolePolicy` for any policy ARN not matching `Rockport*`, `rockport*`, `AmazonSSMManagedInstanceCore`, or `AWSDataLifecycleManagerServiceRole`, preventing privilege escalation via the deployer role
-- Admin IAM policy (`terraform/rockport-admin-policy.json`) is a one-time bootstrap: must be created and attached to the admin user via the AWS console (root account) before first `init`. After that, `init` self-manages it.
+- Admin IAM policy (`terraform/rockport-admin-policy.json`): `init` auto-creates and attaches it to the calling user. If the calling user lacks `iam:CreatePolicy` (e.g. a non-admin IAM user), init prints instructions to create it manually via the AWS console first. On subsequent runs, `init` updates the policy in place.
 - HSTS and "Always Use HTTPS" are enabled in Cloudflare (not managed by Terraform)
 - Video generation: multi-model sidecar on port 4001 supporting Nova Reel v1.1 (us-east-1, 1280x720, 6-120s, $0.08/s) and Luma Ray2 (us-west-2, 540p/720p, 5s/9s, $0.75-1.50/s). Model selected via `model` field, defaults to `nova-reel`
 - Video sidecar authenticates via LiteLLM's `/key/info` endpoint; writes spend to `LiteLLM_SpendLogs` + `LiteLLM_VerificationToken` for unified tracking

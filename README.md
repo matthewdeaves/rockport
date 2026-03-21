@@ -92,14 +92,14 @@ Again, `init` will create the `rockport-deployer` user and `rockport` CLI profil
 
 This is an interactive setup that:
 - Prompts for your AWS region, domain, Cloudflare IDs, and budget alert email
-- Creates a scoped `RockportDeployerAccess` IAM policy (least-privilege — no wildcard permissions)
-- Creates a `rockport-deployer` IAM user and configures a `rockport` AWS CLI profile
+- Creates 3 scoped deployer IAM policies (compute, IAM/SSM, monitoring/storage — least-privilege, no wildcards)
+- Creates a `rockport-deployer` IAM user with access keys and configures a `rockport` AWS CLI profile
 - Generates a master API key and stores it in SSM Parameter Store
 - Creates an S3 bucket for Terraform state
 
-All subsequent `rockport.sh` commands automatically use the `rockport` AWS CLI profile — no need to export credentials.
+After init, all `rockport.sh` commands automatically use the `rockport` AWS CLI profile (deployer credentials). Your admin credentials are only needed for `init` — the deployer has an explicit deny on attaching non-Rockport IAM policies, preventing privilege escalation.
 
-If you already have a `terraform.tfvars` from a previous setup, init will ask whether to keep it and just ensure the IAM policy, master key, and state bucket exist.
+If you already have a `terraform.tfvars` from a previous setup, init will ask whether to keep it and just ensure the IAM policies, master key, and state bucket exist.
 
 ### 4. Deploy
 
@@ -145,7 +145,7 @@ Launch Claude Code. Default model routes to Opus 4.6.
 ./scripts/rockport.sh monitor --live                # Live dashboard (auto-refresh)
 ./scripts/rockport.sh config push                   # Push config to instance + restart
 ./scripts/rockport.sh logs                          # Stream LiteLLM logs
-./scripts/rockport.sh upgrade                       # Restart LiteLLM (config changes)
+./scripts/rockport.sh upgrade                       # Restart LiteLLM + video sidecar
 ./scripts/rockport.sh start                         # Start a stopped instance
 ./scripts/rockport.sh stop                          # Stop the instance
 ./scripts/rockport.sh setup-claude                  # Create Anthropic-only key + Claude Code config
@@ -392,7 +392,7 @@ Ray2 supports 7 aspect ratios (16:9, 9:16, 1:1, 4:3, 3:4, 21:9, 9:21), two resol
 
 Two GitHub Actions workflows run on push to `main`:
 
-**Validate** (`validate.yml`) — runs on every push and PR:
+**Validate** (`validate.yml`) — runs on pushes and PRs to `main` (paths: `terraform/`, `config/`, `scripts/`, `sidecar/`, `tests/`, CI config):
 - `terraform fmt -check` and `terraform validate`
 - ShellCheck on all shell scripts
 - Gitleaks secrets scan

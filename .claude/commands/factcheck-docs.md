@@ -67,6 +67,22 @@ Read ALL of the following source-of-truth files. Do not skip any. Use the Agent 
 **9. IAM policies** — `terraform/deployer-policies/*.json` and `terraform/rockport-admin-policy.json`:
    - Extract key permissions and scoping
 
+**10. Example files and gitignore**:
+   - `terraform/terraform.tfvars.example` — every variable in `variables.tf` must be present, defaults must match exactly, required vs optional must be correct
+   - `terraform/.env.example` — must exist and document the Cloudflare API token
+   - `.gitignore` — must exclude `.env*` and `*.tfvars` but include `!.env.example`, `!*.env.example`, `!*.tfvars.example`
+
+**11. Additional Terraform files**:
+   - `terraform/idle.tf` — Lambda, EventBridge, CloudWatch alarm resources
+   - `terraform/monitoring.tf` — budget alarms, SNS, auto-recovery
+   - `terraform/outputs.tf` — all output names and sensitivity markers
+   - `terraform/snapshots.tf` — DLM lifecycle policy
+
+**12. Init/deploy flow** — `scripts/rockport.sh`:
+   - Extract the admin vs deployer credential flow (auto-profile selection, init override)
+   - Extract what `cmd_init` creates (IAM policies, deployer user, access keys, CLI profile, master key, state bucket)
+   - Extract what `cmd_destroy` cleans up (and what it doesn't — IAM users/policies, CLI profile, orphaned log groups)
+
 ### Phase 2: Cross-reference and audit
 
 For each documentation file, check EVERY factual claim against the ground truth gathered in Phase 1. Be methodical — go line by line through each doc file.
@@ -85,6 +101,9 @@ For each documentation file, check EVERY factual claim against the ground truth 
 - [ ] Security section — every claim matches actual systemd/terraform/WAF config
 - [ ] CI/CD section — matches actual workflow files
 - [ ] Smoke test description — cost estimate accurate, test count correct
+- [ ] Setup section — IAM policy names match actual policies created by init (3 deployer policies, not 1)
+- [ ] Setup section — admin vs deployer credential flow accurately described
+- [ ] Setup section — profile auto-selection behavior documented
 - [ ] No dead links or references to removed features/endpoints
 
 #### CLAUDE.md audit checklist
@@ -101,6 +120,7 @@ For each documentation file, check EVERY factual claim against the ground truth 
   - [ ] Cost figures match actual Bedrock pricing
   - [ ] Prompt validation rules match prompt_validation.py EXACTLY
   - [ ] Resize modes match image_resize.py EXACTLY
+- [ ] Project Structure tree — includes example files (terraform.tfvars.example, .env.example)
 - [ ] Active Technologies — no stale feature-branch references (e.g. "(009-complete-image-services)")
 - [ ] Recent Changes — is current and accurate
 - [ ] No duplicate bullets saying the same thing in different words
