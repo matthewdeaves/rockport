@@ -512,6 +512,14 @@ wait_for_health() {
 # --- Subcommands ---
 
 cmd_init() {
+  # init manages IAM policies that require admin permissions.
+  # If the auto-profile selected the deployer, unset it so we fall back
+  # to the default/admin credentials. The deployer profile gets created
+  # (or reused) at the end of init via ensure_deployer_access().
+  if [[ "${AWS_PROFILE:-}" == "rockport" ]]; then
+    unset AWS_PROFILE
+  fi
+
   echo "Rockport Setup"
   echo "=============="
   echo
