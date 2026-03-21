@@ -35,6 +35,9 @@ sidecar/                # Video + image services sidecar (FastAPI on port 4001)
 scripts/bootstrap.sh    # EC2 user_data — installs PostgreSQL, LiteLLM, cloudflared, video sidecar
 scripts/rockport.sh     # Admin CLI (init, keys, status, spend, logs, deploy, start/stop)
 scripts/setup.sh        # Install dev tools (AWS CLI, Terraform, jq, shellcheck, trivy, etc.)
+docs/                   # Architecture diagrams
+  rockport_architecture_overview.svg  # System architecture overview
+  rockport_request_dataflow.svg       # Request/response flow swimlane
 tests/smoke-test.sh     # Post-deploy verification
 .github/workflows/      # CI/CD — validate (fmt, lint, security scan) + deploy (plan/apply/smoke)
 .checkov.yaml           # Checkov skip list with justifications
