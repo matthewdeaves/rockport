@@ -18,7 +18,7 @@
   </defs>
 
   <!-- Background -->
-  <rect width="1800" height="980" fill="#0d1117"/>
+  <rect width="1800" height="1092" fill="#0d1117"/>
 
   <!-- Title -->
   <text x="900" y="28" text-anchor="middle" fill="#8b949e" font-size="13" font-weight="bold" letter-spacing="2">PROJECT ROCKPORT — ARCHITECTURE OVERVIEW</text>
@@ -160,12 +160,12 @@
   <!-- ═══════════════════════════════════════════════════════════ -->
   <!-- ZONE: BEDROCK (x=1374, w=412) -->
   <!-- ═══════════════════════════════════════════════════════════ -->
-  <rect x="1374" y="44" width="412" height="520" rx="6" fill="#0d1a12" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <rect x="1374" y="44" width="412" height="600" rx="6" fill="#0d1a12" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="5,3"/>
   <text x="1386" y="62" fill="#3fb950" font-size="10" font-weight="bold" letter-spacing="1.5">⚡  AWS BEDROCK</text>
 
   <!-- EU Regions box -->
   <rect x="1386" y="70" width="388" height="438" rx="4" fill="#0a1a10" stroke="#3fb950" stroke-width="1"/>
-  <text x="1398" y="86" fill="#3fb950" font-size="9" letter-spacing="1" opacity="0.8">EU REGIONS · eu-west-2 (Claude uses eu.* cross-region profiles)</text>
+  <text x="1398" y="86" fill="#3fb950" font-size="9" letter-spacing="0.5" opacity="0.8">EU REGIONS · eu-west-2 (Claude uses eu.* cross-region)</text>
 
   <!-- Claude models -->
   <rect x="1396" y="94" width="116" height="44" rx="3" fill="#0f2018" stroke="#f78166" stroke-width="1"/>
@@ -350,19 +350,19 @@
   <text x="859" y="352" text-anchor="middle" fill="#58a6ff" font-size="8">EBS snapshot</text>
 
   <!-- Admin → CF Tunnel (master key) -->
-  <path d="M 126 720 Q 126 672 305 672 Q 305 440 305 386" stroke="#d2a8ff" stroke-width="1.5" stroke-dasharray="4,3" fill="none" marker-end="url(#ah-purple)"/>
-  <rect x="195" y="540" width="70" height="13" fill="#0d1117"/>
-  <text x="230" y="548" text-anchor="middle" fill="#d2a8ff" font-size="8">master key</text>
-
-  <!-- Admin → SSM (remote commands) -->
-  <path d="M 226 620 Q 900 580 1040 154" stroke="#d2a8ff" stroke-width="1.5" stroke-dasharray="4,3" fill="none" marker-end="url(#ah-purple)"/>
-  <rect x="680" y="574" width="80" height="13" fill="#0d1117"/>
-  <text x="720" y="582" text-anchor="middle" fill="#d2a8ff" font-size="8">SSM remote cmds</text>
+  <path d="M 126 720 L 126 672 Q 126 660 140 660 L 305 660 L 305 386" stroke="#d2a8ff" stroke-width="1.5" stroke-dasharray="4,3" fill="none" marker-end="url(#ah-purple)"/>
+  <rect x="160" y="660" width="70" height="13" fill="#0d1117"/>
+  <text x="195" y="668" text-anchor="middle" fill="#d2a8ff" font-size="8">master key</text>
 
   <!-- Admin → EC2 start/stop -->
-  <path d="M 226 634 Q 500 580 520 460" stroke="#d2a8ff" stroke-width="1" stroke-dasharray="3,3" fill="none" marker-end="url(#ah-purple)"/>
-  <rect x="350" y="580" width="58" height="13" fill="#0d1117"/>
-  <text x="379" y="588" text-anchor="middle" fill="#d2a8ff" font-size="8">start/stop</text>
+  <path d="M 226 746 L 380 746 L 380 660 L 520 660 L 520 524" stroke="#d2a8ff" stroke-width="1" stroke-dasharray="3,3" fill="none" marker-end="url(#ah-purple)"/>
+  <rect x="400" y="660" width="58" height="13" fill="#0d1117"/>
+  <text x="429" y="668" text-anchor="middle" fill="#d2a8ff" font-size="8">start/stop</text>
+
+  <!-- Admin → SSM (remote commands) -->
+  <path d="M 226 746 L 700 746 L 700 660 L 1040 660 L 1040 154" stroke="#d2a8ff" stroke-width="1.5" stroke-dasharray="4,3" fill="none" marker-end="url(#ah-purple)"/>
+  <rect x="720" y="660" width="80" height="13" fill="#0d1117"/>
+  <text x="760" y="668" text-anchor="middle" fill="#d2a8ff" font-size="8">SSM remote cmds</text>
 
   <!-- ═══════════════════════════════════════════════════════════ -->
   <!-- LEGEND -->

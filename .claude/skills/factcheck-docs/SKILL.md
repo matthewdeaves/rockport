@@ -2,7 +2,7 @@
 name: factcheck-docs
 description: "Deep factcheck of project documentation (README.md, CLAUDE.md, SVG diagrams, skill definitions) against the actual codebase. Finds inaccuracies, stale references, missing information, and bloat. Use after making code changes, when docs may be stale, or when the user says things like \"check the docs\", \"are the docs up to date\", \"factcheck\", \"audit docs\", \"verify documentation\", or \"docs are wrong\"."
 argument-hint: "[specific docs or areas to focus on]"
-allowed-tools: Agent, Read, Edit, Bash, Glob, Grep, Write
+allowed-tools: Agent, Read, Edit, Bash, Glob, Grep, Write, mcp__playwright_*
 context: fork
 ---
 
@@ -75,6 +75,43 @@ After applying fixes:
 5. Run `python3 -c "import yaml; yaml.safe_load(open('config/litellm-config.yaml'))"` if config was touched
 6. Show a git diff summary of all changes made
 
+### Phase 6: Visual audit of SVG diagrams
+
+Use Playwright MCP to render each SVG in a real browser and screenshot it. This catches layout issues (overlapping text, misaligned boxes, clipped content) that XML validation cannot detect.
+
+**CRITICAL: This phase requires actual screenshots. Do NOT fabricate visual analysis from SVG XML source. If you cannot take a screenshot, say so — do not describe what you think the rendering looks like based on reading coordinates.**
+
+#### Availability check
+
+Before starting, test that Playwright is working:
+
+1. Call `mcp__playwright__browser_navigate` with url `about:blank`
+2. If the tool call fails or is not found, output: **"Phase 6 skipped: Playwright MCP not available. SVGs were validated as well-formed XML only — no visual rendering was performed."** Then stop. Do NOT write any visual analysis.
+
+#### For each SVG file in `docs/`:
+
+1. **Resize viewport** — call `mcp__playwright__browser_resize` with width and height matching the SVG's `width`/`height` attributes (read these from the `<svg>` tag). This prevents the browser from scaling or clipping the diagram.
+2. **Navigate** — call `mcp__playwright__browser_navigate` with the file URL (e.g. `file:///home/matthew/rockport/docs/rockport_architecture_overview.svg`)
+3. **Screenshot** — call `mcp__playwright__browser_take_screenshot`. Confirm you received an image back. If the screenshot tool returns an error or empty result, report the failure and move to the next SVG.
+4. **Examine the screenshot image only** — report what you can see in the rendered image:
+   - Overlapping or clipped text
+   - Misaligned boxes, arrows, or connectors
+   - Text that's too small or illegible
+   - Arrow endpoints that don't connect to targets
+   - Elements cut off at viewport edges
+   - Excessive whitespace or cramped regions
+
+   Do NOT cite SVG XML attributes (coordinates, font-size values, element IDs) in your visual report. Describe what you see, not what the source says.
+5. **Fix if needed** — if issues are found, make targeted SVG XML edits, validate XML, then re-screenshot and verify. Cap at 3 fix-and-verify iterations per SVG.
+
+#### Output format
+
+For each SVG, report one of:
+- **PASS** — "Renders correctly, no visual issues found"
+- **FIXED** — list what was wrong and what was changed, confirmed by re-screenshot
+- **ISSUES** — visual problems found but not fixable via targeted edits (describe what you see)
+- **SKIPPED** — Playwright unavailable or screenshot failed (state why)
+
 ## Rules
 
 ### No bloat (CRITICAL)
@@ -102,7 +139,7 @@ After applying fixes:
 - **SVGs must render correctly** — every edit must produce valid XML. After any SVG edit, validate with `python3 -c "import xml.etree.ElementTree as ET; ET.parse('file.svg'); print('valid')"` before moving on
 - **Do not rewrite SVGs** — make targeted text edits only. Changing a `<text>` element's content is fine. Restructuring layout, moving boxes, or adding new elements risks breaking coordinates and alignment. Only add/move SVG elements if you can verify the coordinates are correct by examining adjacent elements
 - **SVG text must match code exactly** — routing descriptions, port numbers, model names, memory limits must all come from the source-of-truth files read in Phase 1
-- **Test SVG rendering** — if any SVG was modified, after all fixes are applied open it in a browser or viewer to check it renders without overlapping text or broken layout. If you can't open a viewer, at minimum validate XML and check that no coordinates were accidentally changed
+- **Test SVG rendering** — Phase 6 handles this via Playwright MCP (opens SVGs in a headless browser, screenshots them, and checks for visual issues). If Playwright is unavailable, at minimum validate XML and check that no coordinates were accidentally changed
 
 ### Cleanup
 

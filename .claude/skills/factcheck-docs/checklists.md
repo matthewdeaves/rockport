@@ -61,6 +61,9 @@ Use these checklists in Phase 2 to cross-reference every documentation claim aga
 - [ ] Memory limits in boxes match systemd MemoryMax
 - [ ] AWS services panel matches actual terraform resources (SSM, CloudWatch, DLM, S3, Budgets, Lambda, CloudTrail)
 - [ ] CloudTrail box matches cloudtrail.tf configuration (bucket name pattern, lifecycle)
+- [ ] Visual: no overlapping or clipped text (verified via Playwright screenshot)
+- [ ] Visual: boxes and arrows properly aligned, no broken connections
+- [ ] Visual: all text readable (sufficient size and contrast)
 
 ## SVG: rockport_request_dataflow.svg
 
@@ -70,6 +73,9 @@ Use these checklists in Phase 2 to cross-reference every documentation claim aga
 - [ ] Rate limit values match litellm-config.yaml (rpm_limit, tpm_limit)
 - [ ] Budget values match litellm-config.yaml (max_budget, default budget)
 - [ ] Video sidecar flow matches video_api.py (auth, validation, budget, Bedrock call, concurrent limit)
+- [ ] Visual: no overlapping or clipped text (verified via Playwright screenshot)
+- [ ] Visual: swimlane columns properly aligned, arrows connect to correct targets
+- [ ] Visual: step badges and flow boxes readable (sufficient size and contrast)
 
 ## Skills: rockport-ops
 
