@@ -86,10 +86,10 @@ tests/smoke-test.sh     # Post-deploy verification
 - The `litellm` user's home is `/var/lib/litellm` (not `/home/litellm`) so prisma cache works with `ProtectHome=yes`
 - Terraform `user_data` only runs on first boot; use `config push` or `upgrade` for runtime changes
 - Claude Code sends old model IDs (e.g. `claude-sonnet-4-5-20250929`); aliases in litellm-config.yaml map these to latest 4.6 Bedrock models
-- Chat models: Claude (Opus/Sonnet 4.6, Haiku 4.5), DeepSeek v3.2, Qwen3 Coder, Kimi K2.5, Nova (Pro/Lite/Micro v1), Nova 2 Lite, Llama 4 (Scout/Maverick), Mistral Large 3, Ministral 8B, GPT-OSS (120B/20B)
+- Chat models: Claude (Opus/Sonnet 4.6, Haiku 4.5), DeepSeek v3.2, Qwen3 Coder 480B, Kimi K2.5, Nova (Pro/Lite/Micro v1), Nova 2 Lite, Llama 4 (Scout/Maverick), Mistral Large 3, Ministral 8B, GPT-OSS (120B/20B)
 - Llama 4 models use `us.` cross-region inference profiles (US-only); Nova 2 Lite uses `us.` cross-region (EU profiles not available); Mistral Large 3 is us-east-1 direct (not available in EU); Ministral 8B and GPT-OSS are direct in eu-west-2
 - Bedrock inference profiles need `eu.` prefix for cross-region models; IAM policy must cover ALL EU regions (the inference profile can route to any) + all 4 US regions (us-east-1, us-east-2, us-west-1, us-west-2) for Stability AI `us.` inference profiles + image/video models + Llama 4 `us.` models
-- Prompt caching: automatic via LiteLLM — `cache_control` blocks translate to Bedrock `cachePoint`. Supported on Claude and Nova 2 Lite. 1-hour TTL for Claude 4.5+ via `ttl: "1h"`. `cache_control_injection_points` configured for non-cache-aware clients
+- Prompt caching: automatic via LiteLLM — `cache_control` blocks translate to Bedrock `cachePoint`. Supported on Claude and Nova 2 Lite. `cache_control_injection_points` configured for non-cache-aware clients
 - Extended thinking: `reasoning_effort` supported for Claude 4.6, Nova 2 Lite, and GPT-OSS. Unsupported models silently drop the parameter
 - Bedrock Guardrails: optional content filtering via `terraform/guardrails.tf` (behind `enable_guardrails` variable, default false). Terraform creates the guardrail resource; LiteLLM's guardrail config references it by ID. Supports `pre_call` (cheapest, blocks before LLM), `during_call` (parallel), `post_call` modes. PII masking via `mask_request_content`/`mask_response_content`. IAM `bedrock:ApplyGuardrail` permission added conditionally
 - The EC2 instance needs a public IP for outbound internet (SSM, Bedrock, pip) — the default VPC has no NAT gateway. The SG has zero inbound rules so the public IP is not directly reachable
@@ -107,7 +107,7 @@ tests/smoke-test.sh     # Post-deploy verification
 - The LiteLLM admin UI is intentionally disabled (`disable_admin_ui: true`) — all admin is via the CLI
 - Swagger/ReDoc docs disabled via `NO_DOCS=True` / `NO_REDOC=True` in the LiteLLM env file
 - Cloudflare Access (`terraform/access.tf`) requires a service token for all requests — `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers must be present or Cloudflare returns 403 before traffic reaches the tunnel. Token values are Terraform outputs (sensitive). To rotate: create a new service token in Terraform, update all clients, then remove the old one
-- Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation (`/v1/images/generations`), image editing (`/v1/images/edits` via LiteLLM), image services (`/v1/images/*` for Nova Canvas sidecar), video generation (`/v1/videos/*`), and the admin CLI
+- Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation (`/v1/images/generations`), image services (`/v1/images/*` for sidecar + LiteLLM edits), video generation (`/v1/videos/*`), and the admin CLI
 - `setup-claude` creates keys restricted to Anthropic models only; `key create` without `--claude-only` grants access to all models including image generation
 - Stability AI image models (SD3.5 Large, Stable Image Ultra, Stable Image Core, all 13 stability-* edit models) and Luma Ray2 need a one-time Marketplace subscription — invoke once in the Bedrock playground to activate
 - `deploy` auto-creates the SSM master key if missing, so `init` is not a strict prerequisite
@@ -138,7 +138,7 @@ tests/smoke-test.sh     # Post-deploy verification
 - Instance IAM: Bedrock `foundation-model/*` wildcard replaced with specific model family patterns; SSM PutParameter scoped to `/rockport/db-password` only
 - Deployer IAM: SSM documents scoped to `AWS-RunShellScript` and `AWS-StartInteractiveCommand` only
 - State bucket gets DenyNonSSL policy on creation via `rockport.sh init`
-- Bootstrap runs `prisma migrate deploy` before LiteLLM starts — avoids slow per-migration baseline resolve (~10s x 108 migrations) on first boot. Full bootstrap completes in ~3 minutes
+- Bootstrap runs `prisma migrate deploy` before LiteLLM starts — avoids slow per-migration baseline resolve on first boot. Full bootstrap completes in ~3 minutes
 - Nova Canvas sidecar endpoints on (:4001): `/v1/images/variations`, `/v1/images/background-removal`, `/v1/images/outpaint`. All enforce auth, budgets, and block --claude-only keys
 
 ## Active Technologies

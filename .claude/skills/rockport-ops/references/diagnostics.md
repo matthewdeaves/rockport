@@ -13,15 +13,15 @@ export AWS_PROFILE=rockport
 
 To get the instance ID and region:
 ```bash
-REGION=$(grep '^region' /home/matt/rockport/terraform/terraform.tfvars | sed 's/.*= *"\(.*\)"/\1/')
-INSTANCE_ID=$(cd /home/matt/rockport/terraform && terraform output -raw instance_id 2>/dev/null)
+REGION=$(grep '^region' $PROJECT_ROOT/terraform/terraform.tfvars | sed 's/.*= *"\(.*\)"/\1/')
+INSTANCE_ID=$(cd $PROJECT_ROOT/terraform && terraform output -raw instance_id 2>/dev/null)
 ```
 
 To get the tunnel URL and CF-Access credentials:
 ```bash
-TUNNEL_URL=$(cd /home/matt/rockport/terraform && terraform output -raw tunnel_url 2>/dev/null)
-CF_CLIENT_ID=$(cd /home/matt/rockport/terraform && terraform output -raw cf_access_client_id 2>/dev/null)
-CF_CLIENT_SECRET=$(cd /home/matt/rockport/terraform && terraform output -raw cf_access_client_secret 2>/dev/null)
+TUNNEL_URL=$(cd $PROJECT_ROOT/terraform && terraform output -raw tunnel_url 2>/dev/null)
+CF_CLIENT_ID=$(cd $PROJECT_ROOT/terraform && terraform output -raw cf_access_client_id 2>/dev/null)
+CF_CLIENT_SECRET=$(cd $PROJECT_ROOT/terraform && terraform output -raw cf_access_client_secret 2>/dev/null)
 ```
 
 ## Layer 1: Instance State
@@ -278,7 +278,7 @@ aws ssm send-command \
 The CLI wraps many of these operations. For quick checks, prefer the CLI when it covers the need:
 
 ```bash
-cd /home/matt/rockport
+cd $PROJECT_ROOT
 ./scripts/rockport.sh status       # Health + model list
 ./scripts/rockport.sh logs         # Stream LiteLLM journal (interactive - avoid in subagents)
 ./scripts/rockport.sh spend today  # Today's spend
