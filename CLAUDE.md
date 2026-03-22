@@ -89,8 +89,8 @@ tests/smoke-test.sh     # Post-deploy verification
 - Chat models: Claude (Opus/Sonnet 4.6, Haiku 4.5), DeepSeek v3.2, Qwen3 Coder, Kimi K2.5, Nova (Pro/Lite/Micro v1), Nova 2 Lite, Llama 4 (Scout/Maverick), Mistral Large 3, Ministral 8B, GPT-OSS (120B/20B)
 - Llama 4 models use `us.` cross-region inference profiles (US-only); Nova 2 Lite uses `us.` cross-region (EU profiles not available); Mistral Large 3 is us-east-1 direct (not available in EU); Ministral 8B and GPT-OSS are direct in eu-west-2
 - Bedrock inference profiles need `eu.` prefix for cross-region models; IAM policy must cover ALL EU regions (the inference profile can route to any) + all 4 US regions (us-east-1, us-east-2, us-west-1, us-west-2) for Stability AI `us.` inference profiles + image/video models + Llama 4 `us.` models
-- Prompt caching: works automatically via LiteLLM — Claude Code sends `cache_control` blocks, LiteLLM translates to Bedrock `cachePoint`. Cache read saves 90% on Claude ($0.30 vs $3.00/MTok for Sonnet 4.6), 75% on Nova 2 Lite. 1-hour TTL supported for Claude 4.5+ via `ttl: "1h"`. `cache_control_injection_points` configured for server-side injection on system messages for non-cache-aware clients
-- Extended thinking: `reasoning_effort` parameter supported for Claude 4.6 (adaptive thinking), Nova 2 Lite (reasoningConfig levels), GPT-OSS (pass-through). `modify_params: true` in litellm_settings handles multi-turn tool-use with thinking. Unsupported models silently drop the parameter via `drop_params: true`
+- Prompt caching: automatic via LiteLLM — `cache_control` blocks translate to Bedrock `cachePoint`. Supported on Claude and Nova 2 Lite. 1-hour TTL for Claude 4.5+ via `ttl: "1h"`. `cache_control_injection_points` configured for non-cache-aware clients
+- Extended thinking: `reasoning_effort` supported for Claude 4.6, Nova 2 Lite, and GPT-OSS. Unsupported models silently drop the parameter
 - Bedrock Guardrails: optional content filtering via `terraform/guardrails.tf` (behind `enable_guardrails` variable, default false). Terraform creates the guardrail resource; LiteLLM's guardrail config references it by ID. Supports `pre_call` (cheapest, blocks before LLM), `during_call` (parallel), `post_call` modes. PII masking via `mask_request_content`/`mask_response_content`. IAM `bedrock:ApplyGuardrail` permission added conditionally
 - The EC2 instance needs a public IP for outbound internet (SSM, Bedrock, pip) — the default VPC has no NAT gateway. The SG has zero inbound rules so the public IP is not directly reachable
 - Image generation models: Nova Canvas (us-east-1), Titan Image v2 (us-west-2), SD3.5 Large (us-west-2), Stable Image Ultra (us-west-2), Stable Image Core (us-west-2) — routed via per-model `aws_region_name` in litellm-config.yaml
@@ -148,8 +148,6 @@ tests/smoke-test.sh     # Post-deploy verification
 - S3 — state + video output
 - Bash — CLI, bootstrap, smoke tests
 - CloudTrail — audit logging
-- Bash (scripts), HCL (Terraform), YAML (LiteLLM config) + LiteLLM (post-Jan 2026), Terraform (AWS + Cloudflare providers) (013-bedrock-expansion)
-- PostgreSQL 15 on-instance (existing — spend tracking) (013-bedrock-expansion)
 
 ## Recent Changes
-- 013-bedrock-expansion: Added Bash (scripts), HCL (Terraform), YAML (LiteLLM config) + LiteLLM (post-Jan 2026), Terraform (AWS + Cloudflare providers)
+- Added 7 new Bedrock chat models (Llama 4 Scout/Maverick, Nova 2 Lite, Mistral Large 3, Ministral 8B, GPT-OSS 120B/20B), prompt caching, extended thinking, and optional Bedrock Guardrails (`deploy --guardrails`)
