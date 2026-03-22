@@ -97,14 +97,14 @@ aws ssm get-command-invocation \
 
 Terraform uses the deployer profile. The backend config is in `terraform/`:
 ```bash
-cd /home/matt/rockport/terraform
+cd $PROJECT_ROOT/terraform
 AWS_PROFILE=rockport terraform plan
 AWS_PROFILE=rockport terraform apply
 ```
 
 The Cloudflare API token is in `terraform/.env` (gitignored):
 ```bash
-source /home/matt/rockport/terraform/.env
+source $PROJECT_ROOT/terraform/.env
 # Sets CLOUDFLARE_API_TOKEN
 ```
 
@@ -123,7 +123,7 @@ source /home/matt/rockport/terraform/.env
 
 Region is read from `terraform/terraform.tfvars`, not hardcoded:
 ```bash
-REGION=$(grep '^region' /home/matt/rockport/terraform/terraform.tfvars | sed 's/.*= *"\(.*\)"/\1/')
+REGION=$(grep '^region' $PROJECT_ROOT/terraform/terraform.tfvars | sed 's/.*= *"\(.*\)"/\1/')
 ```
 
 Default is `eu-west-2` (London). Bedrock cross-region inference profiles route to other EU regions automatically.

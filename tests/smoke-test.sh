@@ -97,6 +97,13 @@ check "Model list contains claude-sonnet-4-6" grep -q "claude-sonnet-4-6" <<< "$
 check "Model list contains nova-pro" grep -q "nova-pro" <<< "$MODELS"
 check "Model list contains nova-canvas" grep -q "nova-canvas" <<< "$MODELS"
 check "Model list contains titan-image-v2" grep -q "titan-image-v2" <<< "$MODELS"
+check "Model list contains llama4-scout" grep -q "llama4-scout" <<< "$MODELS"
+check "Model list contains llama4-maverick" grep -q "llama4-maverick" <<< "$MODELS"
+check "Model list contains nova-2-lite" grep -q "nova-2-lite" <<< "$MODELS"
+check "Model list contains mistral-large-3" grep -q "mistral-large-3" <<< "$MODELS"
+check "Model list contains ministral-8b" grep -q "ministral-8b" <<< "$MODELS"
+check "Model list contains gpt-oss-120b" grep -q "gpt-oss-120b" <<< "$MODELS"
+check "Model list contains gpt-oss-20b" grep -q "gpt-oss-20b" <<< "$MODELS"
 
 # 5. Streamed chat response (~$0.01)
 echo "5. Streaming chat"
@@ -107,6 +114,16 @@ STREAM_RESPONSE=$(curl -s -X POST "$BASE_URL/v1/chat/completions" \
   -d '{"model":"claude-sonnet-4-6","max_tokens":10,"messages":[{"role":"user","content":"Say hi"}],"stream":true}' \
   --max-time 60 2>/dev/null)
 check "Streaming response received" grep -q "data:" <<< "$STREAM_RESPONSE"
+
+# 5b. Nova 2 Lite streaming chat (~$0.001)
+echo "5b. Streaming chat (nova-2-lite)"
+NOVA2_RESPONSE=$(curl -s -X POST "$BASE_URL/v1/chat/completions" \
+  -H "Authorization: Bearer $VALID_KEY" \
+  -H "Content-Type: application/json" \
+  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
+  -d '{"model":"nova-2-lite","max_tokens":10,"messages":[{"role":"user","content":"Say hi"}],"stream":true}' \
+  --max-time 60 2>/dev/null)
+check "Nova 2 Lite streaming response received" grep -q "data:" <<< "$NOVA2_RESPONSE"
 
 # 6. Image generation via LiteLLM (~$0.04)
 echo "6. Image generation (LiteLLM route)"

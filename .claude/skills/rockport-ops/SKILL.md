@@ -101,7 +101,7 @@ After the fix is implemented and deployed:
 
 1. **Run the full smoke test suite** using a subagent:
    ```
-   Use a subagent to run: cd /home/matt/rockport && bash tests/smoke-test.sh
+   Use a subagent to run: cd $PROJECT_ROOT && bash tests/smoke-test.sh
    Report: total tests, passed, failed, and details of any failures.
    ```
 
@@ -135,13 +135,17 @@ After the fix is implemented and deployed:
 - **MITIGATED** — Service restored but root cause fix is pending or partial
 - **ESCALATED** — Cannot be fixed automatically (e.g., AWS outage, requires manual console action, needs admin IAM)
 
+## Conventions
+
+- `$PROJECT_ROOT` in reference files means the repository root (the current working directory). Resolve it before running commands.
+
 ## Gotchas
 
 - **SSM commands return async.** `send-command` returns immediately. You must `sleep 3` then `get-command-invocation` to read output. Forgetting this gives empty results.
 - **Instance takes ~3 minutes after start.** If idle shutdown stopped the instance, starting it is not enough — services need time to boot. Don't report "service down" until SSM shows the instance online for 3+ minutes.
-- **Smoke tests need a temp API key.** `smoke-test.sh` creates and cleans up its own key. If the master key is wrong or LiteLLM is down, key creation fails and all 35 tests show as failures — the root cause is auth, not the individual tests.
+- **Smoke tests need a temp API key.** `smoke-test.sh` creates and cleans up its own key. If the master key is wrong or LiteLLM is down, key creation fails and all 43 tests show as failures — the root cause is auth, not the individual tests.
 - **Config push is not atomic.** The SSM command stops services, downloads, extracts, restarts. If it fails mid-way, services may be down. Check SSM command output for which step failed before assuming the config is bad.
-- **`terraform output` needs init.** If terraform hasn't been initialized in this session, `terraform output` fails. Run `terraform -chdir=/home/matt/rockport/terraform init -backend=false` first if needed, or read values from `terraform.tfvars` directly.
+- **`terraform output` needs init.** If terraform hasn't been initialized in this session, `terraform output` fails. Run `terraform -chdir=$PROJECT_ROOT/terraform init -backend=false` first if needed, or read values from `terraform.tfvars` directly.
 - **The deployer profile may not be set.** If `AWS_PROFILE=rockport` doesn't work, the profile may not exist yet (init not run). Fall back to checking `aws configure list-profiles` first.
 - **Cloudflare 403 vs LiteLLM 403.** Both return 403 but for different reasons. Cloudflare 403 = missing CF-Access headers or WAF block. LiteLLM 403 = invalid/expired API key or --claude-only restriction. Check response body to distinguish.
 - **Journalctl errors may be stale.** Always use `--since "10 min ago"` to scope log queries. Old errors from previous incidents will mislead diagnosis.
@@ -158,6 +162,6 @@ After the fix is implemented and deployed:
 
 5. **Cost-conscious testing.** When a test API call is needed, use the cheapest model (Haiku) with minimal tokens. Never generate images or videos as diagnostic tests.
 
-6. **Full smoke tests after every fix.** No exceptions. The 35-assertion suite costs ~$0.05 and catches regressions.
+6. **Full smoke tests after every fix.** No exceptions. The 43-assertion suite costs ~$0.05 and catches regressions.
 
 7. **Phase 5 is mandatory.** Every invocation produces the structured ops report, whether the issue was a simple restart or a complex multi-file fix.

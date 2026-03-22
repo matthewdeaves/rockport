@@ -137,6 +137,12 @@ variable "idle_threshold_bytes" {
   }
 }
 
+variable "enable_guardrails" {
+  description = "Enable optional Bedrock Guardrails for content filtering, PII masking, and profanity blocking"
+  type        = bool
+  default     = false
+}
+
 variable "video_max_concurrent_jobs" {
   description = "Maximum concurrent video generation jobs per API key"
   type        = number

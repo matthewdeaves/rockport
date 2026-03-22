@@ -32,3 +32,13 @@ output "video_bucket_us_west_2_name" {
   value       = aws_s3_bucket.video_us_west_2.id
   sensitive   = true
 }
+
+output "guardrail_id" {
+  description = "Bedrock Guardrail ID (only set when enable_guardrails = true)"
+  value       = var.enable_guardrails ? aws_bedrock_guardrail.rockport[0].guardrail_id : null
+}
+
+output "guardrail_version" {
+  description = "Bedrock Guardrail version (only set when enable_guardrails = true)"
+  value       = var.enable_guardrails ? aws_bedrock_guardrail.rockport[0].version : null
+}

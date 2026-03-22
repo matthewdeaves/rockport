@@ -11,7 +11,7 @@ OpenAI-compatible LiteLLM proxy on EC2 that routes any application to Bedrock mo
 ## What you get
 
 - Claude Code connects via `ANTHROPIC_BASE_URL` to your own proxy
-- Anthropic (Opus 4.6, Sonnet 4.6, Haiku 4.5), DeepSeek V3.2, Qwen3 Coder 480B, Kimi K2.5, Nova Pro/Lite/Micro on Bedrock
+- Anthropic (Opus 4.6, Sonnet 4.6, Haiku 4.5), DeepSeek V3.2, Qwen3 Coder 480B, Kimi K2.5, Nova Pro/Lite/Micro, Nova 2 Lite, Llama 4 Scout/Maverick, Mistral Large 3, Ministral 8B, GPT-OSS 120B/20B on Bedrock
 - Image generation via OpenAI-compatible `/v1/images/generations` (Nova Canvas, Titan Image v2, SD3.5 Large, Stable Image Ultra, Stable Image Core)
 - Image editing via `/v1/images/edits` — 13 Stability AI operations (structure, sketch, style transfer, upscale, inpaint, erase, search & recolor, and more) via LiteLLM native
 - Image services via sidecar: variations, background removal, outpainting (Nova Canvas)
@@ -154,7 +154,7 @@ Launch Claude Code. Default model routes to Opus 4.6.
 
 ## Idle auto-stop
 
-The instance automatically stops after 30 minutes of inactivity to save costs. The idle check considers both network traffic (NetworkIn < 500KB) and CPU utilisation (< 10%) — a high-CPU workload with low network traffic won't be stopped. A CloudWatch alarm fires if the idle-stop Lambda itself fails consecutively. When you need it again:
+The instance automatically stops after 30 minutes of inactivity to save costs. The idle check considers both network traffic (NetworkIn < 500,000 bytes) and CPU utilisation (< 10%) — a high-CPU workload with low network traffic won't be stopped. A CloudWatch alarm fires if the idle-stop Lambda itself fails consecutively. When you need it again:
 
 ```bash
 ./scripts/rockport.sh start
@@ -186,6 +186,7 @@ All settings are in `terraform/terraform.tfvars`. These variables have defaults 
 | `idle_timeout_minutes` | `30` | Minutes of inactivity before auto-stop |
 | `idle_threshold_bytes` | `500000` | Network bytes below which instance is considered idle |
 | `video_max_concurrent_jobs` | `3` | Maximum concurrent video generation jobs per API key |
+| `enable_guardrails` | `false` | Enable optional Bedrock Guardrails (content filtering, PII masking) |
 
 Model configuration is in `config/litellm-config.yaml`. After editing, push changes to the running instance:
 
@@ -414,7 +415,7 @@ Rockport is designed so that the proxy has no direct internet exposure. Every la
 
 **Localhost-only binding** — LiteLLM listens on `127.0.0.1:4000`, not `0.0.0.0`. Even if the security group were misconfigured, the service would not accept external connections directly.
 
-**Admin UI disabled** — The LiteLLM admin dashboard is disabled via `disable_admin_ui: true` and Swagger/ReDoc docs are disabled via `NO_DOCS=True` / `NO_REDOC=True` environment variables. A Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation, image editing, image services, and the admin CLI — only `/v1/chat/completions`, `/v1/models`, `/v1/messages`, `/v1/images/generations`, `/v1/images/edits`, `/v1/images/*`, `/v1/videos/*`, `/key/*`, `/health` (exact match), `/spend/*`, and a handful of other operational paths are reachable. Everything else (admin UI, OpenAPI schema, routes list, SSO, SCIM, debug endpoints, etc.) returns 403 at the Cloudflare edge.
+**Admin UI disabled** — The LiteLLM admin dashboard is disabled via `disable_admin_ui: true` and Swagger/ReDoc docs are disabled via `NO_DOCS=True` / `NO_REDOC=True` environment variables. A Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation, image editing, image services, and the admin CLI — only `/v1/chat/completions`, `/v1/models`, `/v1/messages`, `/v1/images/generations`, `/v1/images/*`, `/v1/videos/*`, `/key/*`, `/health` (exact match), `/spend/*`, and a handful of other operational paths are reachable. Everything else (admin UI, OpenAPI schema, routes list, SSO, SCIM, debug endpoints, etc.) returns 403 at the Cloudflare edge.
 
 **Key separation** — The master key (stored in SSM Parameter Store) is only used by the admin CLI. Users get virtual keys with per-key daily budgets and rate limits. Keys created with `--claude-only` (or via `setup-claude`) are restricted to Anthropic models only. Keys without this flag get access to all models including image generation. Virtual keys can only call model endpoints — they cannot create other keys, view spend, or manage the proxy.
 
