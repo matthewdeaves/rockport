@@ -38,6 +38,7 @@ scripts/setup.sh        # Install dev tools (AWS CLI, Terraform, jq, shellcheck,
 docs/                   # Architecture diagrams
   rockport_architecture_overview.svg  # System architecture overview
   rockport_request_dataflow.svg       # Request/response flow swimlane
+  future-ideas.md         # Future enhancement ideas
 tests/smoke-test.sh     # Post-deploy verification
 .github/workflows/      # CI/CD — validate (fmt, lint, security scan) + deploy (plan/apply/smoke)
 .checkov.yaml           # Checkov skip list with justifications
