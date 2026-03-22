@@ -142,3 +142,8 @@ tests/smoke-test.sh     # Post-deploy verification
 - S3 — state + video output
 - Bash — CLI, bootstrap, smoke tests
 - CloudTrail — audit logging
+- Bash (scripts), HCL (Terraform), YAML (LiteLLM config) + LiteLLM (post-Jan 2026), Terraform (AWS + Cloudflare providers) (013-bedrock-expansion)
+- PostgreSQL 15 on-instance (existing — spend tracking) (013-bedrock-expansion)
+
+## Recent Changes
+- 013-bedrock-expansion: Added Bash (scripts), HCL (Terraform), YAML (LiteLLM config) + LiteLLM (post-Jan 2026), Terraform (AWS + Cloudflare providers)
