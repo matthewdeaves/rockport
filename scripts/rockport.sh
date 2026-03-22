@@ -1690,6 +1690,23 @@ cmd_destroy() {
     || die "terraform init failed"
   terraform destroy || die "terraform destroy failed"
 
+  # Comment out guardrails config if it was active (guardrail resource is now destroyed)
+  local config_file="$CONFIG_DIR/litellm-config.yaml"
+  if grep -q '^guardrails:' "$config_file"; then
+    echo "  Commenting out guardrails config (resource destroyed)..."
+    sed -i 's/^guardrails:/# guardrails:/' "$config_file"
+    sed -i 's/^  - guardrail_name:/#   - guardrail_name:/' "$config_file"
+    sed -i 's/^    litellm_params:/#     litellm_params:/' "$config_file"
+    sed -i 's/^      guardrail: bedrock/#       guardrail: bedrock/' "$config_file"
+    sed -i 's/^      mode:/#       mode:/' "$config_file"
+    sed -i 's/^      guardrailIdentifier:/#       guardrailIdentifier:/' "$config_file"
+    sed -i 's/^      guardrailVersion:/#       guardrailVersion:/' "$config_file"
+    sed -i 's/^      aws_region_name:/#       aws_region_name:/' "$config_file"
+    sed -i 's/^      default_on:/#       default_on:/' "$config_file"
+    sed -i 's/^      mask_request_content:/#       mask_request_content:/' "$config_file"
+    sed -i 's/^      mask_response_content:/#       mask_response_content:/' "$config_file"
+  fi
+
   echo "Cleaning up orphaned resources..."
   aws logs delete-log-group \
     --log-group-name "/aws/lambda/rockport-idle-shutdown" \
