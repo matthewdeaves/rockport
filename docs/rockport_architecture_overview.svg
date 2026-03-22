@@ -141,14 +141,15 @@
   <text x="985" y="343" text-anchor="middle" fill="#8b949e" font-size="9">daily EBS snapshots · 7-day retention</text>
 
   <!-- S3 -->
-  <rect x="1104" y="304" width="230" height="60" rx="3" fill="#111827" stroke="#58a6ff" stroke-width="1"/>
+  <rect x="1104" y="304" width="230" height="72" rx="3" fill="#111827" stroke="#58a6ff" stroke-width="1"/>
   <text x="1219" y="323" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="bold">S3</text>
   <text x="1219" y="339" text-anchor="middle" fill="#8b949e" font-size="9">Terraform state bucket (eu-west-2)</text>
   <text x="1219" y="353" text-anchor="middle" fill="#8b949e" font-size="9">Video buckets (us-east-1 + us-west-2 · 7-day lifecycle)</text>
+  <text x="1219" y="367" text-anchor="middle" fill="#8b949e" font-size="9">Artifacts bucket (deploy packages)</text>
 
-  <!-- AWS Budgets + SNS -->
+  <!-- AWS Budgets -->
   <rect x="876" y="374" width="458" height="60" rx="3" fill="#111827" stroke="#e3b341" stroke-width="1"/>
-  <text x="1105" y="397" text-anchor="middle" fill="#e3b341" font-size="10" font-weight="bold">AWS Budgets + SNS</text>
+  <text x="1105" y="397" text-anchor="middle" fill="#e3b341" font-size="10" font-weight="bold">AWS Budgets</text>
   <text x="1105" y="413" text-anchor="middle" fill="#8b949e" font-size="9">daily $10 Bedrock alert · monthly $30 overall alert</text>
 
   <!-- CloudTrail -->

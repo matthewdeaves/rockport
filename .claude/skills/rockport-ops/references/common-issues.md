@@ -70,7 +70,7 @@ Known symptom-to-cause mappings for Rockport infrastructure. Organized by sympto
 ## Sidecar Issues (Video + Image)
 
 ### Sidecar health returns unhealthy
-**Symptoms:** `localhost:4001/health` returns error or connection refused
+**Symptoms:** `localhost:4001/v1/videos/health` returns error or connection refused
 **Cause:** Python process crashed, usually due to:
 1. PostgreSQL connection failure (sidecar needs DB for job tracking)
 2. Import error (missing dependency)

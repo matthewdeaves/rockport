@@ -41,7 +41,7 @@ Use the diagnostic procedures in [diagnostics.md](references/diagnostics.md) for
 **Layer order:**
 1. Instance state (running? SSM reachable?)
 2. Service health (systemd status for litellm, cloudflared, rockport-video, postgresql)
-3. Health endpoints (localhost:4000/health, localhost:4001/health)
+3. Health endpoints (localhost:4000/health, localhost:4001/v1/videos/health)
 4. Recent logs (journalctl errors from the relevant service, last 10 minutes)
 5. External reachability (curl through tunnel with CF-Access headers)
 6. Bedrock / IAM (only if symptoms suggest model invocation failures)
@@ -139,7 +139,7 @@ After the fix is implemented and deployed:
 
 - **SSM commands return async.** `send-command` returns immediately. You must `sleep 3` then `get-command-invocation` to read output. Forgetting this gives empty results.
 - **Instance takes ~3 minutes after start.** If idle shutdown stopped the instance, starting it is not enough — services need time to boot. Don't report "service down" until SSM shows the instance online for 3+ minutes.
-- **Smoke tests need a temp API key.** `smoke-test.sh` creates and cleans up its own key. If the master key is wrong or LiteLLM is down, key creation fails and all 26 tests show as failures — the root cause is auth, not the individual tests.
+- **Smoke tests need a temp API key.** `smoke-test.sh` creates and cleans up its own key. If the master key is wrong or LiteLLM is down, key creation fails and all 35 tests show as failures — the root cause is auth, not the individual tests.
 - **Config push is not atomic.** The SSM command stops services, downloads, extracts, restarts. If it fails mid-way, services may be down. Check SSM command output for which step failed before assuming the config is bad.
 - **`terraform output` needs init.** If terraform hasn't been initialized in this session, `terraform output` fails. Run `terraform -chdir=/home/matt/rockport/terraform init -backend=false` first if needed, or read values from `terraform.tfvars` directly.
 - **The deployer profile may not be set.** If `AWS_PROFILE=rockport` doesn't work, the profile may not exist yet (init not run). Fall back to checking `aws configure list-profiles` first.
@@ -158,6 +158,6 @@ After the fix is implemented and deployed:
 
 5. **Cost-conscious testing.** When a test API call is needed, use the cheapest model (Haiku) with minimal tokens. Never generate images or videos as diagnostic tests.
 
-6. **Full smoke tests after every fix.** No exceptions. The 26-test suite costs ~$0.05 and catches regressions.
+6. **Full smoke tests after every fix.** No exceptions. The 35-assertion suite costs ~$0.05 and catches regressions.
 
 7. **Phase 5 is mandatory.** Every invocation produces the structured ops report, whether the issue was a simple restart or a complex multi-file fix.

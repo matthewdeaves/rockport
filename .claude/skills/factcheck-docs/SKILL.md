@@ -1,7 +1,7 @@
 ---
 name: factcheck-docs
-description: Deep factcheck of project documentation (README.md, CLAUDE.md, SVG diagrams, skill definitions) against the actual codebase. Finds inaccuracies, stale references, missing information, and bloat. Use after making code changes, when docs may be stale, or when the user says things like "check the docs", "are the docs up to date", "factcheck", "audit docs", "verify documentation", or "docs are wrong".
-disable-model-invocation: false
+description: "Deep factcheck of project documentation (README.md, CLAUDE.md, SVG diagrams, skill definitions) against the actual codebase. Finds inaccuracies, stale references, missing information, and bloat. Use after making code changes, when docs may be stale, or when the user says things like \"check the docs\", \"are the docs up to date\", \"factcheck\", \"audit docs\", \"verify documentation\", or \"docs are wrong\"."
+argument-hint: "[specific docs or areas to focus on]"
 allowed-tools: Agent, Read, Edit, Bash, Glob, Grep, Write
 context: fork
 ---

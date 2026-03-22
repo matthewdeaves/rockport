@@ -116,7 +116,7 @@ aws ssm send-command \
 aws ssm send-command \
   --instance-ids "$INSTANCE_ID" \
   --document-name "AWS-RunShellScript" \
-  --parameters '{"commands":["curl -s -o /dev/null -w \"%{http_code}\" http://localhost:4000/health && echo \" LiteLLM\" && curl -s -o /dev/null -w \"%{http_code}\" http://localhost:4001/health && echo \" Sidecar\""]}' \
+  --parameters '{"commands":["curl -s -o /dev/null -w \"%{http_code}\" http://localhost:4000/health && echo \" LiteLLM\" && curl -s -o /dev/null -w \"%{http_code}\" http://localhost:4001/v1/videos/health && echo \" Sidecar\""]}' \
   --query 'Command.CommandId' --output text --region "$REGION"
 ```
 
@@ -134,7 +134,7 @@ aws ssm send-command \
 aws ssm send-command \
   --instance-ids "$INSTANCE_ID" \
   --document-name "AWS-RunShellScript" \
-  --parameters '{"commands":["curl -s http://localhost:4001/health | python3 -m json.tool"]}' \
+  --parameters '{"commands":["curl -s http://localhost:4001/v1/videos/health | python3 -m json.tool"]}' \
   --query 'Command.CommandId' --output text --region "$REGION"
 ```
 

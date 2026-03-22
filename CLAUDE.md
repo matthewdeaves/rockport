@@ -8,11 +8,19 @@ OpenAI-compatible LiteLLM proxy on EC2 behind Cloudflare Tunnel, routing any app
 terraform/              # All infrastructure (EC2, IAM, SG, tunnel, snapshots, monitoring, idle shutdown)
 terraform/.build/       # Lambda zip artifacts (gitignored)
 terraform/lambda/       # Lambda function source code (idle_shutdown.py)
+terraform/main.tf       # EC2 instance, security group, IAM role/policies, user_data
+terraform/variables.tf  # Input variables (region, instance type, cloudflared version, etc.)
+terraform/outputs.tf    # Terraform outputs (instance ID, tunnel URL, region, video buckets, SSM command)
+terraform/providers.tf  # AWS + Cloudflare provider configuration
+terraform/versions.tf   # Required provider versions and backend config
 terraform/moved.tf      # Moved blocks template for safe resource renames
 terraform/tunnel.tf     # Cloudflare Tunnel ingress rules (path→port routing)
 terraform/waf.tf        # Cloudflare WAF path allowlist
 terraform/access.tf     # Cloudflare Access application + service token (edge pre-auth)
 terraform/s3.tf         # S3 buckets for artifacts + video output (us-east-1 + us-west-2)
+terraform/idle.tf       # Lambda-based idle shutdown + failure alarm
+terraform/monitoring.tf # Budget alarms (Bedrock daily, monthly total), auto-recovery
+terraform/snapshots.tf  # EBS snapshot lifecycle (DLM policy)
 terraform/cloudtrail.tf # CloudTrail management event logging (S3 bucket + trail)
 terraform/deployer-policies/ # 3 IAM policy JSONs (compute, iam-ssm, monitoring-storage)
 terraform/rockport-admin-policy.json # Bootstrap IAM policy for admin user
@@ -27,7 +35,7 @@ config/                 # LiteLLM config, systemd units, PostgreSQL tuning
 sidecar/                # Video + image services sidecar (FastAPI on port 4001)
   video_api.py          #   Video endpoints, auth, validation, Bedrock client
   image_api.py          #   Nova Canvas image endpoints (variations, background-removal, outpaint)
-  image_resize.py       #   Auto-resize for Nova Reel (scale, crop, fit to 1280x720)
+  image_resize.py       #   Auto-resize for Nova Reel (scale, crop-center/top/bottom, fit to 1280x720)
   prompt_validation.py  #   Nova Reel prompt validation (negation, camera placement)
   db.py                 #   PostgreSQL job tracking, spend logging
   requirements.txt      #   Python dependencies for sidecar
@@ -98,7 +106,7 @@ tests/smoke-test.sh     # Post-deploy verification
 - Stability AI image models (SD3.5 Large, Stable Image Ultra, Stable Image Core, all 13 stability-* edit models) and Luma Ray2 need a one-time Marketplace subscription — invoke once in the Bedrock playground to activate
 - `deploy` auto-creates the SSM master key if missing, so `init` is not a strict prerequisite
 - The Cloudflare API token (in `terraform/.env`, gitignored) needs Zone DNS Edit, Zone WAF Edit, Account Cloudflare Tunnel Edit, and Account Zero Trust Edit permissions
-- Deployer IAM is split into 3 policies under `terraform/deployer-policies/` (compute, iam-ssm, monitoring-storage) to stay under the 6144-byte per-policy limit while keeping all actions explicit (no wildcards). EC2/SSM mutating actions scoped to `aws:ResourceTag/Project=rockport`. An explicit Deny in iam-ssm.json blocks `AttachRolePolicy`/`DetachRolePolicy` for any policy ARN not matching `Rockport*`, `rockport*`, `AmazonSSMManagedInstanceCore`, or `AWSDataLifecycleManagerServiceRole`, preventing privilege escalation via the deployer role
+- Deployer IAM is split into 3 policies under `terraform/deployer-policies/` (compute, iam-ssm, monitoring-storage) to stay under the 6144-byte per-policy limit while keeping all actions explicit (no wildcards). EC2/SSM mutating actions scoped to `aws:ResourceTag/Project=rockport`. An explicit Deny in iam-ssm.json blocks `AttachRolePolicy`/`DetachRolePolicy` for any policy ARN not matching `Rockport*`, `rockport*`, `AmazonSSMManagedInstanceCore`, or `service-role/AWSDataLifecycleManagerServiceRole`, preventing privilege escalation via the deployer role
 - Admin IAM policy (`terraform/rockport-admin-policy.json`): `init` auto-creates and attaches it to the calling user. If the calling user lacks `iam:CreatePolicy` (e.g. a non-admin IAM user), init prints instructions to create it manually via the AWS console first. On subsequent runs, `init` updates the policy in place.
 - HSTS and "Always Use HTTPS" are enabled in Cloudflare (not managed by Terraform)
 - Video generation: multi-model sidecar on port 4001 supporting Nova Reel v1.1 (us-east-1, 1280x720, 6-120s, $0.08/s) and Luma Ray2 (us-west-2, 540p/720p, 5s/9s, $0.75-1.50/s). Model selected via `model` field, defaults to `nova-reel`

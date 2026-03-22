@@ -100,7 +100,7 @@ model_list:
       mode: image_generation
 
   # Stability AI image edit models (via LiteLLM /v1/images/edits)
-  # Model IDs use base Bedrock IDs without us. prefix — LiteLLM handles region routing
+  # Model IDs use us. cross-region inference prefix for region routing
   - model_name: stability-structure
     litellm_params:
       model: bedrock/us.stability.stable-image-control-structure-v1:0
