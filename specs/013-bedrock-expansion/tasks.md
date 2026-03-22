@@ -48,9 +48,9 @@
 - [x] T011 [P] [US1] Add Ministral 8B entry to `config/litellm-config.yaml`: model_name `ministral-8b`, model `bedrock/mistral.ministral-3-8b-instruct`, aws_region_name `eu-west-2`
 - [x] T012 [P] [US1] Add GPT-OSS 120B entry to `config/litellm-config.yaml`: model_name `gpt-oss-120b`, model `bedrock/openai.gpt-oss-120b-1:0`, aws_region_name `eu-west-2`
 - [x] T013 [P] [US1] Add GPT-OSS 20B entry to `config/litellm-config.yaml`: model_name `gpt-oss-20b`, model `bedrock/openai.gpt-oss-20b-1:0`, aws_region_name `eu-west-2`
-- [ ] T014 [US1] Push config to instance via `./scripts/rockport.sh config push` and verify all 7 models appear in `GET /v1/models`
-- [ ] T015 [US1] Send basic chat completion request to each new model and verify valid response
-- [ ] T016 [US1] Verify `--claude-only` keys return HTTP 403 for all new non-Anthropic models
+- [x] T014 [US1] Push config to instance via `./scripts/rockport.sh config push` and verify all 7 models appear in `GET /v1/models`
+- [x] T015 [US1] Send basic chat completion request to each new model and verify valid response
+- [x] T016 [US1] Verify `--claude-only` keys block all new non-Anthropic models (LiteLLM returns HTTP 401, not 403)
 
 **Checkpoint**: All 7 new models are accessible via the proxy, spend tracking works, key restrictions enforced
 
@@ -64,8 +64,8 @@
 
 ### Implementation for User Story 2
 
-- [ ] T017 [US2] Verify prompt caching works out of the box: send a request with `cache_control: {"type": "ephemeral"}` on a system message to a Claude model via the proxy, confirm response includes `cache_creation_input_tokens`
-- [ ] T018 [US2] Send a second identical request and verify response includes `cache_read_input_tokens` with reduced cost in usage
+- [x] T017 [US2] Verify prompt caching works out of the box: send a request with `cache_control: {"type": "ephemeral"}` on a system message to a Claude model via the proxy, confirm response includes `cache_creation_input_tokens`
+- [x] T018 [US2] Send a second identical request and verify response includes `cache_read_input_tokens` with reduced cost in usage
 - [ ] T019 [US2] Verify spend tracking in LiteLLM correctly applies cache-read rates ($0.30/MTok for Sonnet 4.6 instead of $3.00/MTok) via `./scripts/rockport.sh spend models`
 - [x] T020 [P] [US2] Add `cache_control_injection_points` to Claude model entries (and Nova 2 Lite) in `config/litellm-config.yaml` for server-side cache injection on system messages. Format: `cache_control_injection_points: [{location: message, role: system}]` under `litellm_params`. Per FR-013 SHOULD requirement — benefits non-Claude-Code clients. Nova 2 Lite also supports caching (75% savings on cache reads)
 - [ ] T021 [US2] Verify Nova 2 Lite prompt caching also works (cache_read at $0.075/MTok vs $0.30/MTok standard)
@@ -84,11 +84,11 @@
 ### Implementation for User Story 3
 
 - [x] T023 [US3] Add `modify_params: true` to `litellm_settings` in `config/litellm-config.yaml` (handles multi-turn tool-use with thinking — avoids "Expected thinking but found tool_use" errors)
-- [ ] T024 [US3] Push config update via `./scripts/rockport.sh config push`
-- [ ] T025 [P] [US3] Verify Claude Sonnet 4.6 responds with thinking content when `reasoning_effort: "high"` is sent (LiteLLM translates to `thinking: {type: "adaptive"}`)
-- [ ] T026 [P] [US3] Verify Nova 2 Lite responds with reasoning content when `reasoning_effort: "medium"` is sent (LiteLLM translates to `reasoningConfig: {type: "enabled", maxReasoningEffort: "medium"}`)
-- [ ] T027 [P] [US3] Verify GPT-OSS 120B responds with reasoning content when `reasoning_effort: "high"` is sent (pass-through)
-- [ ] T028 [US3] Verify that `reasoning_effort` sent to models that don't support it (e.g., `mistral-large-3`) is silently dropped via `drop_params: true`
+- [x] T024 [US3] Push config update via `./scripts/rockport.sh config push`
+- [x] T025 [P] [US3] Verify Claude Sonnet 4.6 responds with thinking content when `reasoning_effort: "high"` is sent (LiteLLM translates to `thinking: {type: "adaptive"}`)
+- [x] T026 [P] [US3] Verify Nova 2 Lite responds with reasoning content when `reasoning_effort: "medium"` is sent (LiteLLM translates to `reasoningConfig: {type: "enabled", maxReasoningEffort: "medium"}`)
+- [x] T027 [P] [US3] Verify GPT-OSS 120B responds with reasoning content when `reasoning_effort: "high"` is sent (pass-through)
+- [x] T028 [US3] Verify that `reasoning_effort` sent to models that don't support it (e.g., `mistral-large-3`) is silently dropped via `drop_params: true`
 
 **Checkpoint**: Extended thinking works across Claude, Nova 2, and GPT-OSS model families
 
@@ -123,11 +123,11 @@
 **Purpose**: Smoke tests, CLI verification, documentation, and final validation across all user stories
 
 - [x] T040 [P] Extend `tests/smoke-test.sh` per FR-026: (a) add checks for all 7 new model names (`llama4-scout`, `llama4-maverick`, `nova-2-lite`, `mistral-large-3`, `ministral-8b`, `gpt-oss-120b`, `gpt-oss-20b`) in the model list verification section (test 4, after line 99), (b) add 1 live streaming chat completion test to `nova-2-lite` (similar to existing test 5 for `claude-sonnet-4-6`, ~$0.001/run). Follow explicit bash error handling per constitution
-- [ ] T041 [P] Verify CLI health check per FR-025: run `./scripts/rockport.sh status` and confirm all 7 new models appear as healthy via LiteLLM's built-in health probe. If any model fails the probe (unlikely for chat models), add to `image_model_pattern` exclusion in `scripts/rockport.sh` line 695 and implement manual probing in the case statement at lines 745-751
+- [x] T041 [P] Verify CLI health check per FR-025: run `./scripts/rockport.sh status` and confirm all 7 new models appear as healthy via LiteLLM's built-in health probe. If any model fails the probe (unlikely for chat models), add to `image_model_pattern` exclusion in `scripts/rockport.sh` line 695 and implement manual probing in the case statement at lines 745-751
 - [x] T042 [P] Update `CLAUDE.md` with: new model list and model IDs, prompt caching notes (automatic via cache_control, 1-hour TTL for Claude 4.5+), extended thinking notes (reasoning_effort support per model family), guardrails documentation (Terraform resource, LiteLLM config, IAM permission)
-- [ ] T043 Run full smoke test suite (`tests/smoke-test.sh`) to verify all existing and new models work
-- [ ] T044 Verify all existing models (Claude, DeepSeek, Qwen, Kimi, Nova v1, image, video) still work correctly after all changes (SC-005)
-- [ ] T045 Run `./scripts/rockport.sh spend models` to verify spend tracking reports costs for all new models (SC-007)
+- [x] T043 Run full smoke test suite (`tests/smoke-test.sh`) to verify all existing and new models work
+- [x] T044 Verify all existing models (Claude, DeepSeek, Qwen, Kimi, Nova v1, image, video) still work correctly after all changes (SC-005)
+- [x] T045 Run `./scripts/rockport.sh spend models` to verify spend tracking reports costs for all new models (SC-007)
 
 ---
 
