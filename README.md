@@ -4,9 +4,9 @@ OpenAI-compatible LiteLLM proxy on EC2 that routes any application to Bedrock mo
 
 ## Architecture
 
-[![Architecture Overview](docs/rockport_architecture_overview.svg)](https://raw.githubusercontent.com/matthewdeaves/rockport/main/docs/rockport_architecture_overview.svg)
+[![Architecture Overview](docs/rockport_architecture_overview.svg?v=2)](https://raw.githubusercontent.com/matthewdeaves/rockport/main/docs/rockport_architecture_overview.svg)
 
-[![Request Data Flow](docs/rockport_request_dataflow.svg)](https://raw.githubusercontent.com/matthewdeaves/rockport/main/docs/rockport_request_dataflow.svg)
+[![Request Data Flow](docs/rockport_request_dataflow.svg?v=2)](https://raw.githubusercontent.com/matthewdeaves/rockport/main/docs/rockport_request_dataflow.svg)
 
 ## What you get
 
