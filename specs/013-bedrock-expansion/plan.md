@@ -5,9 +5,9 @@
 
 ## Summary
 
-Add 7 new Bedrock chat models (Llama 4 Scout/Maverick, Nova 2 Lite, Mistral Large 3, Ministral 8B, GPT-OSS 120B/20B), enable prompt caching for Claude models, support extended thinking across multiple model families, and add optional Bedrock Guardrails. All features work through LiteLLM configuration — no custom application code.
+Add 7 new Bedrock chat models (Llama 4 Scout/Maverick, Nova 2 Lite, Mistral Large 3, Ministral 8B, GPT-OSS 120B/20B), enable prompt caching for Claude models, support extended thinking across multiple model families, and add optional Bedrock Guardrails. All features work through LiteLLM configuration — no custom application code. CLI health checks and smoke tests updated to cover new models.
 
-**Technical approach**: Config-driven. New models are `litellm-config.yaml` entries. Prompt caching works automatically (LiteLLM translates `cache_control` → Bedrock `cachePoint`). Extended thinking works automatically (`reasoning_effort` → model-specific parameters). Guardrails require a Terraform resource + config section. IAM policies updated for new model families.
+**Technical approach**: Config-driven. New models are `litellm-config.yaml` entries. Prompt caching works automatically (LiteLLM translates `cache_control` → Bedrock `cachePoint`). Extended thinking works automatically (`reasoning_effort` → model-specific parameters). Guardrails require a Terraform resource + config section. IAM policies updated for new model families. Smoke tests extended per FR-026. CLI health verified per FR-025.
 
 ## Technical Context
 
@@ -44,7 +44,7 @@ Add 7 new Bedrock chat models (Llama 4 Scout/Maverick, Nova 2 Lite, Mistral Larg
 specs/013-bedrock-expansion/
 ├── plan.md              # This file
 ├── spec.md              # Feature specification
-├── research.md          # Phase 0: LiteLLM research, model IDs, region availability
+├── research.md          # Phase 0: LiteLLM research, model IDs, region availability, CLI health analysis
 ├── data-model.md        # Phase 1: Config entities and relationships
 ├── quickstart.md        # Phase 1: Verification steps
 ├── contracts/
@@ -62,15 +62,20 @@ config/
 
 terraform/
 ├── main.tf                   # IAM policy updates (new model patterns + ApplyGuardrail)
+├── variables.tf              # enable_guardrails variable (bool, default false)
+├── outputs.tf                # Guardrail ID/version outputs (conditional)
 └── guardrails.tf             # NEW: Optional aws_bedrock_guardrail + version (behind variable toggle)
 
+scripts/
+└── rockport.sh               # Verified: no changes needed for chat model health probes (FR-025)
+
 tests/
-└── smoke-test.sh             # Extended: basic chat to each new model
+└── smoke-test.sh             # Extended: 7 model list checks + 1 live nova-2-lite streaming chat (FR-026)
 
 CLAUDE.md                     # Updated: new models, caching notes, guardrails docs
 ```
 
-**Structure Decision**: No new directories or source files. This is entirely config changes to existing files plus one new optional Terraform file for guardrails.
+**Structure Decision**: No new directories or source files except `terraform/guardrails.tf`. All other changes are to existing files. CLI (`rockport.sh`) verified to not need changes for chat model health probes — the hardcoded case statement (lines 745-751) is only for image model Bedrock ID → LiteLLM name mapping, which is irrelevant for chat models.
 
 ## Implementation Phases
 
@@ -109,20 +114,21 @@ CLAUDE.md                     # Updated: new models, caching notes, guardrails d
 
 ### Phase 4: Guardrails (P3)
 
-**Files**: `terraform/guardrails.tf` (new), `terraform/main.tf` (IAM), `config/litellm-config.yaml`
+**Files**: `terraform/guardrails.tf` (new), `terraform/variables.tf`, `terraform/outputs.tf`, `terraform/main.tf` (IAM), `config/litellm-config.yaml`
 
 1. Create `terraform/guardrails.tf` with `aws_bedrock_guardrail` resource (behind `enable_guardrails` variable toggle — defaults to `false`)
 2. Add `bedrock:ApplyGuardrail` IAM permission (conditional on guardrail being created)
 3. Add `guardrails:` section to `litellm-config.yaml` (commented out by default)
 4. Document configuration in CLAUDE.md
 
-### Phase 5: Testing & Docs
+### Phase 5: Testing, CLI Verification & Docs
 
 **Files**: `tests/smoke-test.sh`, `CLAUDE.md`
 
-1. Extend smoke test with basic chat completion to each new model
-2. Update CLAUDE.md with new models, caching notes, thinking notes, guardrails documentation
-3. Run full smoke test suite
+1. **Smoke tests (FR-026)**: Add 7 model name checks to model list verification (test 4), add 1 live streaming chat completion to `nova-2-lite`
+2. **CLI health verification (FR-025)**: Run `rockport.sh status` after deployment, confirm all 7 new models appear as healthy. If any fail health probe, add to exclusion pattern in `cmd_status()` and implement manual probing
+3. Update CLAUDE.md with new models, caching notes, thinking notes, guardrails documentation
+4. Run full smoke test suite
 
 ## Risk Assessment
 
@@ -133,6 +139,7 @@ CLAUDE.md                     # Updated: new models, caching notes, guardrails d
 | Prompt caching not working with cross-region profiles | Low | Medium | Verify with test request; fall back to in-region if needed |
 | Guardrails add too much latency | Low | Low | Guardrails are optional; `during_call` mode runs in parallel |
 | Memory pressure from additional model routing | Very Low | Medium | No memory increase — models are config entries, not loaded into memory |
+| New chat model fails LiteLLM health probe | Very Low | Low | All chat models accept `max_tokens`; add exclusion pattern if needed (FR-025) |
 
 ## Complexity Tracking
 

@@ -22,6 +22,7 @@ terraform/idle.tf       # Lambda-based idle shutdown + failure alarm
 terraform/monitoring.tf # Budget alarms (Bedrock daily, monthly total), auto-recovery
 terraform/snapshots.tf  # EBS snapshot lifecycle (DLM policy)
 terraform/cloudtrail.tf # CloudTrail management event logging (S3 bucket + trail)
+terraform/guardrails.tf # Optional Bedrock Guardrail (behind enable_guardrails variable toggle)
 terraform/deployer-policies/ # 3 IAM policy JSONs (compute, iam-ssm, monitoring-storage)
 terraform/rockport-admin-policy.json # Bootstrap IAM policy for admin user
 terraform/terraform.tfvars.example   # Example tfvars with all variables (required + optional defaults)
@@ -85,7 +86,12 @@ tests/smoke-test.sh     # Post-deploy verification
 - The `litellm` user's home is `/var/lib/litellm` (not `/home/litellm`) so prisma cache works with `ProtectHome=yes`
 - Terraform `user_data` only runs on first boot; use `config push` or `upgrade` for runtime changes
 - Claude Code sends old model IDs (e.g. `claude-sonnet-4-5-20250929`); aliases in litellm-config.yaml map these to latest 4.6 Bedrock models
-- Bedrock inference profiles need `eu.` prefix for cross-region models; IAM policy must cover ALL EU regions (the inference profile can route to any) + all 4 US regions (us-east-1, us-east-2, us-west-1, us-west-2) for Stability AI `us.` inference profiles + image/video models
+- Chat models: Claude (Opus/Sonnet 4.6, Haiku 4.5), DeepSeek v3.2, Qwen3 Coder, Kimi K2.5, Nova (Pro/Lite/Micro v1), Nova 2 Lite, Llama 4 (Scout/Maverick), Mistral Large 3, Ministral 8B, GPT-OSS (120B/20B)
+- Llama 4 models use `us.` cross-region inference profiles (US-only); Nova 2 Lite uses `us.` cross-region (EU profiles not available); Mistral Large 3 is us-east-1 direct (not available in EU); Ministral 8B and GPT-OSS are direct in eu-west-2
+- Bedrock inference profiles need `eu.` prefix for cross-region models; IAM policy must cover ALL EU regions (the inference profile can route to any) + all 4 US regions (us-east-1, us-east-2, us-west-1, us-west-2) for Stability AI `us.` inference profiles + image/video models + Llama 4 `us.` models
+- Prompt caching: works automatically via LiteLLM — Claude Code sends `cache_control` blocks, LiteLLM translates to Bedrock `cachePoint`. Cache read saves 90% on Claude ($0.30 vs $3.00/MTok for Sonnet 4.6), 75% on Nova 2 Lite. 1-hour TTL supported for Claude 4.5+ via `ttl: "1h"`. `cache_control_injection_points` configured for server-side injection on system messages for non-cache-aware clients
+- Extended thinking: `reasoning_effort` parameter supported for Claude 4.6 (adaptive thinking), Nova 2 Lite (reasoningConfig levels), GPT-OSS (pass-through). `modify_params: true` in litellm_settings handles multi-turn tool-use with thinking. Unsupported models silently drop the parameter via `drop_params: true`
+- Bedrock Guardrails: optional content filtering via `terraform/guardrails.tf` (behind `enable_guardrails` variable, default false). Terraform creates the guardrail resource; LiteLLM's guardrail config references it by ID. Supports `pre_call` (cheapest, blocks before LLM), `during_call` (parallel), `post_call` modes. PII masking via `mask_request_content`/`mask_response_content`. IAM `bedrock:ApplyGuardrail` permission added conditionally
 - The EC2 instance needs a public IP for outbound internet (SSM, Bedrock, pip) — the default VPC has no NAT gateway. The SG has zero inbound rules so the public IP is not directly reachable
 - Image generation models: Nova Canvas (us-east-1), Titan Image v2 (us-west-2), SD3.5 Large (us-west-2), Stable Image Ultra (us-west-2), Stable Image Core (us-west-2) — routed via per-model `aws_region_name` in litellm-config.yaml
 - Image dimensions via OpenAI `size` param: Nova Canvas requires divisible by 16 (320–4096); Titan v2 uses preset sizes (256–1408); SD3.5 Large ignores `size` (fixed 1024x1024, returns JPEG not PNG)

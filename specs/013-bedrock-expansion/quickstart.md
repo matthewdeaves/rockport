@@ -13,26 +13,32 @@
 After deploying this feature:
 
 ```bash
-# 1. Check new models appear
+# 1. Check all new models appear in model list
 ./scripts/rockport.sh models
 
-# 2. Test a new model
+# 2. Verify health status shows all new models as healthy (FR-025)
+./scripts/rockport.sh status
+
+# 3. Test a new model
 curl -s https://llm.matthewdeaves.com/v1/chat/completions \
   -H "Authorization: Bearer $ROCKPORT_KEY" \
   -H "Content-Type: application/json" \
   -d '{"model": "nova-2-lite", "messages": [{"role": "user", "content": "Hello"}]}'
 
-# 3. Test extended thinking
+# 4. Test extended thinking
 curl -s https://llm.matthewdeaves.com/v1/chat/completions \
   -H "Authorization: Bearer $ROCKPORT_KEY" \
   -H "Content-Type: application/json" \
   -d '{"model": "nova-2-lite", "messages": [{"role": "user", "content": "What is 15 * 37?"}], "reasoning_effort": "high"}'
 
-# 4. Verify prompt caching (check usage in response)
+# 5. Verify prompt caching (check usage in response)
 # Claude Code does this automatically — just use it normally and check spend
 
-# 5. Check spend tracking
+# 6. Check spend tracking
 ./scripts/rockport.sh spend models
+
+# 7. Run full smoke test suite (FR-026)
+./tests/smoke-test.sh https://llm.matthewdeaves.com
 ```
 
 ## Files Changed
@@ -40,5 +46,5 @@ curl -s https://llm.matthewdeaves.com/v1/chat/completions \
 1. `config/litellm-config.yaml` — 7 new model entries + `modify_params: true` + optional guardrail config
 2. `terraform/main.tf` — IAM policy updates for new model families
 3. `terraform/guardrails.tf` — New file (optional Bedrock Guardrail resource)
-4. `tests/smoke-test.sh` — Extended to cover new models
+4. `tests/smoke-test.sh` — Extended: 7 model list checks + 1 live nova-2-lite streaming chat
 5. `CLAUDE.md` — Updated model list and notes

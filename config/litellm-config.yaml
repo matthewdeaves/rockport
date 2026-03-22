@@ -5,29 +5,44 @@ model_list:
     litellm_params:
       model: bedrock/eu.anthropic.claude-opus-4-6-v1
       aws_region_name: eu-west-2
+      cache_control_injection_points:
+        - location: message
+          role: system
 
   # Sonnet 4.6
   - model_name: claude-sonnet-4-6
     litellm_params:
       model: bedrock/eu.anthropic.claude-sonnet-4-6
       aws_region_name: eu-west-2
+      cache_control_injection_points:
+        - location: message
+          role: system
 
   # Haiku 4.5 (no 4.6 version exists yet)
   - model_name: claude-haiku-4-5-20251001
     litellm_params:
       model: bedrock/eu.anthropic.claude-haiku-4-5-20251001-v1:0
       aws_region_name: eu-west-2
+      cache_control_injection_points:
+        - location: message
+          role: system
 
   # Claude Code aliases — route old model IDs to latest 4.6 versions
   - model_name: claude-sonnet-4-5-20250929
     litellm_params:
       model: bedrock/eu.anthropic.claude-sonnet-4-6
       aws_region_name: eu-west-2
+      cache_control_injection_points:
+        - location: message
+          role: system
 
   - model_name: claude-opus-4-5-20251101
     litellm_params:
       model: bedrock/eu.anthropic.claude-opus-4-6-v1
       aws_region_name: eu-west-2
+      cache_control_injection_points:
+        - location: message
+          role: system
 
   # DeepSeek via Bedrock
   - model_name: deepseek-v3.2
@@ -47,7 +62,49 @@ model_list:
       model: bedrock/moonshotai.kimi-k2.5
       aws_region_name: eu-west-2
 
-  # Amazon Nova models via Bedrock
+  # Llama 4 models via Bedrock (US cross-region inference)
+  - model_name: llama4-scout
+    litellm_params:
+      model: bedrock/us.meta.llama4-scout-17b-instruct-v1:0
+      aws_region_name: us-east-1
+
+  - model_name: llama4-maverick
+    litellm_params:
+      model: bedrock/us.meta.llama4-maverick-17b-instruct-v1:0
+      aws_region_name: us-east-1
+
+  # Amazon Nova 2 via Bedrock (US cross-region inference — no EU profile available)
+  - model_name: nova-2-lite
+    litellm_params:
+      model: bedrock/us.amazon.nova-2-lite-v1:0
+      aws_region_name: us-east-1
+      cache_control_injection_points:
+        - location: message
+          role: system
+
+  # Mistral models via Bedrock
+  - model_name: mistral-large-3
+    litellm_params:
+      model: bedrock/mistral.mistral-large-3-675b-instruct
+      aws_region_name: us-east-1  # Not available in EU regions; us-east-1 is closest supported
+
+  - model_name: ministral-8b
+    litellm_params:
+      model: bedrock/mistral.ministral-3-8b-instruct
+      aws_region_name: eu-west-2
+
+  # GPT-OSS models via Bedrock (eu-west-2 direct)
+  - model_name: gpt-oss-120b
+    litellm_params:
+      model: bedrock/openai.gpt-oss-120b-1:0
+      aws_region_name: eu-west-2
+
+  - model_name: gpt-oss-20b
+    litellm_params:
+      model: bedrock/openai.gpt-oss-20b-1:0
+      aws_region_name: eu-west-2
+
+  # Amazon Nova v1 models via Bedrock
   - model_name: nova-pro
     litellm_params:
       model: bedrock/amazon.nova-pro-v1:0
@@ -213,6 +270,7 @@ general_settings:
 
 litellm_settings:
   drop_params: true
+  modify_params: true
   disable_admin_ui: true
   default_max_internal_user_budget: 5
   default_internal_user_budget_duration: 1d
@@ -221,3 +279,19 @@ litellm_settings:
 default_key_generate_params:
   rpm_limit: 60
   tpm_limit: 200000
+
+# Optional Bedrock Guardrails — uncomment and set guardrailIdentifier from
+# terraform output (enable_guardrails = true) to activate content filtering.
+# Modes: pre_call (block before LLM, cheapest), during_call (parallel),
+# post_call (check response after LLM).
+# guardrails:
+#   - guardrail_name: "rockport-guard"
+#     litellm_params:
+#       guardrail: bedrock
+#       mode: "pre_call"
+#       guardrailIdentifier: "<guardrail-id-from-terraform-output>"
+#       guardrailVersion: "DRAFT"
+#       aws_region_name: eu-west-2
+#       default_on: false
+#       mask_request_content: true
+#       mask_response_content: true

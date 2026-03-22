@@ -158,12 +158,39 @@ guardrails:
 
 ## R6: Smoke Test Updates
 
-**Decision**: Extend existing smoke test to cover new models with basic chat completion requests.
+**Decision**: Extend existing smoke test with model list checks for all 7 new models (free) and 1 live streaming chat completion to `nova-2-lite` (cheapest with broad feature coverage, ~$0.001/run).
 
-**Current smoke test** (`tests/smoke-test.sh`): Checks health endpoint and model list.
+**Current smoke test** (`tests/smoke-test.sh`):
+- 26 tests covering health, auth, model list (4 models), streaming chat (claude-sonnet-4-6), image generation, video sidecar, prompt validation, image routing
+- Cost: ~$0.05/run (chat + image)
 
-**Required additions**:
-- Send basic chat completion to each new model
-- Verify response contains valid choices
-- Optionally verify `reasoning_effort` produces thinking content (Nova 2 Lite, GPT-OSS)
+**Required additions** (per FR-026):
+- Add 7 model name checks to test 4 (model list verification) — all free
+- Add 1 live streaming chat completion to `nova-2-lite` — ~$0.001/run
 - Follow explicit bash error handling (constitution VI)
+- Do NOT add live chat tests for all 7 models (cost would be ~$0.05-$0.50 depending on model)
+
+---
+
+## R7: CLI Health Check Compatibility
+
+**Decision**: New chat models should work with LiteLLM's built-in health probe without modification to `rockport.sh`. Verify during implementation and add exclusions only if needed.
+
+**Rationale**: LiteLLM's health probe sends a lightweight `max_tokens` request to each configured model. Chat models universally accept `max_tokens` — only image models reject it (they don't have a `max_tokens` concept), which is why the existing CLI has manual image probing logic.
+
+**Current CLI health check architecture** (`scripts/rockport.sh` lines 686-790):
+1. Call `GET /health` → LiteLLM returns `healthy_endpoints` and `unhealthy_endpoints`
+2. Separate unhealthy into: image_edit (no probe possible) → image models (manual probe) → real failures
+3. Image models: map Bedrock model ID back to LiteLLM name via hardcoded `case` statement (lines 745-751), send real generation request
+4. Display results
+
+**Why no CLI changes expected for chat models**:
+- All 7 new models are standard chat completion models
+- LiteLLM's health probe sends `max_tokens` which all chat models accept
+- New models will appear in `healthy_endpoints` if working, `unhealthy_endpoints` if not (e.g., model access not enabled)
+- The hardcoded `case` statement (lines 745-751) is ONLY for mapping image model Bedrock IDs to LiteLLM names — irrelevant for chat models
+- No changes to `image_model_pattern` or `image_edit_pattern` needed
+
+**Verification task** (per FR-025): After deploying new models, run `rockport.sh status` and confirm all 7 appear as healthy. If any fail the health probe unexpectedly, add to exclusion pattern and implement manual probing.
+
+**Risk**: Low. The only scenario where a chat model would fail the health probe is if it has an unusual parameter validation (e.g., rejecting `max_tokens` or requiring specific mandatory parameters). None of the 7 new models are known to have this issue.

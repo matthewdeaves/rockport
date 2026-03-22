@@ -19,7 +19,7 @@ An operator adds new Bedrock models to Rockport so that any OpenAI SDK client ca
 
 1. **Given** the proxy is running with new models configured, **When** a client sends `POST /v1/chat/completions` with `model: "llama4-scout"`, **Then** the proxy routes the request to Bedrock's `us.meta.llama4-scout-17b-instruct-v1:0` and returns a valid chat completion response
 2. **Given** the proxy is running, **When** a client sends a request with `model: "nova-2-lite"`, **Then** the proxy routes to `eu.amazon.nova-2-lite-v1:0` and returns a valid response
-3. **Given** the proxy is running, **When** a client sends a request with `model: "gpt-oss-120b"`, **Then** the proxy routes to `openai.gpt-oss-120b-1:0` in us-west-2 and returns a valid response
+3. **Given** the proxy is running, **When** a client sends a request with `model: "gpt-oss-120b"`, **Then** the proxy routes to `openai.gpt-oss-120b-1:0` in eu-west-2 and returns a valid response
 4. **Given** the proxy is running, **When** a client sends a request with `model: "mistral-large-3"`, **Then** the proxy routes to `mistral.mistral-large-3-675b-instruct` and returns a valid response
 5. **Given** a key created with `--claude-only`, **When** that key sends a request to any new non-Anthropic model, **Then** the proxy returns HTTP 403
 6. **Given** the proxy is running, **When** a client lists models via `GET /v1/models`, **Then** all new models appear in the response
@@ -87,6 +87,15 @@ An operator can optionally enable Bedrock Guardrails to add content filtering, P
 - What happens when Nova 2 Lite receives `reasoning_effort: "high"` with explicit `temperature`? Bedrock rejects the combination — temperature/topP/topK cannot be used with `maxReasoningEffort: "high"`. The proxy returns the Bedrock error
 - What happens when GPT-OSS structured output (`response_format`) is requested? LiteLLM falls back to synthetic tool injection because native constrained decoding is broken for GPT-OSS on Bedrock
 - What happens when Mistral/GPT-OSS models are invoked but their region (eu-west-2) is unreachable? Standard Bedrock timeout/error behavior — no cross-region fallback since these models lack cross-region inference profiles
+- What happens when `rockport.sh status` runs before new models are enabled in the Bedrock console? The models appear as unhealthy in the status output — this is correct behavior. The unhealthy display tells the operator exactly which models need Bedrock console enablement. No special filtering or suppression needed
+
+## Clarifications
+
+### Session 2026-03-22
+
+- Q: Should the spec include a formal FR for CLI status health coverage of new models? → A: Yes — formal FR-025 requiring all new chat models appear healthy in `rockport.sh status`, with fallback to exclusion + manual probing if health probe fails
+- Q: What should smoke tests verify for new models? → A: FR-026 — all 7 in model list (free) + 1 live streaming chat to `nova-2-lite` (cheapest with broad feature coverage)
+- Q: Should status output handle unenabled models specially? → A: No — existing unhealthy display is correct; tells operator which models need Bedrock enablement
 
 ## Requirements *(mandatory)*
 
@@ -95,8 +104,8 @@ An operator can optionally enable Bedrock Guardrails to add content filtering, P
 **New Models:**
 - **FR-001**: System MUST route `llama4-scout` requests to `bedrock/us.meta.llama4-scout-17b-instruct-v1:0` via US cross-region inference (us-east-1 region config, cross-region profile routes to available US region)
 - **FR-002**: System MUST route `llama4-maverick` requests to `bedrock/us.meta.llama4-maverick-17b-instruct-v1:0` via US cross-region inference
-- **FR-003**: System MUST route `nova-2-lite` requests to `bedrock/eu.amazon.nova-2-lite-v1:0` via EU cross-region inference (consistent with existing Nova v1 regional strategy, but using eu. prefix since Nova 2 supports it)
-- **FR-004**: System MUST route `mistral-large-3` requests to `bedrock/mistral.mistral-large-3-675b-instruct` in eu-west-2 (no cross-region profiles available, but model is available in eu-west-2 — consistent with existing regional strategy)
+- **FR-003**: System MUST route `nova-2-lite` requests to `bedrock/us.amazon.nova-2-lite-v1:0` via US cross-region inference (EU inference profiles not available for Nova 2 Lite)
+- **FR-004**: System MUST route `mistral-large-3` requests to `bedrock/mistral.mistral-large-3-675b-instruct` in us-east-1 (not available in EU regions)
 - **FR-005**: System MUST route `ministral-8b` requests to `bedrock/mistral.ministral-3-8b-instruct` in eu-west-2
 - **FR-006**: System MUST route `gpt-oss-120b` requests to `bedrock/openai.gpt-oss-120b-1:0` in eu-west-2
 - **FR-007**: System MUST route `gpt-oss-20b` requests to `bedrock/openai.gpt-oss-20b-1:0` in eu-west-2
@@ -123,6 +132,10 @@ An operator can optionally enable Bedrock Guardrails to add content filtering, P
 - **FR-022**: System MUST support PII masking via `mask_request_content` and `mask_response_content` options
 - **FR-023**: IAM policy MUST grant `bedrock:ApplyGuardrail` permission on the guardrail resource
 - **FR-024**: Guardrails MUST be entirely optional — no guardrail configuration means zero overhead and identical behavior to current system
+
+**CLI & Tooling:**
+- **FR-025**: All new chat models MUST appear as healthy in `rockport.sh status` output via LiteLLM's built-in health probe. If any new model rejects the health probe's `max_tokens` parameter (as image models do), the CLI MUST add the model to the exclusion pattern and implement manual probing — following the existing pattern in `cmd_status()` (lines 695-764 of `scripts/rockport.sh`)
+- **FR-026**: Smoke tests (`tests/smoke-test.sh`) MUST verify all 7 new model names appear in `GET /v1/models` response (free — no Bedrock invocation) and MUST send 1 live streaming chat completion to `nova-2-lite` to confirm end-to-end connectivity (~$0.001 per run). Follow existing explicit bash error handling per constitution
 
 ### Key Entities
 

@@ -78,6 +78,8 @@ resource "aws_iam_role_policy" "bedrock_invoke" {
             "arn:aws:bedrock:${r}::foundation-model/deepseek.*",
             "arn:aws:bedrock:${r}::foundation-model/qwen.*",
             "arn:aws:bedrock:${r}::foundation-model/moonshotai.*",
+            "arn:aws:bedrock:${r}::foundation-model/mistral.*",
+            "arn:aws:bedrock:${r}::foundation-model/openai.gpt-oss*",
           ]
         ])
       },
@@ -94,6 +96,8 @@ resource "aws_iam_role_policy" "bedrock_invoke" {
             "arn:aws:bedrock:${r}::foundation-model/luma.*",
             "arn:aws:bedrock:${r}::foundation-model/amazon.nova-*",
             "arn:aws:bedrock:${r}::foundation-model/amazon.titan-*",
+            "arn:aws:bedrock:${r}::foundation-model/meta.llama4*",
+            "arn:aws:bedrock:${r}::foundation-model/mistral.*",
           ]
         ])
       },
@@ -109,6 +113,24 @@ resource "aws_iam_role_policy" "bedrock_invoke" {
             "arn:aws:bedrock:${r}:${data.aws_caller_identity.current.account_id}:inference-profile/*"
           ]
         ])
+      },
+    ]
+  })
+}
+
+# Optional: Bedrock Guardrails — only created when enable_guardrails = true
+resource "aws_iam_role_policy" "bedrock_guardrails" {
+  count = var.enable_guardrails ? 1 : 0
+  name  = "bedrock-guardrails"
+  role  = aws_iam_role.rockport.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "bedrock:ApplyGuardrail"
+        Resource = aws_bedrock_guardrail.rockport[0].guardrail_arn
       },
     ]
   })
