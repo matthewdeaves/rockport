@@ -284,12 +284,17 @@ default_key_generate_params:
 # terraform output (enable_guardrails = true) to activate content filtering.
 # Modes: pre_call (block before LLM, cheapest), during_call (parallel),
 # post_call (check response after LLM).
+# Optional Bedrock Guardrails — to enable:
+#   1. Deploy with: ./scripts/rockport.sh deploy --guardrails
+#   2. Get guardrail ID: cd terraform && terraform output guardrail_id
+#   3. Uncomment below and replace <guardrail-id> with the output value
+#   4. Push config: ./scripts/rockport.sh config push
 # guardrails:
 #   - guardrail_name: "rockport-guard"
 #     litellm_params:
 #       guardrail: bedrock
 #       mode: "pre_call"
-#       guardrailIdentifier: "<guardrail-id-from-terraform-output>"
+#       guardrailIdentifier: "<guardrail-id>"
 #       guardrailVersion: "DRAFT"
 #       aws_region_name: eu-west-2
 #       default_on: false

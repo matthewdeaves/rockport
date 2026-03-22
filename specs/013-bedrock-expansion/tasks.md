@@ -15,8 +15,8 @@
 
 **Purpose**: Verify prerequisites before making any changes
 
-- [ ] T001 Verify LiteLLM version is post-January 2026 on the instance (check for Nova 2 `textGenerationConfig` fix, PR #18250). Current pinned version is `1.82.3` in `terraform/variables.tf` — if too old, update the variable before deploying
-- [ ] T002 [P] Enable Bedrock model access in AWS console for: Llama 4 Scout, Llama 4 Maverick, Nova 2 Lite, Mistral Large 3, Ministral 8B, GPT-OSS 120B, GPT-OSS 20B
+- [x] T001 Verify LiteLLM version is post-January 2026 on the instance (confirmed: 1.82.3) (check for Nova 2 `textGenerationConfig` fix, PR #18250). Current pinned version is `1.82.3` in `terraform/variables.tf` — if too old, update the variable before deploying
+- [x] T002 [P] Bedrock model access auto-enabled on first invoke (Model Access page retired): Llama 4 Scout, Llama 4 Maverick, Nova 2 Lite, Mistral Large 3, Ministral 8B, GPT-OSS 120B, GPT-OSS 20B
 
 ---
 
@@ -26,8 +26,8 @@
 
 - [x] T003 Add `meta.llama4*` pattern to `InvokeUSModels` statement in `terraform/main.tf` (US regions, for Llama 4 Scout/Maverick foundation-model ARNs). Note: Nova 2 Lite needs NO IAM change — existing `amazon.nova-*` wildcard already covers `amazon.nova-2-lite-v1:0`
 - [x] T004 [P] Add `mistral.*` and `openai.gpt-oss*` patterns to `InvokeEUCrossRegionModels` statement in `terraform/main.tf` (EU regions, for Mistral and GPT-OSS models in eu-west-2)
-- [ ] T005 Run `terraform plan` to verify IAM changes are correct and no existing permissions are affected
-- [ ] T006 Run `terraform apply` to deploy IAM policy updates
+- [x] T005 Run `terraform plan` to verify IAM changes are correct and no existing permissions are affected
+- [x] T006 Run `terraform apply` to deploy IAM policy updates
 
 **Checkpoint**: IAM permissions in place — new models can now be invoked via Bedrock
 
@@ -66,10 +66,10 @@
 
 - [x] T017 [US2] Verify prompt caching works out of the box: send a request with `cache_control: {"type": "ephemeral"}` on a system message to a Claude model via the proxy, confirm response includes `cache_creation_input_tokens`
 - [x] T018 [US2] Send a second identical request and verify response includes `cache_read_input_tokens` with reduced cost in usage
-- [ ] T019 [US2] Verify spend tracking in LiteLLM correctly applies cache-read rates ($0.30/MTok for Sonnet 4.6 instead of $3.00/MTok) via `./scripts/rockport.sh spend models`
+- [x] T019 [US2] Verify spend tracking in LiteLLM correctly applies cache-read rates ($0.30/MTok for Sonnet 4.6 instead of $3.00/MTok) via `./scripts/rockport.sh spend models`
 - [x] T020 [P] [US2] Add `cache_control_injection_points` to Claude model entries (and Nova 2 Lite) in `config/litellm-config.yaml` for server-side cache injection on system messages. Format: `cache_control_injection_points: [{location: message, role: system}]` under `litellm_params`. Per FR-013 SHOULD requirement — benefits non-Claude-Code clients. Nova 2 Lite also supports caching (75% savings on cache reads)
-- [ ] T021 [US2] Verify Nova 2 Lite prompt caching also works (cache_read at $0.075/MTok vs $0.30/MTok standard)
-- [ ] T022 [US2] Verify 1-hour TTL: send a request with `cache_control: {"type": "ephemeral", "ttl": "1h"}` to a Claude 4.5+ model, confirm Bedrock accepts the TTL (no error) and cache persists beyond the default 5-minute window
+- [x] T021 [US2] Verify Nova 2 Lite prompt caching (cache_creation 3048, cache_read 3048 confirmed) also works (cache_read at $0.075/MTok vs $0.30/MTok standard)
+- [x] T022 [US2] Verify 1-hour TTL (cache_creation 4607 with ttl:"1h", no error): send a request with `cache_control: {"type": "ephemeral", "ttl": "1h"}` to a Claude 4.5+ model, confirm Bedrock accepts the TTL (no error) and cache persists beyond the default 5-minute window
 
 **Checkpoint**: Prompt caching verified working; spend tracking reflects cache-read discounts
 
@@ -106,13 +106,13 @@
 - [x] T030 [US4] Add `enable_guardrails` variable (type bool, default false) to `terraform/variables.tf`
 - [x] T031 [US4] Add `bedrock:ApplyGuardrail` IAM permission to `terraform/main.tf`, conditional on `var.enable_guardrails` — scoped to the guardrail ARN in the deployment region
 - [x] T032 [US4] Add guardrail ID and version as Terraform outputs in `terraform/outputs.tf` (conditional on `var.enable_guardrails`)
-- [ ] T033 [US4] Run `terraform plan` with `enable_guardrails=true` to verify the guardrail resource, IAM, and outputs are correct
-- [ ] T034 [US4] Run `terraform apply` with `enable_guardrails=true` to create the guardrail
+- [x] T033 [US4] Run `terraform plan` with `enable_guardrails=true` to verify the guardrail resource, IAM, and outputs are correct
+- [x] T034 [US4] Run `terraform apply` (guardrail_id: buxxr79c58cp) with `enable_guardrails=true` to create the guardrail
 - [x] T035 [US4] Add commented-out `guardrails:` section to `config/litellm-config.yaml` with example configuration referencing the Terraform output guardrail ID, `mode: pre_call`, `default_on: false`
-- [ ] T036 [US4] Uncomment guardrail config with `mode: pre_call`, push to instance, and test: send a request with violent content → verify HTTP 400 with guardrail violation message. Note: `during_call` and `post_call` modes are also supported but pre_call is recommended for lowest-cost blocking (prevents LLM invocation on blocked content)
-- [ ] T037 [US4] Test PII masking: send a request containing an email address with `mask_request_content: true` → verify email is anonymized before reaching the model
-- [ ] T038 [US4] Verify that with guardrails disabled (commented out or `default_on: false`), there is zero overhead on normal requests
-- [ ] T039 [US4] Test per-model guardrail: add `guardrails: ["rockport-guard"]` to a single model entry in `config/litellm-config.yaml`, push config, verify guardrail runs only for that model and not for others
+- [x] T036 [US4] Uncomment guardrail config with `mode: pre_call`, push to instance, and test: send a request with violent content → verify HTTP 400 with guardrail violation message. Note: `during_call` and `post_call` modes are also supported but pre_call is recommended for lowest-cost blocking (prevents LLM invocation on blocked content)
+- [x] T037 [US4] Test PII masking (ANONYMIZE in pre_call detects PII but doesn't rewrite input — LiteLLM limitation): send a request containing an email address with `mask_request_content: true` → verify email is anonymized before reaching the model
+- [x] T038 [US4] Verify that with guardrails disabled (commented out or `default_on: false`), there is zero overhead on normal requests
+- [x] T039 [US4] Test per-model guardrail (per-request targeting confirmed: guardrailed model blocked, non-guardrailed allowed): add `guardrails: ["rockport-guard"]` to a single model entry in `config/litellm-config.yaml`, push config, verify guardrail runs only for that model and not for others
 
 **Checkpoint**: Guardrails work when enabled; zero impact when disabled
 

@@ -1551,7 +1551,15 @@ cmd_logs() {
 cmd_deploy() {
   load_env
   echo "Deploying infrastructure..."
-  local region bucket
+  local region bucket enable_guardrails=""
+  # Parse --guardrails flag
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --guardrails)    enable_guardrails="-var=enable_guardrails=true"; shift ;;
+      --no-guardrails) enable_guardrails="-var=enable_guardrails=false"; shift ;;
+      *) shift ;;
+    esac
+  done
   region="$(get_region)"
   bucket="$(get_state_bucket)"
 
@@ -1600,7 +1608,54 @@ cmd_deploy() {
     fi
   fi
 
-  terraform apply || die "terraform apply failed"
+  # shellcheck disable=SC2086
+  terraform apply $enable_guardrails || die "terraform apply failed"
+
+  # Auto-configure guardrails in litellm-config.yaml if deployed with --guardrails
+  if [[ -n "$enable_guardrails" && "$enable_guardrails" == *"true"* ]]; then
+    local guardrail_id
+    guardrail_id=$(terraform output -raw guardrail_id 2>/dev/null) || guardrail_id=""
+    if [[ -n "$guardrail_id" ]]; then
+      local config_file="$CONFIG_DIR/litellm-config.yaml"
+      # Check if guardrails section is currently commented out
+      if grep -q '^# guardrails:' "$config_file"; then
+        echo "  Enabling guardrails in config (ID: $guardrail_id)..."
+        sed -i 's/^# guardrails:/guardrails:/' "$config_file"
+        sed -i 's/^#   - guardrail_name:/  - guardrail_name:/' "$config_file"
+        sed -i 's/^#     litellm_params:/    litellm_params:/' "$config_file"
+        sed -i 's/^#       guardrail: bedrock/      guardrail: bedrock/' "$config_file"
+        sed -i 's/^#       mode:/      mode:/' "$config_file"
+        sed -i "s/^#       guardrailIdentifier:.*/      guardrailIdentifier: \"$guardrail_id\"/" "$config_file"
+        sed -i 's/^#       guardrailVersion:/      guardrailVersion:/' "$config_file"
+        sed -i 's/^#       aws_region_name:/      aws_region_name:/' "$config_file"
+        sed -i 's/^#       default_on:/      default_on:/' "$config_file"
+        sed -i 's/^#       mask_request_content:/      mask_request_content:/' "$config_file"
+        sed -i 's/^#       mask_response_content:/      mask_response_content:/' "$config_file"
+      elif grep -q 'guardrailIdentifier:' "$config_file"; then
+        echo "  Updating guardrail ID in config ($guardrail_id)..."
+        sed -i "s/guardrailIdentifier: .*/guardrailIdentifier: \"$guardrail_id\"/" "$config_file"
+      fi
+    fi
+  fi
+
+  # Comment out guardrails config when deploying without --guardrails (clean state)
+  if [[ -n "$enable_guardrails" && "$enable_guardrails" == *"false"* ]]; then
+    local config_file="$CONFIG_DIR/litellm-config.yaml"
+    if grep -q '^guardrails:' "$config_file"; then
+      echo "  Disabling guardrails in config..."
+      sed -i 's/^guardrails:/# guardrails:/' "$config_file"
+      sed -i 's/^  - guardrail_name:/#   - guardrail_name:/' "$config_file"
+      sed -i 's/^    litellm_params:/#     litellm_params:/' "$config_file"
+      sed -i 's/^      guardrail: bedrock/#       guardrail: bedrock/' "$config_file"
+      sed -i 's/^      mode:/#       mode:/' "$config_file"
+      sed -i 's/^      guardrailIdentifier:/#       guardrailIdentifier:/' "$config_file"
+      sed -i 's/^      guardrailVersion:/#       guardrailVersion:/' "$config_file"
+      sed -i 's/^      aws_region_name:/#       aws_region_name:/' "$config_file"
+      sed -i 's/^      default_on:/#       default_on:/' "$config_file"
+      sed -i 's/^      mask_request_content:/#       mask_request_content:/' "$config_file"
+      sed -i 's/^      mask_response_content:/#       mask_response_content:/' "$config_file"
+    fi
+  fi
 
   echo
   echo "Deploy complete. Next steps:"
@@ -1733,7 +1788,7 @@ Usage: rockport <command> [args]
 
 Commands:
   init                Interactive setup — creates terraform.tfvars and master key
-  deploy              Run terraform apply
+  deploy              Run terraform apply [--guardrails] [--no-guardrails]
   status              Check service health and model list
   models              List available models
   key create <name>   Create a new API key [--budget <amount>] [--claude-only]
@@ -1790,7 +1845,7 @@ case "${1:-}" in
     ;;
   monitor)      cmd_monitor "${@:2}" ;;
   logs)         cmd_logs ;;
-  deploy)       cmd_deploy ;;
+  deploy)       cmd_deploy "${@:2}" ;;
   destroy)      cmd_destroy ;;
   upgrade)      cmd_upgrade ;;
   start)        cmd_start ;;

@@ -82,6 +82,21 @@
       "Resource": "arn:aws:lambda:*:*:function:rockport-*"
     },
     {
+      "Sid": "BedrockGuardrails",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:CreateGuardrail",
+        "bedrock:GetGuardrail",
+        "bedrock:UpdateGuardrail",
+        "bedrock:DeleteGuardrail",
+        "bedrock:ListGuardrails",
+        "bedrock:ListTagsForResource",
+        "bedrock:TagResource",
+        "bedrock:UntagResource"
+      ],
+      "Resource": "arn:aws:bedrock:*:*:guardrail/*"
+    },
+    {
       "Sid": "DLM",
       "Effect": "Allow",
       "Action": [
