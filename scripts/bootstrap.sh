@@ -1,6 +1,7 @@
 #!/bin/bash
 # shellcheck disable=SC2154  # Variables are injected by Terraform templatefile()
-set -euo pipefail
+
+die() { echo "ERROR: $*" >&2; exit 1; }
 
 LOG_FILE="/var/log/rockport-bootstrap.log"
 touch "$LOG_FILE" && chmod 600 "$LOG_FILE"
@@ -15,19 +16,26 @@ CLOUDFLARED_VERSION="${cloudflared_version}"
 CLOUDFLARED_SHA256="${cloudflared_sha256}"
 ARTIFACTS_BUCKET="${artifacts_bucket}"
 
+# Validate Terraform-injected variables (replaces set -u safety net)
+# shellcheck disable=SC2154  # var_name values are validated, not the loop variable itself
+for var_name in REGION MASTER_KEY_SSM_PATH TUNNEL_TOKEN_SSM_PATH LITELLM_VERSION CLOUDFLARED_VERSION CLOUDFLARED_SHA256 ARTIFACTS_BUCKET; do
+  eval "val=\$$var_name"
+  [[ -n "$val" ]] || die "$var_name is empty — check Terraform templatefile() variables"
+done
+
 # --- Swap ---
 if [[ ! -f /swapfile ]]; then
   echo "Creating swap..."
-  dd if=/dev/zero of=/swapfile bs=1M count=512
-  chmod 600 /swapfile
-  mkswap /swapfile
-  swapon /swapfile
+  dd if=/dev/zero of=/swapfile bs=1M count=512 || die "Failed to create swap file"
+  chmod 600 /swapfile || die "Failed to chmod swap file"
+  mkswap /swapfile || die "Failed to mkswap"
+  swapon /swapfile || die "Failed to swapon"
   echo "/swapfile swap swap defaults 0 0" >> /etc/fstab
-  sysctl vm.swappiness=10
+  sysctl vm.swappiness=10 || die "Failed to set swappiness"
   echo "vm.swappiness=10" >> /etc/sysctl.d/99-rockport.conf
   # Increase UDP buffers for cloudflared QUIC tunnel (large request payloads)
-  sysctl -w net.core.rmem_max=7500000
-  sysctl -w net.core.wmem_max=7500000
+  sysctl -w net.core.rmem_max=7500000 || die "Failed to set rmem_max"
+  sysctl -w net.core.wmem_max=7500000 || die "Failed to set wmem_max"
   cat >> /etc/sysctl.d/99-rockport.conf <<SYSEOF
 net.core.rmem_max=7500000
 net.core.wmem_max=7500000
@@ -38,10 +46,10 @@ fi
 
 # --- PostgreSQL 15 ---
 echo "Installing PostgreSQL 15..."
-dnf install -y postgresql15-server postgresql15
+dnf install -y postgresql15-server postgresql15 || die "Failed to install PostgreSQL"
 
 if [[ ! -f /var/lib/pgsql/data/PG_VERSION ]]; then
-  /usr/bin/postgresql-setup --initdb
+  /usr/bin/postgresql-setup --initdb || die "Failed to initdb PostgreSQL"
 
   # Apply tuning config
   cat > /var/lib/pgsql/data/postgresql-tuning.conf <<'PGCONF'
@@ -56,8 +64,10 @@ PGCONF
   echo "include = 'postgresql-tuning.conf'" >> /var/lib/pgsql/data/postgresql.conf
 
   # Keep peer auth for postgres superuser, use scram-sha-256 for litellm_user (local + TCP)
-  sed -i '/^local\s\+all\s\+all\s\+peer/i local all litellm_user scram-sha-256' /var/lib/pgsql/data/pg_hba.conf
-  sed -i '/^host\s\+all\s\+all\s\+127.0.0.1/i host all litellm_user 127.0.0.1/32 scram-sha-256' /var/lib/pgsql/data/pg_hba.conf
+  sed -i '/^local\s\+all\s\+all\s\+peer/i local all litellm_user scram-sha-256' /var/lib/pgsql/data/pg_hba.conf \
+    || die "Failed to configure pg_hba.conf (local)"
+  sed -i '/^host\s\+all\s\+all\s\+127.0.0.1/i host all litellm_user 127.0.0.1/32 scram-sha-256' /var/lib/pgsql/data/pg_hba.conf \
+    || die "Failed to configure pg_hba.conf (host)"
 else
   echo "PostgreSQL already initialized, skipping initdb."
 fi
@@ -70,9 +80,9 @@ Restart=always
 RestartSec=5
 EOF
 
-systemctl daemon-reload
-systemctl enable postgresql
-systemctl start postgresql
+systemctl daemon-reload || die "Failed to daemon-reload"
+systemctl enable postgresql || die "Failed to enable postgresql"
+systemctl start postgresql || die "Failed to start postgresql"
 
 # Create litellm database and user — suppress secrets from log
 echo "Creating database and user..."
@@ -95,23 +105,31 @@ echo "Creating database and user..."
 
   # Create user and database idempotently
   # Password is hex-only (openssl rand -hex) so single-quote SQL injection is not possible
-  if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='litellm_user'" | grep -q 1; then
-    sudo -u postgres psql -c "CREATE USER litellm_user WITH PASSWORD '$DB_PASSWORD'"
+  role_exists=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='litellm_user'") \
+    || die "Failed to check if litellm_user exists"
+  if [[ "$role_exists" != "1" ]]; then
+    sudo -u postgres psql -c "CREATE USER litellm_user WITH PASSWORD '$DB_PASSWORD'" \
+      || die "Failed to create litellm_user"
     echo "Created litellm_user." >&2
   else
     # Update password in case it changed
-    sudo -u postgres psql -c "ALTER USER litellm_user WITH PASSWORD '$DB_PASSWORD'"
+    sudo -u postgres psql -c "ALTER USER litellm_user WITH PASSWORD '$DB_PASSWORD'" \
+      || die "Failed to update litellm_user password"
     echo "Updated litellm_user password." >&2
   fi
 
-  if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='litellm'" | grep -q 1; then
-    sudo -u postgres psql -c "CREATE DATABASE litellm OWNER litellm_user;"
+  db_exists=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='litellm'") \
+    || die "Failed to check if litellm database exists"
+  if [[ "$db_exists" != "1" ]]; then
+    sudo -u postgres psql -c "CREATE DATABASE litellm OWNER litellm_user;" \
+      || die "Failed to create litellm database"
     echo "Created litellm database." >&2
   else
     echo "Database litellm already exists." >&2
   fi
 
-  sudo -u postgres psql -d litellm -c "GRANT ALL ON SCHEMA public TO litellm_user;"
+  sudo -u postgres psql -d litellm -c "GRANT ALL ON SCHEMA public TO litellm_user;" \
+    || die "Failed to grant schema permissions"
 
   DATABASE_URL="postgresql://litellm_user:$DB_PASSWORD@localhost:5432/litellm"
 
@@ -122,7 +140,7 @@ echo "Creating database and user..."
       --value "$DB_PASSWORD" \
       --type SecureString \
       --overwrite \
-      --region "$REGION"
+      --region "$REGION" || die "Failed to store DB password in SSM"
     echo "DB password stored in SSM." >&2
   fi
 } > /dev/null
@@ -151,12 +169,12 @@ echo "Secrets fetched from SSM."
 
 # --- LiteLLM ---
 echo "Installing LiteLLM..."
-dnf install -y python3.11 python3.11-pip libatomic
-pip3.11 install "litellm[proxy]==$LITELLM_VERSION" prisma
+dnf install -y python3.11 python3.11-pip libatomic || die "Failed to install Python 3.11"
+pip3.11 install "litellm[proxy]==$LITELLM_VERSION" prisma || die "Failed to install LiteLLM"
 
 # Cache/data directory for LiteLLM runtime — must exist before user creation
 # so we can set it as the user's home directory
-mkdir -p /var/lib/litellm
+mkdir -p /var/lib/litellm || die "Failed to create /var/lib/litellm"
 
 # Create litellm user with home at /var/lib/litellm (not /home/litellm).
 # This ensures prisma generate caches binaries under /var/lib/litellm/.cache,
@@ -164,14 +182,17 @@ mkdir -p /var/lib/litellm
 if ! id litellm &>/dev/null; then
   useradd --system --home-dir /var/lib/litellm --no-create-home --shell /usr/sbin/nologin litellm
 fi
-chown litellm:litellm /var/lib/litellm
+chown litellm:litellm /var/lib/litellm || die "Failed to chown /var/lib/litellm"
 
 # Generate prisma client AS the litellm user so binary paths resolve correctly.
 # prisma generate hardcodes $HOME/.cache paths into the generated client.
-chown -R litellm:litellm /usr/local/lib/python3.11/site-packages/prisma
-chown -R litellm:litellm /usr/local/lib/python3.11/site-packages/litellm_proxy_extras/migrations
+chown -R litellm:litellm /usr/local/lib/python3.11/site-packages/prisma \
+  || die "Failed to chown prisma package"
+chown -R litellm:litellm /usr/local/lib/python3.11/site-packages/litellm_proxy_extras/migrations \
+  || die "Failed to chown migrations"
 sudo -u litellm prisma generate \
-  --schema /usr/local/lib/python3.11/site-packages/litellm/proxy/schema.prisma
+  --schema /usr/local/lib/python3.11/site-packages/litellm/proxy/schema.prisma \
+  || die "Failed to run prisma generate"
 
 # Apply all Prisma migrations now while DB is empty.
 # This avoids the slow per-migration baseline resolve that LiteLLM does on
@@ -179,11 +200,14 @@ sudo -u litellm prisma generate \
 # Prisma expects a migrations/ dir next to the schema; LiteLLM stores them in
 # litellm_proxy_extras, so we symlink.
 echo "Applying Prisma migrations..."
-mkdir -p /usr/local/lib/python3.11/site-packages/litellm/proxy/prisma
+mkdir -p /usr/local/lib/python3.11/site-packages/litellm/proxy/prisma \
+  || die "Failed to create prisma directory"
 ln -sfn /usr/local/lib/python3.11/site-packages/litellm_proxy_extras/migrations \
-  /usr/local/lib/python3.11/site-packages/litellm/proxy/prisma/migrations
+  /usr/local/lib/python3.11/site-packages/litellm/proxy/prisma/migrations \
+  || die "Failed to symlink migrations"
 sudo -u litellm DATABASE_URL="$DATABASE_URL" prisma migrate deploy \
-  --schema /usr/local/lib/python3.11/site-packages/litellm/proxy/schema.prisma
+  --schema /usr/local/lib/python3.11/site-packages/litellm/proxy/schema.prisma \
+  || die "Failed to run prisma migrate deploy"
 echo "Prisma migrations applied."
 
 # --- Download deploy artifact from S3 ---
@@ -206,10 +230,10 @@ else
 fi
 
 # Extract config files
-mkdir -p /etc/litellm
-tar xzf /tmp/rockport-artifact.tar.gz -C /tmp rockport-artifact/
-cp /tmp/rockport-artifact/config/litellm-config.yaml /etc/litellm/config.yaml
-chown -R litellm:litellm /etc/litellm
+mkdir -p /etc/litellm || die "Failed to create /etc/litellm"
+tar xzf /tmp/rockport-artifact.tar.gz -C /tmp rockport-artifact/ || die "Failed to extract artifact"
+cp /tmp/rockport-artifact/config/litellm-config.yaml /etc/litellm/config.yaml || die "Failed to copy litellm config"
+chown -R litellm:litellm /etc/litellm || die "Failed to chown /etc/litellm"
 
 # Env file — written inside subshell with restrictive umask to prevent brief exposure
 (
@@ -221,23 +245,25 @@ NO_DOCS=True
 NO_REDOC=True
 ENVEOF
 )
-chown litellm:litellm /etc/litellm/env
+chown litellm:litellm /etc/litellm/env || die "Failed to chown env file"
 
 # Systemd unit
-cp /tmp/rockport-artifact/config/litellm.service /etc/systemd/system/litellm.service
+cp /tmp/rockport-artifact/config/litellm.service /etc/systemd/system/litellm.service \
+  || die "Failed to copy litellm.service"
 
 # --- Video Generation Sidecar ---
 echo "Installing video sidecar dependencies..."
 if [[ -f /tmp/rockport-artifact/sidecar/requirements.lock ]]; then
-  pip3.11 install --require-hashes -r /tmp/rockport-artifact/sidecar/requirements.lock
+  pip3.11 install --require-hashes -r /tmp/rockport-artifact/sidecar/requirements.lock \
+    || die "Failed to install sidecar dependencies (locked)"
 else
-  pip3.11 install psycopg2-binary Pillow httpx
+  pip3.11 install psycopg2-binary Pillow httpx || die "Failed to install sidecar dependencies"
 fi
 
 echo "Setting up video sidecar..."
-mkdir -p /opt/rockport-video
-cp /tmp/rockport-artifact/sidecar/*.py /opt/rockport-video/
-chown -R litellm:litellm /opt/rockport-video
+mkdir -p /opt/rockport-video || die "Failed to create /opt/rockport-video"
+cp /tmp/rockport-artifact/sidecar/*.py /opt/rockport-video/ || die "Failed to copy sidecar files"
+chown -R litellm:litellm /opt/rockport-video || die "Failed to chown /opt/rockport-video"
 
 # Create video jobs table in litellm database
 sudo -u postgres psql -d litellm -c "
@@ -264,7 +290,7 @@ sudo -u postgres psql -d litellm -c "
   ALTER TABLE rockport_video_jobs ADD COLUMN IF NOT EXISTS resolution VARCHAR(10);
   ALTER TABLE rockport_video_jobs ALTER COLUMN invocation_arn DROP NOT NULL;
   ALTER TABLE rockport_video_jobs ALTER COLUMN status SET DEFAULT 'pending';
-"
+" || die "Failed to create video jobs table"
 echo "Video jobs table ready."
 
 # Sidecar env file — append video-specific vars to LiteLLM env
@@ -278,7 +304,8 @@ VIDENVEOF
 )
 
 # Systemd unit for video sidecar
-cp /tmp/rockport-artifact/config/rockport-video.service /etc/systemd/system/rockport-video.service
+cp /tmp/rockport-artifact/config/rockport-video.service /etc/systemd/system/rockport-video.service \
+  || die "Failed to copy rockport-video.service"
 
 # --- Cloudflared ---
 echo "Installing cloudflared..."
@@ -308,8 +335,8 @@ else
   exit 1
 fi
 
-chmod +x /tmp/cloudflared-linux-amd64
-mv /tmp/cloudflared-linux-amd64 /usr/local/bin/cloudflared
+chmod +x /tmp/cloudflared-linux-amd64 || die "Failed to chmod cloudflared"
+mv /tmp/cloudflared-linux-amd64 /usr/local/bin/cloudflared || die "Failed to install cloudflared"
 rm -f /tmp/cloudflared-linux-amd64.sha256sum
 echo "cloudflared installed."
 
@@ -326,20 +353,21 @@ fi
 TUNNEL_TOKEN=$TUNNEL_TOKEN
 ENVEOF
 )
-chown cloudflared:cloudflared /etc/cloudflared/env
+chown cloudflared:cloudflared /etc/cloudflared/env || die "Failed to chown cloudflared env"
 
 # Systemd unit
-cp /tmp/rockport-artifact/config/cloudflared.service /etc/systemd/system/cloudflared.service
+cp /tmp/rockport-artifact/config/cloudflared.service /etc/systemd/system/cloudflared.service \
+  || die "Failed to copy cloudflared.service"
 
 # Cleanup artifact
 rm -rf /tmp/rockport-artifact /tmp/rockport-artifact.tar.gz
 
 # --- Start services ---
 echo "Starting services..."
-systemctl daemon-reload
-systemctl enable litellm cloudflared rockport-video
-systemctl start litellm
-systemctl start cloudflared
-systemctl start --no-block rockport-video
+systemctl daemon-reload || die "Failed to daemon-reload"
+systemctl enable litellm cloudflared rockport-video || die "Failed to enable services"
+systemctl start litellm || die "Failed to start litellm"
+systemctl start cloudflared || die "Failed to start cloudflared"
+systemctl start --no-block rockport-video || die "Failed to start rockport-video"
 
 echo "=== Rockport bootstrap completed at $(date) ==="

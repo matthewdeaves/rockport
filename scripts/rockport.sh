@@ -1,5 +1,6 @@
 #!/bin/bash
-set -euo pipefail
+
+die() { echo "ERROR: $*" >&2; exit 1; }
 
 MASTER_KEY_SSM_PATH="/rockport/master-key"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -42,7 +43,8 @@ load_env() {
 get_artifacts_bucket() {
   local region account_id
   region="$(get_region)"
-  account_id=$(aws sts get-caller-identity --query Account --output text --region "$region")
+  account_id=$(aws sts get-caller-identity --query Account --output text --region "$region") \
+    || die "Failed to get AWS account ID"
   echo "rockport-artifacts-${account_id}-${region}"
 }
 
@@ -53,20 +55,20 @@ package_and_upload_artifact() {
   bucket="$(get_artifacts_bucket)"
 
   local tmpdir
-  tmpdir=$(mktemp -d)
+  tmpdir=$(mktemp -d) || die "Failed to create temp directory"
 
   # Create artifact directory structure
-  mkdir -p "$tmpdir/rockport-artifact/sidecar"
-  mkdir -p "$tmpdir/rockport-artifact/config"
+  mkdir -p "$tmpdir/rockport-artifact/sidecar" || die "Failed to create artifact sidecar dir"
+  mkdir -p "$tmpdir/rockport-artifact/config" || die "Failed to create artifact config dir"
 
   # Copy sidecar Python files
-  cp "$SCRIPT_DIR/../sidecar/"*.py "$tmpdir/rockport-artifact/sidecar/"
+  cp "$SCRIPT_DIR/../sidecar/"*.py "$tmpdir/rockport-artifact/sidecar/" || die "Failed to copy sidecar files"
 
   # Copy config files (litellm config, systemd units)
-  cp "$CONFIG_DIR/litellm-config.yaml" "$tmpdir/rockport-artifact/config/"
-  cp "$CONFIG_DIR/litellm.service" "$tmpdir/rockport-artifact/config/"
-  cp "$CONFIG_DIR/cloudflared.service" "$tmpdir/rockport-artifact/config/"
-  cp "$CONFIG_DIR/rockport-video.service" "$tmpdir/rockport-artifact/config/"
+  cp "$CONFIG_DIR/litellm-config.yaml" "$tmpdir/rockport-artifact/config/" || die "Failed to copy litellm-config.yaml"
+  cp "$CONFIG_DIR/litellm.service" "$tmpdir/rockport-artifact/config/" || die "Failed to copy litellm.service"
+  cp "$CONFIG_DIR/cloudflared.service" "$tmpdir/rockport-artifact/config/" || die "Failed to copy cloudflared.service"
+  cp "$CONFIG_DIR/rockport-video.service" "$tmpdir/rockport-artifact/config/" || die "Failed to copy rockport-video.service"
 
   # Copy requirements lock file if present
   if [[ -f "$SCRIPT_DIR/../sidecar/requirements.lock" ]]; then
@@ -74,10 +76,12 @@ package_and_upload_artifact() {
   fi
 
   # Create tarball
-  tar czf "$tmpdir/rockport-artifact.tar.gz" -C "$tmpdir" rockport-artifact/
+  tar czf "$tmpdir/rockport-artifact.tar.gz" -C "$tmpdir" rockport-artifact/ \
+    || die "Failed to create artifact tarball"
 
   # Generate SHA256 checksum
-  (cd "$tmpdir" && sha256sum rockport-artifact.tar.gz > rockport-artifact.tar.gz.sha256)
+  (cd "$tmpdir" && sha256sum rockport-artifact.tar.gz > rockport-artifact.tar.gz.sha256) \
+    || die "Failed to generate artifact checksum"
 
   # Upload to S3
   echo "  Uploading artifact to s3://$bucket/deploy/rockport-artifact.tar.gz..."
@@ -112,8 +116,9 @@ package_and_upload_artifact() {
       -o "$tmpdir/cloudflared-linux-amd64"; then
       # Verify checksum if available
       if [[ -n "$cf_sha256" ]]; then
-        local actual_sha256
-        actual_sha256=$(sha256sum "$tmpdir/cloudflared-linux-amd64" | awk '{print $1}')
+        local actual_sha256 checksum_out
+        checksum_out=$(sha256sum "$tmpdir/cloudflared-linux-amd64") || { echo "  WARNING: Failed to compute checksum"; rm -rf "$tmpdir"; return 0; }
+        actual_sha256="${checksum_out%% *}"
         if [[ "$actual_sha256" != "$cf_sha256" ]]; then
           echo "  WARNING: cloudflared checksum mismatch, skipping S3 upload"
           rm -rf "$tmpdir"
@@ -277,12 +282,12 @@ ensure_master_key() {
     echo "  Master key ........... ok (exists in SSM)"
   else
     local master_key
-    master_key="sk-$(openssl rand -hex 24)"
+    master_key="sk-$(openssl rand -hex 24)" || die "Failed to generate master key"
     aws ssm put-parameter \
       --name "$MASTER_KEY_SSM_PATH" \
       --value "$master_key" \
       --type SecureString \
-      --region "$region" >/dev/null
+      --region "$region" >/dev/null || die "Failed to store master key in SSM"
     echo "  Master key ........... created in SSM"
   fi
 }
@@ -303,7 +308,7 @@ api_call() {
   fi
 
   local http_code tmpfile
-  tmpfile=$(mktemp)
+  tmpfile=$(mktemp) || die "Failed to create temp file"
   trap 'rm -f "$tmpfile"' RETURN
 
   if [[ -n "$data" ]]; then
@@ -333,7 +338,8 @@ get_state_bucket() {
   local region
   region="$(get_region)"
   local account_id
-  account_id=$(aws sts get-caller-identity --query Account --output text --region "$region")
+  account_id=$(aws sts get-caller-identity --query Account --output text --region "$region") \
+    || die "Failed to get AWS account ID"
   echo "rockport-tfstate-${account_id}-${region}"
 }
 
@@ -357,7 +363,7 @@ upsert_iam_policy() {
     aws iam create-policy-version \
       --policy-arn "$arn" \
       --policy-document "file://$file" \
-      --set-as-default >/dev/null
+      --set-as-default >/dev/null || die "Failed to update IAM policy $name"
     echo "  IAM policy ........... updated ($name)"
   else
     if ! aws iam create-policy \
@@ -374,11 +380,14 @@ attach_iam_policy() {
   local user="$1" name="$2" account_id="$3"
   local arn="arn:aws:iam::${account_id}:policy/${name}"
 
-  if aws iam list-attached-user-policies --user-name "$user" \
-    --query "AttachedPolicies[?PolicyArn=='$arn']" --output text 2>/dev/null | grep -q "$name"; then
+  local attached
+  attached=$(aws iam list-attached-user-policies --user-name "$user" \
+    --query "AttachedPolicies[?PolicyArn=='$arn']" --output text 2>/dev/null) || attached=""
+  if echo "$attached" | grep -q "$name"; then
     echo "  Policy attachment .... ok ($name → $user)"
   else
-    aws iam attach-user-policy --user-name "$user" --policy-arn "$arn"
+    aws iam attach-user-policy --user-name "$user" --policy-arn "$arn" \
+      || die "Failed to attach policy $name to $user"
     echo "  Policy attachment .... attached ($name → $user)"
   fi
 }
@@ -388,9 +397,11 @@ ensure_deployer_access() {
   local policy_dir="$TERRAFORM_DIR/deployer-policies"
   local account_id caller_user
   local caller_identity
-  caller_identity=$(aws sts get-caller-identity --output json)
+  caller_identity=$(aws sts get-caller-identity --output json) \
+    || die "Failed to get caller identity"
   account_id=$(echo "$caller_identity" | jq -r '.Account')
   caller_user=$(echo "$caller_identity" | jq -r '.Arn' | sed 's|.*/||')
+  [[ -n "$account_id" && -n "$caller_user" ]] || die "Failed to parse caller identity"
 
   # --- Admin policy (self-bootstrapping) ---
   # The RockportAdmin policy grants the admin user permission to manage all
@@ -423,7 +434,8 @@ ensure_deployer_access() {
   if aws iam get-user --user-name "$deployer_user" &>/dev/null; then
     echo "  IAM user ............. ok ($deployer_user)"
   else
-    aws iam create-user --user-name "$deployer_user" >/dev/null
+    aws iam create-user --user-name "$deployer_user" >/dev/null \
+      || die "Failed to create IAM user $deployer_user"
     echo "  IAM user ............. created ($deployer_user)"
   fi
 
@@ -436,16 +448,19 @@ ensure_deployer_access() {
   done
 
   local existing_keys
-  existing_keys=$(aws iam list-access-keys --user-name "$deployer_user" --query 'length(AccessKeyMetadata)' --output text)
+  existing_keys=$(aws iam list-access-keys --user-name "$deployer_user" --query 'length(AccessKeyMetadata)' --output text) \
+    || die "Failed to list access keys for $deployer_user"
 
   if [[ "$existing_keys" -gt 0 ]]; then
     echo "  Access keys .......... ok (already configured)"
   else
     local key_output
-    key_output=$(aws iam create-access-key --user-name "$deployer_user" --output json)
+    key_output=$(aws iam create-access-key --user-name "$deployer_user" --output json) \
+      || die "Failed to create access key for $deployer_user"
     local access_key secret_key
     access_key=$(echo "$key_output" | jq -r '.AccessKey.AccessKeyId')
     secret_key=$(echo "$key_output" | jq -r '.AccessKey.SecretAccessKey')
+    [[ -n "$access_key" && -n "$secret_key" ]] || die "Failed to parse access key output"
 
     local region
     region="$(get_region)"
@@ -479,20 +494,22 @@ ensure_state_backend() {
     aws s3api put-bucket-versioning \
       --bucket "$bucket" \
       --region "$region" \
-      --versioning-configuration Status=Enabled
+      --versioning-configuration Status=Enabled \
+      || die "Failed to enable bucket versioning on $bucket"
 
     aws s3api put-bucket-encryption \
       --bucket "$bucket" \
       --region "$region" \
       --server-side-encryption-configuration '{
         "Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}, "BucketKeyEnabled": true}]
-      }'
+      }' || die "Failed to enable bucket encryption on $bucket"
 
     aws s3api put-public-access-block \
       --bucket "$bucket" \
       --region "$region" \
       --public-access-block-configuration \
-        BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+        BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true \
+      || die "Failed to set public access block on $bucket"
 
     aws s3api put-bucket-policy \
       --bucket "$bucket" \
@@ -512,7 +529,7 @@ ensure_state_backend() {
             \"Bool\": { \"aws:SecureTransport\": \"false\" }
           }
         }]
-      }"
+      }" || die "Failed to set bucket policy on $bucket"
 
     echo "  State bucket ......... created ($bucket)"
   fi
@@ -829,20 +846,22 @@ cmd_key_create() {
   fi
 
   local payload
-  payload=$(jq -n --arg alias "$name" '{key_alias: $alias}')
+  payload=$(jq -n --arg alias "$name" '{key_alias: $alias}') || die "Failed to build key payload"
 
   if [[ -n "$budget" ]]; then
-    payload=$(echo "$payload" | jq --argjson budget "$budget" '. + {max_budget: $budget, budget_duration: "1d"}')
+    payload=$(echo "$payload" | jq --argjson budget "$budget" '. + {max_budget: $budget, budget_duration: "1d"}') \
+      || die "Failed to add budget to payload"
   fi
 
   if [[ "$claude_only" == "true" ]]; then
-    payload=$(echo "$payload" | jq --argjson models "$CLAUDE_MODELS" '. + {models: $models}')
+    payload=$(echo "$payload" | jq --argjson models "$CLAUDE_MODELS" '. + {models: $models}') \
+      || die "Failed to add model restriction to payload"
     echo "Restricting key to Anthropic models only."
   fi
 
   echo "Creating key '$name'..."
   local response
-  response=$(api_call POST "/key/generate" "$payload")
+  response=$(api_call POST "/key/generate" "$payload") || die "Failed to create API key"
 
   local key
   key=$(echo "$response" | jq -r '.key // empty')
@@ -934,9 +953,9 @@ cmd_key_revoke() {
   local key="${1:?Usage: rockport key revoke <key>}"
   echo "Revoking key..."
   local payload
-  payload=$(jq -n --arg k "$key" '{keys: [$k]}')
+  payload=$(jq -n --arg k "$key" '{keys: [$k]}') || die "Failed to build revoke payload"
   local response
-  response=$(api_call POST "/key/delete" "$payload")
+  response=$(api_call POST "/key/delete" "$payload") || die "Failed to revoke key"
   echo "$response" | jq -r '
     if .deleted_keys and (.deleted_keys | length) > 0 then
       "Revoked: \(.deleted_keys | join(", "))"
@@ -1481,7 +1500,7 @@ cmd_config_push() {
   artifacts_bucket="$(get_artifacts_bucket)"
 
   local params_file
-  params_file=$(mktemp)
+  params_file=$(mktemp) || die "Failed to create temp file"
   trap 'rm -f "$params_file"' RETURN
   # Stop sidecar, download artifact, extract, restart services
   jq -n --arg bucket "$artifacts_bucket" --arg region "$region" \
@@ -1546,37 +1565,42 @@ cmd_deploy() {
     echo "  Creating artifacts bucket (first deploy)..."
     # Terraform will create it properly; do a minimal create for the upload
     aws s3api create-bucket --bucket "$artifacts_bucket" --region "$region" \
-      --create-bucket-configuration LocationConstraint="$region" --no-cli-pager
+      --create-bucket-configuration LocationConstraint="$region" --no-cli-pager \
+      || die "Failed to create artifacts bucket"
     aws s3api put-public-access-block --bucket "$artifacts_bucket" --region "$region" \
-      --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+      --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true \
+      || die "Failed to set public access block on artifacts bucket"
   fi
 
   # Package and upload deploy artifact to S3 (before terraform apply)
   package_and_upload_artifact
 
-  cd "$TERRAFORM_DIR"
+  cd "$TERRAFORM_DIR" || die "Failed to cd to terraform directory"
   terraform init -upgrade \
     -backend-config="bucket=$bucket" \
     -backend-config="region=$region" \
-    -backend-config="use_lockfile=true"
+    -backend-config="use_lockfile=true" \
+    || die "terraform init failed"
 
   # Import artifacts bucket into state if pre-created by this script
   if ! terraform state show aws_s3_bucket.artifacts &>/dev/null; then
     echo "  Importing artifacts bucket into Terraform state..."
-    terraform import aws_s3_bucket.artifacts "$artifacts_bucket"
+    terraform import aws_s3_bucket.artifacts "$artifacts_bucket" || die "Failed to import artifacts bucket"
   fi
 
   # Import orphaned CloudWatch log group if it exists from a previous deploy
   # (Lambda auto-creates this log group; terraform destroy removes the Lambda but not the log group)
   if ! terraform state show 'aws_cloudwatch_log_group.idle_shutdown[0]' &>/dev/null; then
-    if aws logs describe-log-groups --log-group-name-prefix /aws/lambda/rockport-idle-shutdown --region "$region" \
-        --query 'logGroups[0].logGroupName' --output text 2>/dev/null | grep -q rockport; then
+    local log_group_check
+    log_group_check=$(aws logs describe-log-groups --log-group-name-prefix /aws/lambda/rockport-idle-shutdown --region "$region" \
+        --query 'logGroups[0].logGroupName' --output text 2>/dev/null) || log_group_check=""
+    if echo "$log_group_check" | grep -q rockport; then
       echo "  Importing existing idle-shutdown log group into Terraform state..."
       terraform import 'aws_cloudwatch_log_group.idle_shutdown[0]' '/aws/lambda/rockport-idle-shutdown'
     fi
   fi
 
-  terraform apply
+  terraform apply || die "terraform apply failed"
 
   echo
   echo "Deploy complete. Next steps:"
@@ -1603,12 +1627,13 @@ cmd_destroy() {
     return 0
   fi
 
-  cd "$TERRAFORM_DIR"
+  cd "$TERRAFORM_DIR" || die "Failed to cd to terraform directory"
   terraform init \
     -backend-config="bucket=$bucket" \
     -backend-config="region=$region" \
-    -backend-config="use_lockfile=true"
-  terraform destroy
+    -backend-config="use_lockfile=true" \
+    || die "terraform init failed"
+  terraform destroy || die "terraform destroy failed"
 
   echo "Cleaning up orphaned resources..."
   aws logs delete-log-group \
@@ -1629,7 +1654,8 @@ cmd_upgrade() {
   instance_id="$(get_instance_id)"
   echo "Restarting LiteLLM on instance $instance_id..."
   local result
-  result=$(ssm_run "sudo systemctl restart litellm && (sudo systemctl restart rockport-video 2>/dev/null || true) && echo Services restarted successfully" 30)
+  result=$(ssm_run "sudo systemctl restart litellm && (sudo systemctl restart rockport-video 2>/dev/null || true) && echo Services restarted successfully" 30) \
+    || die "Failed to restart services on instance $instance_id"
   echo "$result"
 }
 
@@ -1640,7 +1666,8 @@ cmd_start() {
 
   local state
   state=$(aws ec2 describe-instances --instance-ids "$instance_id" --region "$region" \
-    --query 'Reservations[0].Instances[0].State.Name' --output text)
+    --query 'Reservations[0].Instances[0].State.Name' --output text) \
+    || die "Failed to get instance state"
 
   if [[ "$state" == "running" ]]; then
     echo "Instance $instance_id is already running."
@@ -1649,9 +1676,11 @@ cmd_start() {
   fi
 
   echo "Starting instance $instance_id..."
-  aws ec2 start-instances --instance-ids "$instance_id" --region "$region" > /dev/null
+  aws ec2 start-instances --instance-ids "$instance_id" --region "$region" > /dev/null \
+    || die "Failed to start instance"
   echo "Waiting for running state..."
-  aws ec2 wait instance-running --instance-ids "$instance_id" --region "$region"
+  aws ec2 wait instance-running --instance-ids "$instance_id" --region "$region" \
+    || die "Timed out waiting for instance to start"
   echo "Instance running. Waiting for services..."
 
   wait_for_health "$(get_tunnel_url)" 120
@@ -1664,7 +1693,8 @@ cmd_stop() {
 
   local state
   state=$(aws ec2 describe-instances --instance-ids "$instance_id" --region "$region" \
-    --query 'Reservations[0].Instances[0].State.Name' --output text)
+    --query 'Reservations[0].Instances[0].State.Name' --output text) \
+    || die "Failed to get instance state"
 
   if [[ "$state" == "stopped" ]]; then
     echo "Instance $instance_id is already stopped."
@@ -1672,9 +1702,11 @@ cmd_stop() {
   fi
 
   echo "Stopping instance $instance_id..."
-  aws ec2 stop-instances --instance-ids "$instance_id" --region "$region" > /dev/null
+  aws ec2 stop-instances --instance-ids "$instance_id" --region "$region" > /dev/null \
+    || die "Failed to stop instance"
   echo "Waiting for stopped state..."
-  aws ec2 wait instance-stopped --instance-ids "$instance_id" --region "$region"
+  aws ec2 wait instance-stopped --instance-ids "$instance_id" --region "$region" \
+    || die "Timed out waiting for instance to stop"
   echo "Instance stopped."
 }
 

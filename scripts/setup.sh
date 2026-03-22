@@ -1,5 +1,6 @@
 #!/bin/bash
-set -euo pipefail
+
+die() { echo "ERROR: $*" >&2; exit 1; }
 
 # Setup script for Rockport development — works on Ubuntu/Debian and macOS (Homebrew)
 
@@ -10,7 +11,8 @@ OS="$(uname -s)"
 install_brew() {
   if ! command -v brew &>/dev/null; then
     echo "Installing Homebrew..."
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
+      || die "Failed to install Homebrew"
   fi
 }
 
@@ -23,12 +25,13 @@ install_aws_cli() {
   case "$OS" in
     Darwin)
       install_brew
-      brew install awscli
+      brew install awscli || die "Failed to install AWS CLI via Homebrew"
       ;;
     Linux)
-      curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
-      unzip -qo /tmp/awscliv2.zip -d /tmp/aws-install
-      sudo /tmp/aws-install/aws/install --update
+      curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip \
+        || die "Failed to download AWS CLI"
+      unzip -qo /tmp/awscliv2.zip -d /tmp/aws-install || die "Failed to unzip AWS CLI"
+      sudo /tmp/aws-install/aws/install --update || die "Failed to install AWS CLI"
       rm -rf /tmp/awscliv2.zip /tmp/aws-install
       ;;
   esac
@@ -43,11 +46,12 @@ install_session_manager_plugin() {
   case "$OS" in
     Darwin)
       install_brew
-      brew install --cask session-manager-plugin
+      brew install --cask session-manager-plugin || die "Failed to install Session Manager plugin via Homebrew"
       ;;
     Linux)
-      curl -fsSL "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" -o /tmp/session-manager-plugin.deb
-      sudo dpkg -i /tmp/session-manager-plugin.deb
+      curl -fsSL "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" -o /tmp/session-manager-plugin.deb \
+        || die "Failed to download Session Manager plugin"
+      sudo dpkg -i /tmp/session-manager-plugin.deb || die "Failed to install Session Manager plugin"
       rm /tmp/session-manager-plugin.deb
       ;;
   esac
@@ -62,14 +66,15 @@ install_terraform() {
   case "$OS" in
     Darwin)
       install_brew
-      brew tap hashicorp/tap
-      brew install hashicorp/tap/terraform
+      brew tap hashicorp/tap || die "Failed to tap hashicorp/tap"
+      brew install hashicorp/tap/terraform || die "Failed to install Terraform via Homebrew"
       ;;
     Linux)
       local tf_version="1.14.7"
-      curl -fsSL "https://releases.hashicorp.com/terraform/${tf_version}/terraform_${tf_version}_linux_amd64.zip" -o /tmp/terraform.zip
-      unzip -qo /tmp/terraform.zip -d /tmp
-      sudo mv /tmp/terraform /usr/local/bin/
+      curl -fsSL "https://releases.hashicorp.com/terraform/${tf_version}/terraform_${tf_version}_linux_amd64.zip" -o /tmp/terraform.zip \
+        || die "Failed to download Terraform"
+      unzip -qo /tmp/terraform.zip -d /tmp || die "Failed to unzip Terraform"
+      sudo mv /tmp/terraform /usr/local/bin/ || die "Failed to install Terraform"
       rm /tmp/terraform.zip
       ;;
   esac
@@ -84,14 +89,19 @@ install_gh_cli() {
   case "$OS" in
     Darwin)
       install_brew
-      brew install gh
+      brew install gh || die "Failed to install GitHub CLI via Homebrew"
       ;;
     Linux)
-      sudo mkdir -p -m 755 /etc/apt/keyrings
-      curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null
-      sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
-      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-      sudo apt-get update && sudo apt-get install -y gh
+      sudo mkdir -p -m 755 /etc/apt/keyrings || die "Failed to create keyrings directory"
+      curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /tmp/githubcli-archive-keyring.gpg \
+        || die "Failed to download GitHub CLI keyring"
+      sudo mv /tmp/githubcli-archive-keyring.gpg /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+        || die "Failed to install GitHub CLI keyring"
+      sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg || die "Failed to chmod keyring"
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+        || die "Failed to add GitHub CLI apt source"
+      sudo apt-get update || die "Failed to update apt"
+      sudo apt-get install -y gh || die "Failed to install GitHub CLI"
       ;;
   esac
 }
@@ -105,10 +115,15 @@ install_trivy() {
   case "$OS" in
     Darwin)
       install_brew
-      brew install trivy
+      brew install trivy || die "Failed to install Trivy via Homebrew"
       ;;
     Linux)
-      curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
+      local trivy_script
+      trivy_script=$(mktemp) || die "Failed to create temp file for trivy installer"
+      curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh -o "$trivy_script" \
+        || { rm -f "$trivy_script"; die "Failed to download trivy install script"; }
+      sudo sh "$trivy_script" -b /usr/local/bin || { rm -f "$trivy_script"; die "Failed to install trivy"; }
+      rm -f "$trivy_script"
       ;;
   esac
 }
@@ -122,16 +137,17 @@ install_checkov() {
   case "$OS" in
     Darwin)
       install_brew
-      brew install checkov
+      brew install checkov || die "Failed to install Checkov via Homebrew"
       ;;
     Linux)
       if command -v pipx &>/dev/null; then
-        pipx install checkov
+        pipx install checkov || die "Failed to install Checkov via pipx"
       else
         echo "Installing pipx first..."
-        sudo apt-get update && sudo apt-get install -y pipx
-        pipx ensurepath
-        pipx install checkov
+        sudo apt-get update || die "Failed to update apt"
+        sudo apt-get install -y pipx || die "Failed to install pipx"
+        pipx ensurepath || die "Failed to configure pipx path"
+        pipx install checkov || die "Failed to install Checkov via pipx"
       fi
       ;;
   esac
@@ -146,10 +162,11 @@ install_shellcheck() {
   case "$OS" in
     Darwin)
       install_brew
-      brew install shellcheck
+      brew install shellcheck || die "Failed to install ShellCheck via Homebrew"
       ;;
     Linux)
-      sudo apt-get update && sudo apt-get install -y shellcheck
+      sudo apt-get update || die "Failed to update apt"
+      sudo apt-get install -y shellcheck || die "Failed to install ShellCheck"
       ;;
   esac
 }
@@ -163,14 +180,18 @@ install_gitleaks() {
   case "$OS" in
     Darwin)
       install_brew
-      brew install gitleaks
+      brew install gitleaks || die "Failed to install Gitleaks via Homebrew"
       ;;
     Linux)
-      local gl_version
-      gl_version=$(curl -sL https://api.github.com/repos/gitleaks/gitleaks/releases/latest | grep -oP '"tag_name":\s*"v\K[^"]+')
-      curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${gl_version}/gitleaks_${gl_version}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
-      mkdir -p "$HOME/.local/bin"
-      tar -xzf /tmp/gitleaks.tar.gz -C "$HOME/.local/bin" gitleaks
+      local gl_json gl_version
+      gl_json=$(curl -sL https://api.github.com/repos/gitleaks/gitleaks/releases/latest) \
+        || die "Failed to fetch gitleaks release info"
+      gl_version=$(echo "$gl_json" | grep -oP '"tag_name":\s*"v\K[^"]+') \
+        || die "Failed to parse gitleaks version"
+      curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${gl_version}/gitleaks_${gl_version}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz \
+        || die "Failed to download gitleaks"
+      mkdir -p "$HOME/.local/bin" || die "Failed to create ~/.local/bin"
+      tar -xzf /tmp/gitleaks.tar.gz -C "$HOME/.local/bin" gitleaks || die "Failed to extract gitleaks"
       rm /tmp/gitleaks.tar.gz
       ;;
   esac
@@ -180,7 +201,7 @@ setup_git_hooks() {
   local repo_root
   repo_root="$(cd "$(dirname "$0")/.." && pwd)"
   if [[ -d "$repo_root/.githooks" ]]; then
-    git -C "$repo_root" config core.hooksPath .githooks
+    git -C "$repo_root" config core.hooksPath .githooks || die "Failed to configure git hooks"
     echo "✓ Git hooks configured (.githooks/pre-commit)"
   fi
 }
