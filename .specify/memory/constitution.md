@@ -176,12 +176,64 @@ AWS `eu-west-2` (London) for compute and Bedrock. Cloudflare
   (seconds) during a deploy is acceptable; extended outages
   are not.
 
+### VI. Explicit Bash Error Handling
+
+Bash scripts MUST NOT use `set -euo pipefail`, `set -e`,
+`set -u`, or `set -o pipefail`. All error handling MUST be
+explicit.
+
+**Rationale:** `set -e` has complex, poorly-understood
+trigger rules that cause more issues than it solves:
+- `local var=$(cmd_that_fails)` silently swallows errors
+  because `local` returns 0
+- Commands in `if` conditions, `||`/`&&` chains, and
+  subshells have inconsistent behavior
+- Results in `|| true` scattered throughout, defeating the
+  purpose
+- `set -u` adds verbosity (`${1:-}`) for every optional
+  param
+- `set -o pipefail` surprises with `head`/SIGPIPE errors
+
+**Required patterns:**
+- Check return codes explicitly after commands that can fail:
+  ```bash
+  if ! some_command; then
+      echo "ERROR: some_command failed" >&2
+      exit 1
+  fi
+  ```
+- Use `|| die "message"` with a `die()` helper for
+  one-liners:
+  ```bash
+  die() { echo "ERROR: $*" >&2; exit 1; }
+  some_command || die "some_command failed"
+  ```
+- Check `$?` when the return code needs inspection:
+  ```bash
+  some_command
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+      echo "ERROR: Failed with code $rc" >&2
+      exit 1
+  fi
+  ```
+- For pipelines, check the specific command that matters
+  rather than relying on pipefail.
+
+**Prohibited:**
+- `set -e`, `set -o errexit`
+- `set -u`, `set -o nounset`
+- `set -o pipefail`
+- `set -euo pipefail` or any combination thereof
+
 ## Governance
 
 - This constitution is the highest-authority document for
   Rockport. All specs, plans, and tasks MUST comply.
 - Scope Containment (IV) MUST be reviewed before accepting
   any new feature.
+- Explicit Bash Error Handling (VI) MUST be followed in all
+  bash scripts.
 - This file MUST be re-read at the start of every planning
   session.
 - The entire project (IaC, config, bootstrap scripts, docs)
@@ -189,4 +241,4 @@ AWS `eu-west-2` (London) for compute and Bedrock. Cloudflare
   service may exist outside the repository, except secrets
   stored in SSM and the Cloudflare Tunnel configuration.
 
-**Version**: 0.1.0 | **Ratified**: 2026-03-13
+**Version**: 0.2.0 | **Ratified**: 2026-03-13 | **Last Amended**: 2026-03-22

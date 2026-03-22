@@ -1,5 +1,6 @@
 #!/bin/bash
-set -euo pipefail
+
+die() { echo "ERROR: $*" >&2; exit 1; }
 
 # Rockport Smoke Tests
 # Tests routing, auth, validation, and basic functionality.
@@ -26,11 +27,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 echo "Creating temporary test key..."
 KEY_OUTPUT=$("$SCRIPT_DIR/../scripts/rockport.sh" key create smoke-test-$$ 2>&1)
 VALID_KEY=$(echo "$KEY_OUTPUT" | grep -oP '(?<=Key:\s{4})sk-[a-zA-Z0-9_-]+')
-if [[ -z "$VALID_KEY" ]]; then
-  echo "ERROR: Failed to create test key" >&2
-  echo "$KEY_OUTPUT" >&2
-  exit 1
-fi
+[[ -n "$VALID_KEY" ]] || die "Failed to create test key. Output: $KEY_OUTPUT"
 echo "  Test key created: ${VALID_KEY:0:12}..."
 sleep 2  # Allow key to propagate through LiteLLM
 

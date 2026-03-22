@@ -34,7 +34,7 @@ sidecar/                # Video + image services sidecar (FastAPI on port 4001)
   requirements.lock     #   Hashed lock file (pip-compile --generate-hashes)
 scripts/bootstrap.sh    # EC2 user_data — installs PostgreSQL, LiteLLM, cloudflared, video sidecar
 scripts/rockport.sh     # Admin CLI (init, keys, status, spend, logs, deploy, start/stop)
-scripts/setup.sh        # Install dev tools (AWS CLI, Terraform, jq, shellcheck, trivy, etc.)
+scripts/setup.sh        # Install dev tools (AWS CLI, Terraform, shellcheck, trivy, etc.)
 docs/                   # Architecture diagrams
   rockport_architecture_overview.svg  # System architecture overview
   rockport_request_dataflow.svg       # Request/response flow swimlane
@@ -77,9 +77,9 @@ tests/smoke-test.sh     # Post-deploy verification
 - The `litellm` user's home is `/var/lib/litellm` (not `/home/litellm`) so prisma cache works with `ProtectHome=yes`
 - Terraform `user_data` only runs on first boot; use `config push` or `upgrade` for runtime changes
 - Claude Code sends old model IDs (e.g. `claude-sonnet-4-5-20250929`); aliases in litellm-config.yaml map these to latest 4.6 Bedrock models
-- Bedrock inference profiles need `eu.` prefix for cross-region models; IAM policy must cover ALL EU regions (the inference profile can route to any) + us-west-2 + us-east-1 for image generation
+- Bedrock inference profiles need `eu.` prefix for cross-region models; IAM policy must cover ALL EU regions (the inference profile can route to any) + all 4 US regions (us-east-1, us-east-2, us-west-1, us-west-2) for Stability AI `us.` inference profiles + image/video models
 - The EC2 instance needs a public IP for outbound internet (SSM, Bedrock, pip) — the default VPC has no NAT gateway. The SG has zero inbound rules so the public IP is not directly reachable
-- Image generation models: Nova Canvas (us-east-1), Titan Image v2 (us-west-2), SD3.5 Large (us-west-2), Stable Image Ultra v1.1 (us-west-2), Stable Image Core v1.1 (us-west-2) — routed via per-model `aws_region_name` in litellm-config.yaml
+- Image generation models: Nova Canvas (us-east-1), Titan Image v2 (us-west-2), SD3.5 Large (us-west-2), Stable Image Ultra (us-west-2), Stable Image Core (us-west-2) — routed via per-model `aws_region_name` in litellm-config.yaml
 - Image dimensions via OpenAI `size` param: Nova Canvas requires divisible by 16 (320–4096); Titan v2 uses preset sizes (256–1408); SD3.5 Large ignores `size` (fixed 1024x1024, returns JPEG not PNG)
 - Image-to-image: use `/v1/images/generations` with `textToImageParams.conditionImage` (Nova Canvas) — NOT `/v1/images/edits` which is the Stability AI edit endpoint
 - Cloudflare blocks requests with Python's default `Python-urllib` user-agent (403) — OpenAI SDK and curl work fine
@@ -87,7 +87,7 @@ tests/smoke-test.sh     # Post-deploy verification
 - Instance auto-stops after 30min of inactivity by default (Lambda checks both NetworkIn and CPUUtilization — instance is only stopped when both are below threshold). A CloudWatch alarm fires if the idle-stop Lambda itself fails consecutively
 - Region is read from `terraform.tfvars` by rockport.sh — no hardcoded region in the CLI
 - cloudflared version is pinned via `cloudflared_version` variable for stability
-- The admin CLI requires `aws`, `terraform`, and `jq` — run `./scripts/setup.sh` to install all tools (also installs shellcheck, trivy, checkov, gitleaks)
+- The admin CLI requires `aws`, `terraform`, and `jq` — run `./scripts/setup.sh` to install all tools (also installs session-manager-plugin, gh, shellcheck, trivy, checkov, gitleaks)
 - Three SSM parameters are managed: `/rockport/master-key` (by init), `/rockport/tunnel-token` (by Terraform), `/rockport/db-password` (by bootstrap)
 - CI/CD uses GitHub OIDC for AWS authentication — set the `AWS_ROLE_ARN` secret in GitHub to the IAM role ARN
 - The LiteLLM admin UI is intentionally disabled (`disable_admin_ui: true`) — all admin is via the CLI
@@ -126,21 +126,11 @@ tests/smoke-test.sh     # Post-deploy verification
 - State bucket gets DenyNonSSL policy on creation via `rockport.sh init`
 - Bootstrap runs `prisma migrate deploy` before LiteLLM starts — avoids slow per-migration baseline resolve (~10s x 108 migrations) on first boot. Full bootstrap completes in ~3 minutes
 - Nova Canvas sidecar endpoints on (:4001): `/v1/images/variations`, `/v1/images/background-removal`, `/v1/images/outpaint`. All enforce auth, budgets, and block --claude-only keys
-- Stability AI image edit operations use LiteLLM's native `/v1/images/edits` endpoint with 13 `stability-*` model names (structure, sketch, style-transfer, remove-background, search-replace, upscale, style-guide, inpaint, erase, creative-upscale, fast-upscale, search-recolor, outpaint). Costs: $0.04/image for most, $0.06 for style-transfer, upscale, creative-upscale. All in us-west-2 via `aws_region_name` in litellm-config.yaml
-- Stable Image Ultra ($0.14/image) and Core ($0.04/image) available via `/v1/images/generations` with model names `stable-image-ultra` and `stable-image-core`
-- Nova Canvas style presets supported via `textToImageParams.style` field: 3D_ANIMATED_FAMILY_FILM, DESIGN_SKETCH, FLAT_VECTOR_ILLUSTRATION, GRAPHIC_NOVEL_ILLUSTRATION, MAXIMALISM, MIDCENTURY_RETRO, PHOTOREALISM, SOFT_DIGITAL_PAINTING
-- Nova Reel auto-resize: images not exactly 1280x720 are automatically resized. Five modes: `scale` (default), `crop-center`, `crop-top`, `crop-bottom`, `fit` (with pad). Controlled via `resize_mode` and `pad_color` params
-- Nova Reel prompt validation: rejects prompts with negation words (model interprets them positively); warns (non-blocking) when camera keywords are in the middle of the prompt (AWS recommends start or end for best results)
-- `rockport.sh status` shows instance memory/CPU/uptime stats via SSM in addition to health checks
 
 ## Active Technologies
-- Terraform (AWS provider, Cloudflare provider) — all infrastructure
-- Python 3.11 + FastAPI, uvicorn, boto3, Pillow, psycopg2, pydantic, httpx — sidecar (video + Nova Canvas image services, us-east-1 client)
-- PostgreSQL 15 — LiteLLM keys/spend + video job tracking (`rockport_video_jobs` table with `model` column)
-- S3 — Terraform state (eu-west-2) + video output (us-east-1 for Nova Reel, us-west-2 for Ray2, both 7-day lifecycle)
-- Bash — admin CLI, bootstrap, smoke tests
-- CloudTrail — management event audit logging (eu-west-2)
-
-## Recent Changes
-- Public release prep: added terraform.tfvars.example (all 16 vars, correct defaults), .env.example, .gitignore exceptions for example files
-- Security audit fixes: CRIT-1 race condition fix (reserve-before-invoke), IAM model scoping, body size limits, cloudflared/artifact checksums, error sanitization, CloudTrail, pip hash pinning, SSM/document scoping, claude-only video enforcement, state bucket DenyNonSSL
+- Terraform (AWS + Cloudflare providers)
+- Python 3.11 + FastAPI — sidecar
+- PostgreSQL 15 — LiteLLM + video job tracking
+- S3 — state + video output
+- Bash — CLI, bootstrap, smoke tests
+- CloudTrail — audit logging
