@@ -94,3 +94,12 @@ Read ALL service files and config:
 
 - Extract skip rules and their justifications
 - Verify justifications are still valid
+
+## 15. Skills and agents — `.claude/skills/`, `.claude/commands/`
+
+- `*.claude/skills/rockport-ops/SKILL.md` — check diagnostic commands reference correct ports, service names, paths, and AWS CLI patterns against actual terraform/systemd/sidecar code
+- `.claude/skills/rockport-ops/references/*.md` — verify AWS CLI commands, SSM patterns, IAM role names, secret paths, and common-issue symptom descriptions match the codebase
+- `.claude/commands/factcheck-docs/sources.md` — verify every listed source file still exists on disk
+- `.claude/commands/factcheck-docs/checklists.md` — verify checklist items reference things that exist (endpoints, config keys, SVG elements)
+- Do NOT factcheck speckit commands (they are generic workflow tools, not Rockport-specific)
+- Do NOT factcheck terraform-skill (third-party skill, not Rockport-specific)

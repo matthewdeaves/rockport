@@ -1,6 +1,6 @@
 ---
 name: factcheck-docs
-description: Deep factcheck of project documentation (README.md, CLAUDE.md, SVG diagrams) against the actual codebase. Finds inaccuracies, stale references, missing information, and bloat. Use after making code changes, when docs may be stale, or when the user says things like "check the docs", "are the docs up to date", "factcheck", "audit docs", "verify documentation", or "docs are wrong".
+description: Deep factcheck of project documentation (README.md, CLAUDE.md, SVG diagrams, skill definitions) against the actual codebase. Finds inaccuracies, stale references, missing information, and bloat. Use after making code changes, when docs may be stale, or when the user says things like "check the docs", "are the docs up to date", "factcheck", "audit docs", "verify documentation", or "docs are wrong".
 disable-model-invocation: false
 allowed-tools: Agent, Read, Edit, Bash, Glob, Grep, Write
 context: fork
@@ -16,7 +16,7 @@ You **MUST** consider the user input before proceeding (if not empty). It may sp
 
 ## Purpose
 
-Deep factcheck of project documentation (README.md, CLAUDE.md, and SVG diagrams) against the actual codebase. Finds inaccuracies, stale references, missing information, and bloat. Produces a report and then applies fixes.
+Deep factcheck of project documentation (README.md, CLAUDE.md, SVG diagrams, and skill/agent definitions) against the actual codebase. Finds inaccuracies, stale references, missing information, and bloat. Produces a report and then applies fixes.
 
 **Audience distinction:**
 - **README.md** is for humans setting up and using Rockport. It should explain what things do and how to use them.

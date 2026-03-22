@@ -70,3 +70,15 @@ Use these checklists in Phase 2 to cross-reference every documentation claim aga
 - [ ] Rate limit values match litellm-config.yaml (rpm_limit, tpm_limit)
 - [ ] Budget values match litellm-config.yaml (max_budget, default budget)
 - [ ] Video sidecar flow matches video_api.py (auth, validation, budget, Bedrock call, concurrent limit)
+
+## Skills: rockport-ops
+
+- [ ] diagnostics.md — service names match actual systemd units in config/*.service
+- [ ] diagnostics.md — ports (:4000, :4001) match tunnel.tf and systemd ExecStart
+- [ ] diagnostics.md — SSM parameter paths match terraform/main.tf and scripts/rockport.sh
+- [ ] diagnostics.md — Lambda log group name matches terraform/idle.tf
+- [ ] common-issues.md — symptom descriptions reference correct endpoints, error codes, and config files
+- [ ] common-issues.md — memory limits cited match systemd MemoryMax values
+- [ ] aws-access.md — deployer policy names match terraform/deployer-policies/ filenames
+- [ ] aws-access.md — secret locations table matches actual SSM paths and terraform outputs
+- [ ] aws-access.md — SSM document names (AWS-RunShellScript, AWS-StartInteractiveCommand) match iam-ssm.json policy
