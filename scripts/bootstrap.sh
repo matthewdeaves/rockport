@@ -282,8 +282,20 @@ cp /tmp/rockport-artifact/config/rockport-video.service /etc/systemd/system/rock
 
 # --- Cloudflared ---
 echo "Installing cloudflared..."
-curl -fsSL "https://github.com/cloudflare/cloudflared/releases/download/$CLOUDFLARED_VERSION/cloudflared-linux-amd64" \
-  -o /tmp/cloudflared-linux-amd64
+CLOUDFLARED_DOWNLOADED=false
+for attempt in 1 2 3; do
+  if curl -fsSL --retry 3 --retry-delay 5 "https://github.com/cloudflare/cloudflared/releases/download/$CLOUDFLARED_VERSION/cloudflared-linux-amd64" \
+    -o /tmp/cloudflared-linux-amd64; then
+    CLOUDFLARED_DOWNLOADED=true
+    break
+  fi
+  echo "cloudflared download attempt $attempt failed, retrying in 10s..."
+  sleep 10
+done
+if [[ "$CLOUDFLARED_DOWNLOADED" != "true" ]]; then
+  echo "GitHub download failed after 3 attempts, falling back to S3 artifact..."
+  aws s3 cp "s3://$ARTIFACTS_BUCKET/deploy/cloudflared-linux-amd64" /tmp/cloudflared-linux-amd64
+fi
 
 # Verify SHA256 checksum against pinned hash (cloudflared releases don't include per-file checksum files)
 ACTUAL_SHA256=$(sha256sum /tmp/cloudflared-linux-amd64 | awk '{print $1}')

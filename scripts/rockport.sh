@@ -92,6 +92,43 @@ package_and_upload_artifact() {
     "s3://$bucket/deploy/rockport-artifact.tar.gz.sha256" \
     --region "$region" --quiet
   echo "  Artifact uploaded (with checksum)."
+
+  # Upload cloudflared binary to S3 as fallback for bootstrap
+  # (GitHub CDN can return transient 404s during first boot)
+  local cf_version cf_sha256
+  cf_version=$(grep '^cloudflared_version' "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null | sed 's/.*= *"//;s/"//' || true)
+  cf_sha256=$(grep '^cloudflared_sha256' "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null | sed 's/.*= *"//;s/"//' || true)
+  # Fall back to variable defaults if not in tfvars
+  if [[ -z "$cf_version" ]]; then
+    cf_version=$(grep -A3 'variable "cloudflared_version"' "$TERRAFORM_DIR/variables.tf" | grep default | sed 's/.*= *"//;s/"//' || true)
+  fi
+  if [[ -z "$cf_sha256" ]]; then
+    cf_sha256=$(grep -A3 'variable "cloudflared_sha256"' "$TERRAFORM_DIR/variables.tf" | grep default | sed 's/.*= *"//;s/"//' || true)
+  fi
+  if [[ -n "$cf_version" ]]; then
+    echo "  Downloading cloudflared $cf_version for S3 fallback..."
+    if curl -fsSL --retry 3 --retry-delay 5 \
+      "https://github.com/cloudflare/cloudflared/releases/download/$cf_version/cloudflared-linux-amd64" \
+      -o "$tmpdir/cloudflared-linux-amd64"; then
+      # Verify checksum if available
+      if [[ -n "$cf_sha256" ]]; then
+        local actual_sha256
+        actual_sha256=$(sha256sum "$tmpdir/cloudflared-linux-amd64" | awk '{print $1}')
+        if [[ "$actual_sha256" != "$cf_sha256" ]]; then
+          echo "  WARNING: cloudflared checksum mismatch, skipping S3 upload"
+          rm -rf "$tmpdir"
+          return 0
+        fi
+      fi
+      aws s3 cp "$tmpdir/cloudflared-linux-amd64" \
+        "s3://$bucket/deploy/cloudflared-linux-amd64" \
+        --region "$region" --quiet
+      echo "  cloudflared uploaded to S3 fallback."
+    else
+      echo "  WARNING: Could not download cloudflared for S3 fallback (GitHub may be unavailable)"
+    fi
+  fi
+
   rm -rf "$tmpdir"
 }
 
