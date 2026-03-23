@@ -118,11 +118,12 @@ install_trivy() {
       brew install trivy || die "Failed to install Trivy via Homebrew"
       ;;
     Linux)
+      local trivy_version="v0.69.3"
       local trivy_script
       trivy_script=$(mktemp) || die "Failed to create temp file for trivy installer"
       curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh -o "$trivy_script" \
         || { rm -f "$trivy_script"; die "Failed to download trivy install script"; }
-      sudo sh "$trivy_script" -b /usr/local/bin || { rm -f "$trivy_script"; die "Failed to install trivy"; }
+      sudo sh "$trivy_script" -b /usr/local/bin "$trivy_version" || { rm -f "$trivy_script"; die "Failed to install trivy"; }
       rm -f "$trivy_script"
       ;;
   esac
@@ -141,13 +142,38 @@ install_checkov() {
       ;;
     Linux)
       if command -v pipx &>/dev/null; then
-        pipx install checkov || die "Failed to install Checkov via pipx"
+        pipx install checkov==3.2.509 || die "Failed to install Checkov via pipx"
       else
         echo "Installing pipx first..."
         sudo apt-get update || die "Failed to update apt"
         sudo apt-get install -y pipx || die "Failed to install pipx"
         pipx ensurepath || die "Failed to configure pipx path"
-        pipx install checkov || die "Failed to install Checkov via pipx"
+        pipx install checkov==3.2.509 || die "Failed to install Checkov via pipx"
+      fi
+      ;;
+  esac
+}
+
+install_pip_audit() {
+  if command -v pip-audit &>/dev/null; then
+    echo "✓ pip-audit already installed ($(pip-audit --version 2>&1 | head -1))"
+    return
+  fi
+  echo "Installing pip-audit..."
+  case "$OS" in
+    Darwin)
+      install_brew
+      brew install pip-audit || die "Failed to install pip-audit via Homebrew"
+      ;;
+    Linux)
+      if command -v pipx &>/dev/null; then
+        pipx install pip-audit==2.10.0 || die "Failed to install pip-audit via pipx"
+      else
+        echo "Installing pipx first..."
+        sudo apt-get update || die "Failed to update apt"
+        sudo apt-get install -y pipx || die "Failed to install pipx"
+        pipx ensurepath || die "Failed to configure pipx path"
+        pipx install pip-audit==2.10.0 || die "Failed to install pip-audit via pipx"
       fi
       ;;
   esac
@@ -183,11 +209,7 @@ install_gitleaks() {
       brew install gitleaks || die "Failed to install Gitleaks via Homebrew"
       ;;
     Linux)
-      local gl_json gl_version
-      gl_json=$(curl -sL https://api.github.com/repos/gitleaks/gitleaks/releases/latest) \
-        || die "Failed to fetch gitleaks release info"
-      gl_version=$(echo "$gl_json" | grep -oP '"tag_name":\s*"v\K[^"]+') \
-        || die "Failed to parse gitleaks version"
+      local gl_version="8.30.1"
       curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${gl_version}/gitleaks_${gl_version}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz \
         || die "Failed to download gitleaks"
       mkdir -p "$HOME/.local/bin" || die "Failed to create ~/.local/bin"
@@ -212,6 +234,7 @@ install_terraform
 install_gh_cli
 install_trivy
 install_checkov
+install_pip_audit
 install_shellcheck
 install_gitleaks
 setup_git_hooks
@@ -225,6 +248,7 @@ echo "GitHub CLI:  $(gh --version 2>/dev/null | head -1)"
 echo "Trivy:       $(trivy --version 2>&1 | head -1)"
 echo "Checkov:     $(checkov --version 2>/dev/null || echo 'not found')"
 echo "ShellCheck:  $(shellcheck --version 2>&1 | grep '^version:' || echo 'not found')"
+echo "pip-audit:   $(pip-audit --version 2>/dev/null || echo 'not found')"
 echo "Gitleaks:    $(gitleaks version 2>/dev/null || echo 'not found')"
 
 echo ""
