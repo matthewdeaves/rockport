@@ -68,7 +68,7 @@ jobs:
       - name: pip-audit sidecar dependencies
         run: |
           pip install pip-audit==2.10.0
-          cp sidecar/requirements.lock /tmp/requirements-audit.txt
+          sed 's/ *\\$//; /^ *--hash/d' sidecar/requirements.lock > /tmp/requirements-audit.txt
           pip-audit -r /tmp/requirements-audit.txt
 
       - name: Checkov scan
