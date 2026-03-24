@@ -170,7 +170,7 @@ echo "Secrets fetched from SSM."
 # --- LiteLLM ---
 echo "Installing LiteLLM..."
 dnf install -y python3.11 python3.11-pip libatomic || die "Failed to install Python 3.11"
-pip3.11 install "litellm[proxy]==$LITELLM_VERSION" prisma || die "Failed to install LiteLLM"
+pip3.11 install "litellm[proxy]==$LITELLM_VERSION" "prisma==0.11.0" || die "Failed to install LiteLLM"
 
 # Cache/data directory for LiteLLM runtime — must exist before user creation
 # so we can set it as the user's home directory
