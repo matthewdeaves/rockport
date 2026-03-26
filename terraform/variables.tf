@@ -72,7 +72,7 @@ variable "budget_alert_email" {
 variable "litellm_version" {
   description = "LiteLLM version to install"
   type        = string
-  default     = "1.82.3"
+  default     = "1.82.6"
 }
 
 variable "cloudflared_version" {
