@@ -101,7 +101,7 @@ tests/smoke-test.sh     # Post-deploy verification
 - Instance auto-stops after 30min of inactivity by default (Lambda checks both NetworkIn and CPUUtilization — instance is only stopped when both are below threshold). A CloudWatch alarm fires if the idle-stop Lambda itself fails consecutively
 - Region is read from `terraform.tfvars` by rockport.sh — no hardcoded region in the CLI
 - cloudflared version is pinned via `cloudflared_version` variable for stability
-- The admin CLI requires `aws`, `terraform`, and `jq` — run `./scripts/setup.sh` to install all tools (also installs session-manager-plugin, gh, shellcheck, trivy, checkov, gitleaks)
+- The admin CLI requires `aws`, `terraform`, and `jq` — run `./scripts/setup.sh` to install all tools (also installs session-manager-plugin, gh, shellcheck, trivy, checkov, gitleaks, pip-audit)
 - Three SSM parameters are managed: `/rockport/master-key` (by init), `/rockport/tunnel-token` (by Terraform), `/rockport/db-password` (by bootstrap)
 - CI/CD uses GitHub OIDC for AWS authentication — set the `AWS_ROLE_ARN` secret in GitHub to the IAM role ARN
 - The LiteLLM admin UI is intentionally disabled (`disable_admin_ui: true`) — all admin is via the CLI
@@ -150,4 +150,4 @@ tests/smoke-test.sh     # Post-deploy verification
 - CloudTrail — audit logging
 
 ## Recent Changes
-- Added 7 new Bedrock chat models (Llama 4 Scout/Maverick, Nova 2 Lite, Mistral Large 3, Ministral 8B, GPT-OSS 120B/20B), prompt caching, extended thinking, and optional Bedrock Guardrails (`deploy --guardrails`)
+- Added 9 new Bedrock chat models (Qwen3 Coder 480B, Kimi K2.5, Llama 4 Scout/Maverick, Nova 2 Lite, Mistral Large 3, Ministral 8B, GPT-OSS 120B/20B), prompt caching, extended thinking, and optional Bedrock Guardrails (`deploy --guardrails`)

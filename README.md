@@ -54,7 +54,7 @@ Serverless foundation models auto-enable on first invocation. For Stability AI i
 ./scripts/setup.sh
 ```
 
-This installs AWS CLI v2, Session Manager plugin, Terraform, GitHub CLI, ShellCheck, Trivy, Checkov, and Gitleaks. Or install them manually.
+This installs AWS CLI v2, Session Manager plugin, Terraform, GitHub CLI, ShellCheck, Trivy, Checkov, Gitleaks, and pip-audit. Or install them manually.
 
 ### 2. Configure AWS credentials
 
@@ -177,7 +177,7 @@ All settings are in `terraform/terraform.tfvars`. These variables have defaults 
 | `region` | `eu-west-2` | AWS region |
 | `tunnel_subdomain` | `llm` | Subdomain for the Cloudflare Tunnel |
 | `instance_type` | `t3.small` | EC2 instance type |
-| `litellm_version` | `1.82.3` | LiteLLM version to install |
+| `litellm_version` | `1.82.6` | LiteLLM version to install |
 | `cloudflared_version` | `2026.3.0` | Cloudflared version (pinned for stability) |
 | `cloudflared_sha256` | *(matches version)* | SHA256 of cloudflared binary — must update when changing version |
 | `bedrock_daily_budget` | `10` | Daily Bedrock spend alert threshold (USD) |
