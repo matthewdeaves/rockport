@@ -26,6 +26,26 @@ logger = logging.getLogger("rockport-image")
 
 router = APIRouter()
 
+# --- Throttle Detection ---
+
+THROTTLE_ERROR_CODES = ("ThrottlingException", "TooManyRequestsException", "ServiceQuotaExceededException")
+
+
+def raise_if_throttled(exc: ClientError, error_ref: str, operation: str):
+    """Raise HTTP 429 if the ClientError is a Bedrock throttle/quota error.
+
+    Returns without raising if the error is not throttle-related.
+    """
+    error_code = exc.response.get("Error", {}).get("Code", "") if hasattr(exc, "response") else ""
+    if error_code in THROTTLE_ERROR_CODES:
+        error_msg = exc.response.get("Error", {}).get("Message", str(exc)) if hasattr(exc, "response") else str(exc)
+        logger.warning("%s throttled [ref=%s]: %s", operation, error_ref, error_msg)
+        raise HTTPException(status_code=429, headers={"Retry-After": "5"}, detail={
+            "error": {"type": "rate_limit_exceeded",
+                      "message": f"Rate limit exceeded. Please retry after the specified interval. Reference: {error_ref}"}
+        })
+
+
 # Boto3 client — initialized by video_api.py lifespan, shared via module-level reference
 bedrock_us_east_1 = None
 
@@ -279,6 +299,7 @@ def create_image_variation(req: ImageVariationRequest, authorization: str = Head
         )
     except ClientError as exc:
         error_ref = str(uuid.uuid4())[:8]
+        raise_if_throttled(exc, error_ref, "Nova Canvas IMAGE_VARIATION")
         error_msg = exc.response.get("Error", {}).get("Message", str(exc)) if hasattr(exc, "response") else str(exc)
         logger.error("Nova Canvas IMAGE_VARIATION failed [ref=%s]: %s", error_ref, error_msg)
         raise HTTPException(status_code=502, detail={
@@ -341,6 +362,7 @@ def remove_background(req: BackgroundRemovalRequest, authorization: str = Header
         )
     except ClientError as exc:
         error_ref = str(uuid.uuid4())[:8]
+        raise_if_throttled(exc, error_ref, "Nova Canvas BACKGROUND_REMOVAL")
         error_msg = exc.response.get("Error", {}).get("Message", str(exc)) if hasattr(exc, "response") else str(exc)
         logger.error("Nova Canvas BACKGROUND_REMOVAL failed [ref=%s]: %s", error_ref, error_msg)
         raise HTTPException(status_code=502, detail={
@@ -454,6 +476,7 @@ def outpaint_image(req: OutpaintRequest, authorization: str = Header(...)):
         )
     except ClientError as exc:
         error_ref = str(uuid.uuid4())[:8]
+        raise_if_throttled(exc, error_ref, "Nova Canvas OUTPAINTING")
         error_msg = exc.response.get("Error", {}).get("Message", str(exc)) if hasattr(exc, "response") else str(exc)
         logger.error("Nova Canvas OUTPAINTING failed [ref=%s]: %s", error_ref, error_msg)
         raise HTTPException(status_code=502, detail={

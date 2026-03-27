@@ -130,7 +130,7 @@ tests/smoke-test.sh     # Post-deploy verification
 - Video job status flow: `pending` (DB slot reserved, Bedrock not yet called) → `in_progress` (Bedrock invocation started, ARN set) → `completed`/`failed`. The DB slot is reserved BEFORE calling Bedrock to prevent ghost jobs
 - Sidecar body size limit: 40MB max request body enforced via raw ASGI middleware (HTTP 413). Protects 256MB MemoryMax from oversized payloads
 - CloudTrail: management events logged to `rockport-cloudtrail-{account}` S3 bucket with 90-day lifecycle, DenyNonSSL bucket policy. Defined in `terraform/cloudtrail.tf`
-- Error sanitization: all Bedrock errors in video_api.py and image_api.py are logged server-side with reference UUIDs; clients receive generic messages with reference IDs for correlation
+- Error sanitization: all Bedrock errors in video_api.py and image_api.py are logged server-side with reference UUIDs; clients receive generic messages with reference IDs for correlation. Bedrock ThrottlingException errors return HTTP 429 with `Retry-After: 5` header (not 502) so clients can implement backoff
 - Video endpoints enforce --claude-only key restriction (HTTP 403), consistent with image API behavior
 - Sidecar pip dependencies installed with `--require-hashes` from `sidecar/requirements.lock` for supply chain integrity
 - Cloudflared binary verified via pinned SHA256 hash during bootstrap (`cloudflared_sha256` variable — cloudflared releases don't include per-file checksum files)
@@ -148,6 +148,8 @@ tests/smoke-test.sh     # Post-deploy verification
 - S3 — state + video output
 - Bash — CLI, bootstrap, smoke tests
 - CloudTrail — audit logging
+- Python 3.11 (sidecar), JSON (IAM policy) + FastAPI, boto3/botocore, httpx (014-ops-throttle-iam-fix)
+- PostgreSQL (video job status tracking) (014-ops-throttle-iam-fix)
 
 ## Recent Changes
 - Added 9 new Bedrock chat models (Qwen3 Coder 480B, Kimi K2.5, Llama 4 Scout/Maverick, Nova 2 Lite, Mistral Large 3, Ministral 8B, GPT-OSS 120B/20B), prompt caching, extended thinking, and optional Bedrock Guardrails (`deploy --guardrails`)

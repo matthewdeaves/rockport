@@ -743,6 +743,10 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
         )
     except ClientError as exc:
         error_ref = str(uuid.uuid4())[:8]
+        error_code = exc.response.get("Error", {}).get("Code", "") if hasattr(exc, "response") else ""
+        if error_code in image_api.THROTTLE_ERROR_CODES:
+            db.mark_job_failed(job_id, f"Bedrock rate limit exceeded (ref: {error_ref})")
+            image_api.raise_if_throttled(exc, error_ref, "Bedrock start_async_invoke")
         error_msg = exc.response.get("Error", {}).get("Message", str(exc)) if hasattr(exc, "response") else str(exc)
         logger.error("Bedrock start_async_invoke failed [ref=%s]: %s", error_ref, error_msg)
         db.mark_job_failed(job_id, f"Bedrock invocation failed (ref: {error_ref})")
@@ -912,8 +916,11 @@ def get_video_status(job_id: str, auth: dict = Depends(authenticate)):
                         job["error"] = error_msg
                         job["completed_at"] = datetime.now(timezone.utc).isoformat()
 
-                except ClientError:
-                    pass
+                except ClientError as exc:
+                    # Surface throttling to the client; silently ignore other errors
+                    # since this is a polling endpoint and the client will retry naturally
+                    error_ref = str(uuid.uuid4())[:8]
+                    image_api.raise_if_throttled(exc, error_ref, "Bedrock get_async_invoke")
 
     # Generate presigned URL for completed jobs
     if job["status"] == "completed" and job.get("s3_uri"):
@@ -950,8 +957,11 @@ def get_video_status(job_id: str, auth: dict = Depends(authenticate)):
                 db.mark_expired(job_id)
                 job["status"] = "expired"
                 job["error"] = "Video file has been deleted (7-day retention period expired)"
-        except ClientError:
-            pass
+        except ClientError as exc:
+            # Surface throttling to the client; silently ignore other errors
+            # since this is a polling endpoint and the client will retry naturally
+            error_ref = str(uuid.uuid4())[:8]
+            image_api.raise_if_throttled(exc, error_ref, "S3 presigned URL generation")
 
     job.pop("s3_uri", None)
     return job
