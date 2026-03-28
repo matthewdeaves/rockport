@@ -399,6 +399,7 @@ Two GitHub Actions workflows run on push to `main`:
 - Gitleaks secrets scan
 - Trivy IaC security scan
 - Checkov policy-as-code scan
+- pip-audit sidecar dependencies
 
 **Deploy** (`deploy.yml`) — runs on push to `main` (paths: `terraform/`, `config/`, `scripts/`, `sidecar/`, `tests/`):
 - `terraform plan` on PRs (saves plan as artifact)
@@ -429,7 +430,7 @@ Rockport is designed so that the proxy has no direct internet exposure. Every la
 
 **Least-privilege IAM** — The deployer IAM policies (`terraform/deployer-policies/`) scope EC2 and SSM mutating actions to resources tagged `Project=rockport`. Read-only Describe actions use `Resource: *` as required by AWS. An explicit Deny statement prevents the deployer from attaching any AWS-managed policy (e.g. `AdministratorAccess`) to rockport roles — only rockport-prefixed custom policies are allowed, blocking privilege escalation via the CI/CD pipeline. The instance role is limited to Bedrock invoke and SSM parameter access.
 
-**CI security scanning** — Every push runs Trivy (IaC misconfiguration) and Checkov (policy-as-code) against the Terraform. Skipped checks are documented with justifications in `.checkov.yaml`.
+**CI security scanning** — Every push runs Trivy (IaC misconfiguration), Checkov (policy-as-code), Gitleaks (secrets scanning), and pip-audit (sidecar dependency vulnerabilities) against the codebase. Skipped checks are documented with justifications in `.checkov.yaml`.
 
 **Cloudflare Access pre-authentication** — A Cloudflare Access application (`terraform/access.tf`) requires a service token for all requests. Clients must send `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers or Cloudflare returns 403 before traffic reaches the tunnel. This adds a second credential layer beyond API keys — even if an API key leaks, requests are blocked without the service token. Token values are sensitive Terraform outputs. To rotate: create a new service token, update all clients, then remove the old one.
 
@@ -455,7 +456,7 @@ export CF_ACCESS_CLIENT_SECRET=<cf-client-secret>
 ./tests/smoke-test.sh https://<your-domain>
 ```
 
-The smoke test creates and cleans up its own temporary API key via the admin CLI. It costs ~$0.05 per run (one chat + one image generation call).
+The smoke test creates and cleans up its own temporary API key via the admin CLI. It costs ~$0.05 per run (two chat + one image generation call).
 
 ## Teardown
 

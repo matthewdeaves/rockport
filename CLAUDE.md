@@ -51,6 +51,10 @@ docs/                   # Architecture diagrams
 tests/smoke-test.sh     # Post-deploy verification
 .github/workflows/      # CI/CD — validate (fmt, lint, security scan) + deploy (plan/apply/smoke)
 .checkov.yaml           # Checkov skip list with justifications
+.gitleaks.toml          # Gitleaks secret scanning config (allowlists)
+.trivyignore            # Trivy IaC scan skip list
+.githooks/pre-commit    # Local pre-commit hook
+requirements-ci.txt     # CI-only Python dependencies (pip-audit)
 ```
 
 ## Key Commands
@@ -148,8 +152,6 @@ tests/smoke-test.sh     # Post-deploy verification
 - S3 — state + video output
 - Bash — CLI, bootstrap, smoke tests
 - CloudTrail — audit logging
-- Python 3.11 (sidecar), JSON (IAM policy) + FastAPI, boto3/botocore, httpx (014-ops-throttle-iam-fix)
-- PostgreSQL (video job status tracking) (014-ops-throttle-iam-fix)
 
 ## Recent Changes
 - Added 9 new Bedrock chat models (Qwen3 Coder 480B, Kimi K2.5, Llama 4 Scout/Maverick, Nova 2 Lite, Mistral Large 3, Ministral 8B, GPT-OSS 120B/20B), prompt caching, extended thinking, and optional Bedrock Guardrails (`deploy --guardrails`)
