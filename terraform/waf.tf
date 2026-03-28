@@ -25,6 +25,8 @@ resource "cloudflare_ruleset" "waf_block_sensitive" {
     enabled     = true
     description = "Block non-allowlisted paths"
     expression = join(" and ", [
+      # Only apply to Rockport's subdomain (not other apps on this zone)
+      "(http.host eq \"llm.matthewdeaves.com\")",
       # Not an allowed API inference path
       "not starts_with(http.request.uri.path, \"/v1/chat/completions\")",
       "not starts_with(http.request.uri.path, \"/v1/messages\")",

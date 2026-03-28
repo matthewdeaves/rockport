@@ -111,7 +111,7 @@ requirements-ci.txt     # CI-only Python dependencies (pip-audit)
 - The LiteLLM admin UI is intentionally disabled (`disable_admin_ui: true`) — all admin is via the CLI
 - Swagger/ReDoc docs disabled via `NO_DOCS=True` / `NO_REDOC=True` in the LiteLLM env file
 - Cloudflare Access (`terraform/access.tf`) requires a service token for all requests — `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers must be present or Cloudflare returns 403 before traffic reaches the tunnel. Token values are Terraform outputs (sensitive). To rotate: create a new service token in Terraform, update all clients, then remove the old one
-- Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation (`/v1/images/generations`), image services (`/v1/images/*` for sidecar + LiteLLM edits), video generation (`/v1/videos/*`), and the admin CLI
+- Cloudflare WAF allowlist (`terraform/waf.tf`) is host-scoped to the Rockport subdomain only (does not affect other apps on the zone). Blocks all paths except those needed by Claude Code, image generation (`/v1/images/generations`), image services (`/v1/images/*` for sidecar + LiteLLM edits), video generation (`/v1/videos/*`), and the admin CLI
 - `setup-claude` creates keys restricted to Anthropic models only; `key create` without `--claude-only` grants access to all models including image generation
 - Stability AI image models (SD3.5 Large, Stable Image Ultra, Stable Image Core, all 13 stability-* edit models) and Luma Ray2 need a one-time Marketplace subscription — invoke once in the Bedrock playground to activate
 - `deploy` auto-creates the SSM master key if missing, so `init` is not a strict prerequisite
