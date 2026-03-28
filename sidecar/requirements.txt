@@ -1,5 +1,5 @@
 # Sidecar dependencies — exact pins for reproducibility.
 # Run `pip-compile --generate-hashes requirements.txt -o requirements.lock` to regenerate lock file.
-psycopg2-binary==2.9.10
+psycopg2-binary==2.9.11
 Pillow==12.1.1
 httpx==0.28.1
