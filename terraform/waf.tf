@@ -20,38 +20,46 @@ resource "cloudflare_ruleset" "waf_block_sensitive" {
   phase       = "http_request_firewall_custom"
   description = "Block all paths except those needed by Claude Code and admin CLI"
 
-  rules = [{
-    action      = "block"
-    enabled     = true
-    description = "Block non-allowlisted paths"
-    expression = join(" and ", [
-      # Only apply to Rockport's subdomain (not other apps on this zone)
-      "(http.host eq \"llm.matthewdeaves.com\")",
-      # Not an allowed API inference path
-      "not starts_with(http.request.uri.path, \"/v1/chat/completions\")",
-      "not starts_with(http.request.uri.path, \"/v1/messages\")",
-      "not starts_with(http.request.uri.path, \"/v1/models\")",
-      "not starts_with(http.request.uri.path, \"/v1/completions\")",
-      "not starts_with(http.request.uri.path, \"/v1/embeddings\")",
-      "not starts_with(http.request.uri.path, \"/v1/images/generations\")",
-      "not starts_with(http.request.uri.path, \"/v1/videos\")",
-      "not starts_with(http.request.uri.path, \"/v1/images/\")",
-      "not starts_with(http.request.uri.path, \"/chat/completions\")",
-      "not starts_with(http.request.uri.path, \"/completions\")",
-      "not starts_with(http.request.uri.path, \"/models\")",
-      "not starts_with(http.request.uri.path, \"/embeddings\")",
-      # Not an admin CLI path
-      "not starts_with(http.request.uri.path, \"/key/\")",
-      "not starts_with(http.request.uri.path, \"/user/\")",
-      "not starts_with(http.request.uri.path, \"/team/\")",
-      "not starts_with(http.request.uri.path, \"/spend/\")",
-      "not starts_with(http.request.uri.path, \"/global/spend\")",
-      "not starts_with(http.request.uri.path, \"/budget/\")",
-      "not starts_with(http.request.uri.path, \"/model/info\")",
-      "not starts_with(http.request.uri.path, \"/v1/model/info\")",
-      "not starts_with(http.request.uri.path, \"/model_group/info\")",
-      # Not a health check (exact match — /health/readiness etc. leak version info)
-      "http.request.uri.path ne \"/health\"",
-    ])
-  }]
+  rules = [
+    {
+      action      = "block"
+      enabled     = true
+      description = "Block double-slash path prefix (bypasses normalized allowlist)"
+      expression  = "(http.host eq \"llm.matthewdeaves.com\") and starts_with(raw.http.request.uri.path, \"//\")"
+    },
+    {
+      action      = "block"
+      enabled     = true
+      description = "Block non-allowlisted paths"
+      expression = join(" and ", [
+        # Only apply to Rockport's subdomain (not other apps on this zone)
+        "(http.host eq \"llm.matthewdeaves.com\")",
+        # Not an allowed API inference path
+        "not starts_with(http.request.uri.path, \"/v1/chat/completions\")",
+        "not starts_with(http.request.uri.path, \"/v1/messages\")",
+        "not starts_with(http.request.uri.path, \"/v1/models\")",
+        "not starts_with(http.request.uri.path, \"/v1/completions\")",
+        "not starts_with(http.request.uri.path, \"/v1/embeddings\")",
+        "not starts_with(http.request.uri.path, \"/v1/images/generations\")",
+        "not starts_with(http.request.uri.path, \"/v1/videos\")",
+        "not starts_with(http.request.uri.path, \"/v1/images/\")",
+        "not starts_with(http.request.uri.path, \"/chat/completions\")",
+        "not starts_with(http.request.uri.path, \"/completions\")",
+        "not starts_with(http.request.uri.path, \"/models\")",
+        "not starts_with(http.request.uri.path, \"/embeddings\")",
+        # Not an admin CLI path
+        "not starts_with(http.request.uri.path, \"/key/\")",
+        "not starts_with(http.request.uri.path, \"/user/\")",
+        "not starts_with(http.request.uri.path, \"/team/\")",
+        "not starts_with(http.request.uri.path, \"/spend/\")",
+        "not starts_with(http.request.uri.path, \"/global/spend\")",
+        "not starts_with(http.request.uri.path, \"/budget/\")",
+        "not starts_with(http.request.uri.path, \"/model/info\")",
+        "not starts_with(http.request.uri.path, \"/v1/model/info\")",
+        "not starts_with(http.request.uri.path, \"/model_group/info\")",
+        # Not a health check (exact match — /health/readiness etc. leak version info)
+        "http.request.uri.path ne \"/health\"",
+      ])
+    },
+  ]
 }
