@@ -172,6 +172,33 @@ Known symptom-to-cause mappings for Rockport infrastructure. Organized by sympto
 **Check:** `SELECT count(*) FROM pg_stat_activity;` via SSM
 **Fix:** Restart services to release connections. If recurring, check for connection leaks
 
+## Security-Related Issues
+
+### Unexpected 403 errors
+**Symptoms:** Requests that used to work now return 403
+**Diagnosis — which layer?**
+1. **Cloudflare WAF block:** Only specific paths return 403, others work. Check if the path is in `terraform/waf.tf` allowlist. Fix: add path to WAF, deploy
+2. **Cloudflare Access token:** ALL requests return 403 with Access-denied page. Check CF-Access-Client-Id/Secret headers. Fix: verify token values match `terraform output`
+3. **LiteLLM key restriction:** 403 with JSON error body mentioning "restricted" or "not allowed". Check if key is `--claude-only` and request is for non-Anthropic model. Fix: create unrestricted key
+
+### Unexpected spend spike
+**Symptoms:** Budget alarm fires, `spend today` shows anomalous values
+**Check:**
+1. `./scripts/rockport.sh spend today` — identify which key and model
+2. `./scripts/rockport.sh key list` — check for unknown or unauthorized keys
+3. Check CloudTrail for key creation events not by the normal operator
+4. Check if latest pentest report flagged any auth issues
+**Fix:** Revoke offending key immediately, investigate creation trail
+
+### Suspected unauthorized access
+**Symptoms:** Unknown API keys, unexpected model usage, CloudTrail anomalies
+**Check:**
+1. `./scripts/rockport.sh key list` — audit all active keys
+2. CloudTrail: `aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventSource,AttributeValue=iam.amazonaws.com --start-time <24h-ago>`
+3. Spend logs: `./scripts/rockport.sh spend keys` — look for unfamiliar key hashes
+4. Latest pentest report: check `pentest/reports/rockport/` for recent findings
+**Fix:** Revoke suspicious keys, rotate master key if compromised, run `/pentest rockport --module auth` to verify auth enforcement
+
 ## Cost-Related Issues
 
 ### Unexpected high spend

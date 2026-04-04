@@ -3,6 +3,9 @@ name: rockport-ops
 description: "Diagnose, fix, and advise on Rockport infrastructure issues. ALWAYS USE THIS SKILL when the user asks anything about Rockport infrastructure — including casual questions like 'is it ok', 'is it up', 'is it working', 'check the infra', 'how's rockport', 'did the deploy work', or 'is everything healthy'. Also use when: debugging errors (timeouts, 403s, 502s, model not found), checking health or status, receiving error output from another Claude instance using Rockport, investigating spend or cost issues, troubleshooting video/image generation failures, or when the user mentions rockport is down, broken, slow, or erroring. Also use when the user pastes HTTP error responses from an OpenAI-compatible API that routes through Rockport."
 user-invocable: true
 argument-hint: "[symptom or error description]"
+allowed-tools: "Read, Grep, Glob, Bash(cd /home/matthew/rockport *), Bash(aws *), Bash(terraform *), Bash(curl *), Bash(jq *), Agent"
+disable-model-invocation: true
+effort: high
 ---
 
 ## User Input
@@ -46,6 +49,19 @@ Use the diagnostic procedures in [diagnostics.md](references/diagnostics.md) for
 5. External reachability (curl through tunnel with CF-Access headers)
 6. Bedrock / IAM (only if symptoms suggest model invocation failures)
 7. Idle shutdown state (was the instance recently stopped by Lambda?)
+8. Security posture (WAF active, Access application active, API key health)
+
+**Security posture check** (Layer 8 — include in triage when symptoms suggest security issues):
+- Check WAF ruleset is deployed (verify waf.tf exists and was applied)
+- Check Access application is active (verify access.tf was applied)
+- List API keys via `rockport.sh key list` and flag any over-budget or expired
+- If a recent pentest report exists under `pentest/reports/rockport/`, note its timestamp and high-level findings
+
+**Security incident triage path** — trigger when symptoms include "unauthorized access", "unexpected spend", "403s", "suspected breach":
+- Check CloudTrail for unusual API calls (last 24h)
+- Check spend logs for anomalous keys (`rockport.sh spend today`)
+- Cross-reference latest pentest report if available
+- Check if any API keys were created outside normal workflow
 
 **Cost discipline:** Use logs and status checks first. Only make a test API call if you cannot determine the issue from logs. If a test call is needed, use the cheapest option: `claude-haiku-4-5-20251001` with `max_tokens: 1`.
 

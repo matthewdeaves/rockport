@@ -235,7 +235,51 @@ curl -s -w "\n%{http_code}" \
   "https://${TUNNEL_URL}/v1/chat/completions"
 ```
 
-## Layer 8: Idle Shutdown State
+## Layer 8: Security Posture
+
+**Check WAF deployment:**
+```bash
+# Verify WAF rule exists in terraform state
+cd $PROJECT_ROOT/terraform && terraform state list 2>/dev/null | grep -q "cloudflare_ruleset.waf_block_sensitive"
+echo "WAF rule in state: $?"
+```
+
+**Check Access application:**
+```bash
+cd $PROJECT_ROOT/terraform && terraform state list 2>/dev/null | grep -q "cloudflare_zero_trust_access_application"
+echo "Access app in state: $?"
+```
+
+**List API keys and check health:**
+```bash
+cd $PROJECT_ROOT && ./scripts/rockport.sh key list
+```
+
+**Check for recent pentest report:**
+```bash
+ls -1td $PROJECT_ROOT/pentest/reports/rockport/[0-9]*-[0-9]* 2>/dev/null | head -1
+# If exists, quick summary:
+LATEST=$(ls -1td $PROJECT_ROOT/pentest/reports/rockport/[0-9]*-[0-9]* 2>/dev/null | head -1)
+if [ -n "$LATEST" ] && [ -f "$LATEST/results.json" ]; then
+    jq '{timestamp: .timestamp, totals: .totals, modules: [.modules[] | {module, status}]}' "$LATEST/results.json"
+fi
+```
+
+**Check CloudTrail for unusual activity (security incident triage):**
+```bash
+aws cloudtrail lookup-events \
+  --lookup-attributes AttributeKey=EventSource,AttributeValue=iam.amazonaws.com \
+  --start-time "$(date -d '24 hours ago' -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --query 'Events[].{Time:EventTime,Name:EventName,User:Username}' \
+  --output table --profile rockport --region "$REGION"
+```
+
+**Check spend for anomalous keys:**
+```bash
+cd $PROJECT_ROOT && ./scripts/rockport.sh spend today
+```
+
+## Layer 9: Idle Shutdown State
 
 **Check CloudWatch alarm:**
 ```bash

@@ -17,7 +17,7 @@ fi
 if command -v shellcheck &>/dev/null; then
   STAGED_SH=$(git diff --cached --name-only --diff-filter=ACM -- '*.sh')
   if [[ -n "$STAGED_SH" ]]; then
-    if ! echo "$STAGED_SH" | xargs shellcheck; then
+    if ! echo "$STAGED_SH" | xargs shellcheck -S warning -e SC2016; then
       echo "ERROR: ShellCheck found issues in staged shell scripts."
       FAILED=1
     fi

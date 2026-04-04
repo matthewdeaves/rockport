@@ -8,4 +8,19 @@ stopwords = [
   "sk-invalid-key-12345",
   "sk-not-a-real-key",
   "invalid-key-12345",
+  "invalid-secret-12345",
+  "invalid-id-12345",
+  "test-not-real",
+  "test-not-a-key",
+  "test-not-real-id",
+]
+
+[[allowlists]]
+description = "Pentest test strings — intentionally invalid credentials used for auth testing"
+regexTarget = "match"
+regexes = [
+  '''invalid-secret-\d+''',
+  '''invalid-id-\d+''',
+  '''test-not-real''',
+  '''test-not-a-key''',
 ]

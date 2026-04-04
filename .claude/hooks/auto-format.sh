@@ -18,7 +18,14 @@ case "$FILE_PATH" in
         ;;
     *.sh)
         if command -v shellcheck >/dev/null 2>&1; then
-            OUTPUT=$(shellcheck "$FILE_PATH" 2>&1)
+            # Pentest scripts use $ in single-quoted injection payloads — exclude SC2016
+            SC_EXCLUDE=""
+            case "$FILE_PATH" in
+                */pentest/scripts/*.sh|*/pentest/pentest.sh)
+                    SC_EXCLUDE="-e SC2016"
+                    ;;
+            esac
+            OUTPUT=$(shellcheck ${SC_EXCLUDE} "$FILE_PATH" 2>&1)
             RC=$?
             if [[ $RC -ne 0 ]] && [[ -n "$OUTPUT" ]]; then
                 echo "shellcheck warnings for $FILE_PATH:"
