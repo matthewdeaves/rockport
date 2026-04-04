@@ -197,9 +197,9 @@ def hash_key(key: str) -> str:
     return hashlib.sha256(key.encode()).hexdigest()
 
 
-def authenticate(authorization: str = Header(...)) -> dict:
+def authenticate(authorization: str = Header(None)) -> dict:
     """Validate the user's API key by calling LiteLLM's /key/info endpoint."""
-    if not authorization.startswith("Bearer "):
+    if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail={
             "error": {"type": "authentication_error", "message": "Invalid Authorization header"}
         })
@@ -224,7 +224,8 @@ def authenticate(authorization: str = Header(...)) -> dict:
             "error": {"type": "authentication_error", "message": "Invalid API key"}
         })
 
-    info = resp.json().get("info", resp.json())
+    data = resp.json()
+    info = data.get("info", data)
     return {
         "key_hash": key_hash,
         "spend": info.get("spend", 0),
