@@ -458,6 +458,26 @@ export CF_ACCESS_CLIENT_SECRET=<cf-client-secret>
 
 The smoke test creates and cleans up its own temporary API key via the admin CLI. It costs ~$0.05 per run (two chat + one image generation call).
 
+## Security Testing
+
+A 13-module pentest toolkit tests the full attack surface through Cloudflare: WAF allowlist, Access tokens, API key auth, tunnel routing, sidecar endpoints, infrastructure security, and supply chain integrity.
+
+```bash
+# Install optional tools (nmap, nuclei, ffuf, testssl.sh)
+./pentest/install.sh
+
+# Run a full security scan
+./pentest/pentest.sh run rockport
+
+# Run a single module
+./pentest/pentest.sh run rockport --module waf
+
+# View the latest report
+./pentest/pentest.sh report rockport
+```
+
+Scans cost under $0.25 in API calls. A temp API key is created and auto-revoked per scan. See `CLAUDE.md` for full details on modules and configuration.
+
 ## Teardown
 
 ```bash

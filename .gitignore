@@ -51,3 +51,9 @@ config/claude-code-settings-*.json
 *.crt
 *.p12
 *.pfx
+
+# Pentest reports (contain scan results, credentials were used)
+pentest/reports/
+
+# Pentest tool binaries (installed locally)
+pentest/tools/

@@ -48,6 +48,14 @@ docs/                   # Architecture diagrams
   rockport_architecture_overview.svg  # System architecture overview
   rockport_request_dataflow.svg       # Request/response flow swimlane
   future-ideas.md         # Future enhancement ideas
+pentest/                # Security testing toolkit
+  pentest.sh            #   Main CLI orchestrator (run/list/modules/report)
+  install.sh            #   Tool installer (nmap, nuclei, ffuf, testssl.sh)
+  targets/              #   Target configuration YAML files
+    rockport.yaml       #   Complete Rockport attack surface definition
+  scripts/              #   13 module scripts (one per security domain)
+  reports/              #   Scan output (gitignored)
+  tools/                #   Installed tool binaries (gitignored)
 tests/smoke-test.sh     # Post-deploy verification
 .github/workflows/      # CI/CD — validate (fmt, lint, security scan) + deploy (plan/apply/smoke)
 .checkov.yaml           # Checkov skip list with justifications
@@ -150,8 +158,25 @@ requirements-ci.txt     # CI-only Python dependencies (pip-audit)
 - Python 3.11 + FastAPI — sidecar
 - PostgreSQL 15 — LiteLLM + video job tracking
 - S3 — state + video output
-- Bash — CLI, bootstrap, smoke tests
+- Bash — CLI, bootstrap, smoke tests, pentest toolkit
 - CloudTrail — audit logging
 
+## Pentest Toolkit
+- 13-module security testing suite in `pentest/` — tests WAF allowlist, CF-Access tokens, API key auth, tunnel routing, sidecar endpoints, infrastructure security, supply chain integrity
+- Run a full scan: `./pentest/pentest.sh run rockport` or use `/pentest` skill
+- Run single module: `./pentest/pentest.sh run rockport --module waf`
+- List modules: `./pentest/pentest.sh modules`
+- View latest report: `./pentest/pentest.sh report rockport`
+- Install optional tools (nmap, nuclei, ffuf, testssl.sh): `./pentest/install.sh`
+- Target config: `pentest/targets/rockport.yaml` — complete attack surface definition (endpoints, WAF paths, tunnel routes, known risks, false positives)
+- Reports: `pentest/reports/rockport/<timestamp>/` — `results.json` (structured), `SUMMARY.md` (human-readable), `run.log` (concatenated output)
+- Modules: recon, headers, tls, waf, access, auth, api, injection (destructive), tunnel, sidecar, infra, supply-chain, paths
+- Auth bootstrap: creates temp API key ($0.50 budget), reads CF-Access headers from terraform output, auto-revokes key on completion
+- All scripts use explicit error handling (Constitution VI) — no `set -euo pipefail`
+- Cost control: scan costs under $0.25 (uses claude-haiku-4-5-20251001 with max_tokens:1 for auth tests)
+- Skills: `/pentest` (run scans), `/pentest-review` (triage results), `/pentest-align` (detect drift between pentest suite and codebase)
+- Quality hooks: PreToolUse `pentest-bash-gotchas.sh` checks for common bash pitfalls in pentest scripts
+
 ## Recent Changes
+- Added pentest toolkit with 13 security modules, 3 Claude Code skills (`/pentest`, `/pentest-review`, `/pentest-align`), enhanced `/rockport-ops` with security posture checks, and quality hooks for pentest scripts
 - Added 9 new Bedrock chat models (Qwen3 Coder 480B, Kimi K2.5, Llama 4 Scout/Maverick, Nova 2 Lite, Mistral Large 3, Ministral 8B, GPT-OSS 120B/20B), prompt caching, extended thinking, and optional Bedrock Guardrails (`deploy --guardrails`)

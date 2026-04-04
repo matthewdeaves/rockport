@@ -103,3 +103,12 @@ Read ALL service files and config:
 - `.claude/skills/factcheck-docs/checklists.md` — verify checklist items reference things that exist (endpoints, config keys, SVG elements)
 - Do NOT factcheck speckit skills (they are generic workflow tools, not Rockport-specific)
 - Do NOT factcheck terraform-skill (third-party skill, not Rockport-specific)
+
+## 16. Pentest toolkit — `pentest/`
+
+- `pentest/targets/rockport.yaml` — endpoints must match actual terraform/waf.tf paths, tunnel.tf routes, and sidecar endpoints
+- `pentest/scripts/*.sh` — all 13 module scripts (recon, headers, tls, waf, access, auth, api, injection, tunnel, sidecar, infra, supply-chain, paths)
+- `.claude/skills/pentest/references/modules.md` — module documentation must list all scripts in pentest/scripts/
+- Verify rockport.yaml `waf_allowed_paths` match terraform/waf.tf expressions exactly
+- Verify rockport.yaml `tunnel_routes` match terraform/tunnel.tf ingress rules exactly
+- Verify rockport.yaml `endpoints.sidecar_*` match actual sidecar/@router endpoints

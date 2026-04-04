@@ -77,6 +77,23 @@ Use these checklists in Phase 2 to cross-reference every documentation claim aga
 - [ ] Visual: swimlane columns properly aligned, arrows connect to correct targets
 - [ ] Visual: step badges and flow boxes readable (sufficient size and contrast)
 
+## Pentest: rockport.yaml
+
+- [ ] waf_allowed_paths matches every `not starts_with` and `ne` expression in terraform/waf.tf
+- [ ] tunnel_routes matches every ingress rule in terraform/tunnel.tf (path, backend, port, order)
+- [ ] endpoints.sidecar_video matches actual video_api.py @router endpoints
+- [ ] endpoints.sidecar_image matches actual image_api.py @router endpoints
+- [ ] endpoints.litellm_image includes /v1/images/generations and /v1/images/edits
+- [ ] known_risks are still accurate (not stale)
+- [ ] infrastructure.aws_region matches terraform.tfvars region
+
+## Pentest: modules.md
+
+- [ ] Lists all scripts in pentest/scripts/ (no missing, no extras)
+- [ ] Module descriptions match script file headers
+- [ ] Tool requirements per module are accurate
+- [ ] Execution order matches pentest.sh ALL_MODULES variable
+
 ## Skills: rockport-ops
 
 - [ ] diagnostics.md — service names match actual systemd units in config/*.service
