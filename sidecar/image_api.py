@@ -15,8 +15,8 @@ import time
 import uuid
 
 import boto3
-from botocore.exceptions import ClientError
-from fastapi import APIRouter, Header, HTTPException
+from botocore.exceptions import BotoCoreError, ClientError
+from fastapi import APIRouter, Depends, Header, HTTPException
 from PIL import Image
 from pydantic import BaseModel, Field
 
@@ -69,7 +69,7 @@ def configure(litellm_url: str, master_key: str):
     MASTER_KEY = master_key
 
 
-def authenticate_image_request(authorization: str) -> dict:
+def authenticate_image_request(authorization: str = Header(None)) -> dict:
     """Authenticate and authorize an image service request.
 
     Validates the API key via LiteLLM /key/info, checks for --claude-only
@@ -78,7 +78,7 @@ def authenticate_image_request(authorization: str) -> dict:
     import httpx
     from video_api import hash_key, is_claude_only_key
 
-    if not authorization.startswith("Bearer "):
+    if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail={
             "error": {"type": "authentication_error", "message": "Invalid Authorization header"}
         })
@@ -103,7 +103,8 @@ def authenticate_image_request(authorization: str) -> dict:
             "error": {"type": "authentication_error", "message": "Invalid API key"}
         })
 
-    info = resp.json().get("info", resp.json())
+    data = resp.json()
+    info = data.get("info", data)
     auth = {
         "key_hash": key_hash,
         "spend": info.get("spend", 0),
@@ -242,8 +243,7 @@ class ImageVariationRequest(BaseModel):
 
 
 @router.post("/v1/images/variations")
-def create_image_variation(req: ImageVariationRequest, authorization: str = Header(...)):
-    auth = authenticate_image_request(authorization)
+def create_image_variation(req: ImageVariationRequest, auth: dict = Depends(authenticate_image_request)):
 
     if req.quality not in ("standard", "premium"):
         raise HTTPException(status_code=400, detail={
@@ -306,9 +306,9 @@ def create_image_variation(req: ImageVariationRequest, authorization: str = Head
             "error": {"type": "upstream_error",
                       "message": f"The upstream service returned an error. Reference: {error_ref}"}
         })
-    except Exception as exc:
+    except BotoCoreError as exc:
         error_ref = str(uuid.uuid4())[:8]
-        logger.error("Nova Canvas IMAGE_VARIATION unexpected error [ref=%s]: %s: %s", error_ref, type(exc).__name__, exc)
+        logger.error("Nova Canvas IMAGE_VARIATION connection error [ref=%s]: %s: %s", error_ref, type(exc).__name__, exc)
         raise HTTPException(status_code=502, detail={
             "error": {"type": "upstream_error",
                       "message": f"An unexpected error occurred. Reference: {error_ref}"}
@@ -335,8 +335,7 @@ class BackgroundRemovalRequest(BaseModel):
 
 
 @router.post("/v1/images/background-removal")
-def remove_background(req: BackgroundRemovalRequest, authorization: str = Header(...)):
-    auth = authenticate_image_request(authorization)
+def remove_background(req: BackgroundRemovalRequest, auth: dict = Depends(authenticate_image_request)):
 
     cost = 0.04  # Always 1 image, standard quality
     check_budget(auth, cost)
@@ -369,9 +368,9 @@ def remove_background(req: BackgroundRemovalRequest, authorization: str = Header
             "error": {"type": "upstream_error",
                       "message": f"The upstream service returned an error. Reference: {error_ref}"}
         })
-    except Exception as exc:
+    except BotoCoreError as exc:
         error_ref = str(uuid.uuid4())[:8]
-        logger.error("Nova Canvas BACKGROUND_REMOVAL unexpected error [ref=%s]: %s: %s", error_ref, type(exc).__name__, exc)
+        logger.error("Nova Canvas BACKGROUND_REMOVAL connection error [ref=%s]: %s: %s", error_ref, type(exc).__name__, exc)
         raise HTTPException(status_code=502, detail={
             "error": {"type": "upstream_error",
                       "message": f"An unexpected error occurred. Reference: {error_ref}"}
@@ -407,8 +406,7 @@ class OutpaintRequest(BaseModel):
 
 
 @router.post("/v1/images/outpaint")
-def outpaint_image(req: OutpaintRequest, authorization: str = Header(...)):
-    auth = authenticate_image_request(authorization)
+def outpaint_image(req: OutpaintRequest, auth: dict = Depends(authenticate_image_request)):
 
     if req.quality not in ("standard", "premium"):
         raise HTTPException(status_code=400, detail={
@@ -483,9 +481,9 @@ def outpaint_image(req: OutpaintRequest, authorization: str = Header(...)):
             "error": {"type": "upstream_error",
                       "message": f"The upstream service returned an error. Reference: {error_ref}"}
         })
-    except Exception as exc:
+    except BotoCoreError as exc:
         error_ref = str(uuid.uuid4())[:8]
-        logger.error("Nova Canvas OUTPAINTING unexpected error [ref=%s]: %s: %s", error_ref, type(exc).__name__, exc)
+        logger.error("Nova Canvas OUTPAINTING connection error [ref=%s]: %s: %s", error_ref, type(exc).__name__, exc)
         raise HTTPException(status_code=502, detail={
             "error": {"type": "upstream_error",
                       "message": f"An unexpected error occurred. Reference: {error_ref}"}
