@@ -53,7 +53,9 @@
         "s3:ListBucket",
         "s3:PutBucketVersioning",
         "s3:PutEncryptionConfiguration",
-        "s3:PutBucketPublicAccessBlock"
+        "s3:PutBucketPublicAccessBlock",
+        "s3:GetBucketPolicy",
+        "s3:PutBucketPolicy"
       ],
       "Resource": "arn:aws:s3:::rockport-tfstate-*"
     },
@@ -67,7 +69,8 @@
         "s3:DeleteBucket",
         "s3:GetObject",
         "s3:DeleteObject",
-        "s3:DeleteObjectVersion"
+        "s3:DeleteObjectVersion",
+        "s3:GetLifecycleConfiguration"
       ],
       "Resource": [
         "arn:aws:s3:::rockport-video-*",
@@ -89,6 +92,24 @@
         "arn:aws:s3:::rockport-artifacts-*",
         "arn:aws:s3:::rockport-artifacts-*/*"
       ]
+    },
+    {
+      "Sid": "S3BucketDiscovery",
+      "Effect": "Allow",
+      "Action": "s3:ListAllMyBuckets",
+      "Resource": "*"
+    },
+    {
+      "Sid": "CloudTrailReadOnly",
+      "Effect": "Allow",
+      "Action": "cloudtrail:GetTrailStatus",
+      "Resource": "arn:aws:cloudtrail:*:*:trail/rockport-*"
+    },
+    {
+      "Sid": "IAMDeployerAudit",
+      "Effect": "Allow",
+      "Action": "iam:ListAttachedUserPolicies",
+      "Resource": "arn:aws:iam::*:user/rockport-deployer"
     },
     {
       "Sid": "AccountDiscovery",
