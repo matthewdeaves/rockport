@@ -23,4 +23,5 @@ regexes = [
   '''invalid-id-\d+''',
   '''test-not-real''',
   '''test-not-a-key''',
+  '''dGhlIHNhbXBsZSBub25jZQ==''',
 ]
