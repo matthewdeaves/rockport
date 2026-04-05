@@ -165,7 +165,7 @@
   <!-- 5b: Key Lookup  y=176..260 -->
   <rect x="658" y="176" width="508" height="84" rx="4" fill="#111827" stroke="#3fb950" stroke-width="1"/>
   <text x="668" y="192" fill="#3fb950" font-size="9" font-weight="bold">b.  Key Lookup in Database</text>
-  <text x="668" y="208" fill="#8b949e" font-size="9">hash key → query PostgreSQL  LiteLLM_VerificationTokenTable</text>
+  <text x="668" y="208" fill="#8b949e" font-size="9">hash key → query PostgreSQL  LiteLLM_VerificationToken</text>
   <!-- PG badge -->
   <rect x="668" y="218" width="140" height="22" rx="3" fill="#1a1a0a" stroke="#e3b341" stroke-width="1"/>
   <text x="738" y="233" text-anchor="middle" fill="#e3b341" font-size="9">PostgreSQL :5432</text>

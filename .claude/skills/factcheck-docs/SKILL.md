@@ -91,7 +91,7 @@ Before starting, test that Playwright is working:
 #### For each SVG file in `docs/`:
 
 1. **Resize viewport** — call `mcp__playwright__browser_resize` with width and height matching the SVG's `width`/`height` attributes (read these from the `<svg>` tag). This prevents the browser from scaling or clipping the diagram.
-2. **Navigate** — call `mcp__playwright__browser_navigate` with the file URL (e.g. `file:///home/matthew/rockport/docs/rockport_architecture_overview.svg`)
+2. **Navigate** — call `mcp__playwright__browser_navigate` with the file URL (e.g. `file:///home/matt/rockport/docs/rockport_architecture_overview.svg`)
 3. **Screenshot** — call `mcp__playwright__browser_take_screenshot`. Confirm you received an image back. If the screenshot tool returns an error or empty result, report the failure and move to the next SVG.
 4. **Examine the screenshot image only** — report what you can see in the rendered image:
    - Overlapping or clipped text
