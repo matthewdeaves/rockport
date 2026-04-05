@@ -14,7 +14,6 @@ import logging
 import time
 import uuid
 
-import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, Header, HTTPException
 from PIL import Image
@@ -46,27 +45,26 @@ def raise_if_throttled(exc: ClientError, error_ref: str, operation: str):
         })
 
 
-# Boto3 client — initialized by video_api.py lifespan, shared via module-level reference
-bedrock_us_east_1 = None
+# --- Image Model Registry ---
 
+NOVA_CANVAS = {
+    "bedrock_model_id": "amazon.nova-canvas-v1:0",
+    "region": "us-east-1",
+    "cost_per_image": {
+        "standard":       {"small": 0.04, "large": 0.06},
+        "premium":        {"small": 0.06, "large": 0.08},
+    },
+    "large_threshold": 1024,  # width or height above this = "large"
+}
 
-def init_clients():
-    """Initialize Bedrock clients for image endpoints. Called from video_api.py lifespan."""
-    global bedrock_us_east_1
-    bedrock_us_east_1 = boto3.client("bedrock-runtime", region_name="us-east-1")
+def _bedrock_client():
+    """Get the Bedrock client for Nova Canvas from the shared client pool."""
+    from video_api import bedrock_clients
+    return bedrock_clients[NOVA_CANVAS["region"]]
 
 
 # --- Shared Infrastructure ---
-
-LITELLM_URL = None  # Set from video_api.py
-MASTER_KEY = None   # Set from video_api.py
-
-
-def configure(litellm_url: str, master_key: str):
-    """Set shared configuration from video_api.py."""
-    global LITELLM_URL, MASTER_KEY
-    LITELLM_URL = litellm_url
-    MASTER_KEY = master_key
+# Config lives in video_api (read from env vars); import at use-time to avoid circular imports.
 
 
 def authenticate_image_request(authorization: str = Header(None)) -> dict:
@@ -76,7 +74,7 @@ def authenticate_image_request(authorization: str = Header(None)) -> dict:
     restriction (returns 403), and returns auth info for budget enforcement.
     """
     import httpx
-    from video_api import hash_key, is_claude_only_key
+    from video_api import hash_key, is_claude_only_key, LITELLM_URL, MASTER_KEY
 
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail={
@@ -203,17 +201,10 @@ def decode_and_validate_image(
 # --- Cost Calculation ---
 
 def calculate_nova_canvas_cost(n: int, width: int = 1024, height: int = 1024, quality: str = "standard") -> float:
-    """Calculate Nova Canvas cost per the pricing table.
-
-    Standard up to 1024x1024: $0.04/image
-    Premium up to 1024x1024 or Standard up to 2048x2048: $0.06/image
-    Premium up to 2048x2048: $0.08/image
-    """
-    large = width > 1024 or height > 1024
-    if quality == "premium":
-        per_image = 0.08 if large else 0.06
-    else:
-        per_image = 0.06 if large else 0.04
+    """Calculate Nova Canvas cost per the pricing table."""
+    threshold = NOVA_CANVAS["large_threshold"]
+    size_tier = "large" if width > threshold or height > threshold else "small"
+    per_image = NOVA_CANVAS["cost_per_image"].get(quality, NOVA_CANVAS["cost_per_image"]["standard"])[size_tier]
     return per_image * n
 
 
@@ -291,8 +282,8 @@ def create_image_variation(req: ImageVariationRequest, auth: dict = Depends(auth
         payload["imageGenerationConfig"]["seed"] = req.seed
 
     try:
-        response = bedrock_us_east_1.invoke_model(
-            modelId="amazon.nova-canvas-v1:0",
+        response = _bedrock_client().invoke_model(
+            modelId=NOVA_CANVAS["bedrock_model_id"],
             body=json.dumps(payload),
             accept="application/json",
             contentType="application/json",
@@ -353,8 +344,8 @@ def remove_background(req: BackgroundRemovalRequest, auth: dict = Depends(authen
     }
 
     try:
-        response = bedrock_us_east_1.invoke_model(
-            modelId="amazon.nova-canvas-v1:0",
+        response = _bedrock_client().invoke_model(
+            modelId=NOVA_CANVAS["bedrock_model_id"],
             body=json.dumps(payload),
             accept="application/json",
             contentType="application/json",
@@ -466,8 +457,8 @@ def outpaint_image(req: OutpaintRequest, auth: dict = Depends(authenticate_image
         payload["imageGenerationConfig"]["seed"] = req.seed
 
     try:
-        response = bedrock_us_east_1.invoke_model(
-            modelId="amazon.nova-canvas-v1:0",
+        response = _bedrock_client().invoke_model(
+            modelId=NOVA_CANVAS["bedrock_model_id"],
             body=json.dumps(payload),
             accept="application/json",
             contentType="application/json",

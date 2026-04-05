@@ -105,14 +105,11 @@ async def lifespan(app: FastAPI):
     database_url = os.environ.get("DATABASE_URL", "")
     db.init_pool(database_url)
     db.ensure_tables()
-    # Initialize one Bedrock + S3 client per region used by video models
-    regions = {m["region"] for m in VIDEO_MODELS.values()}
+    # Initialize one Bedrock + S3 client per region used by video and image models
+    regions = {m["region"] for m in VIDEO_MODELS.values()} | {image_api.NOVA_CANVAS["region"]}
     for region in regions:
         bedrock_clients[region] = boto3.client("bedrock-runtime", region_name=region)
         s3_clients[region] = boto3.client("s3", region_name=region, config=BotoConfig(signature_version="s3v4"))
-    # Initialize image API clients and config
-    image_api.init_clients()
-    image_api.configure(LITELLM_URL, MASTER_KEY)
     yield
     db.close_pool()
 
