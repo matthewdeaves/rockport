@@ -24,6 +24,12 @@ resource "cloudflare_ruleset" "waf_block_sensitive" {
     {
       action      = "block"
       enabled     = true
+      description = "Block path traversal sequences (defense-in-depth)"
+      expression  = "(http.host eq \"llm.matthewdeaves.com\") and raw.http.request.uri.path contains \"..\""
+    },
+    {
+      action      = "block"
+      enabled     = true
       description = "Block double-slash path prefix (bypasses normalized allowlist)"
       expression  = "(http.host eq \"llm.matthewdeaves.com\") and starts_with(raw.http.request.uri.path, \"//\")"
     },
