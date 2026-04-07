@@ -3,7 +3,7 @@ useDefault = true
 
 [[allowlists]]
 description = "Pentest test strings — intentionally invalid credentials used for auth testing"
-regexTarget = "match"
+regexTarget = "secret"
 regexes = [
   '''^invalid-secret-\d+$''',
   '''^invalid-id-\d+$''',
