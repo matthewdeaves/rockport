@@ -3,8 +3,7 @@ name: rockport-ops
 description: "Diagnose, fix, and advise on Rockport infrastructure issues. ALWAYS USE THIS SKILL when the user asks anything about Rockport infrastructure — including casual questions like 'is it ok', 'is it up', 'is it working', 'check the infra', 'how's rockport', 'did the deploy work', or 'is everything healthy'. Also use when: debugging errors (timeouts, 403s, 502s, model not found), checking health or status, receiving error output from another Claude instance using Rockport, investigating spend or cost issues, troubleshooting video/image generation failures, or when the user mentions rockport is down, broken, slow, or erroring. Also use when the user pastes HTTP error responses from an OpenAI-compatible API that routes through Rockport."
 user-invocable: true
 argument-hint: "[symptom or error description]"
-allowed-tools: "Read, Grep, Glob, Bash(cd /home/matt/rockport *), Bash(aws *), Bash(terraform *), Bash(curl *), Bash(jq *), Agent"
-disable-model-invocation: true
+allowed-tools: "Read, Grep, Glob, Bash, Agent"
 effort: high
 ---
 
