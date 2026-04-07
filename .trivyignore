@@ -25,3 +25,8 @@ AVD-AWS-0090
 # CloudTrail KMS — default SSE-S3 encryption sufficient for management event audit logs,
 # CMK adds cost and IAM complexity with no practical security benefit for this use case
 AVD-AWS-0015
+
+# CloudTrail CloudWatch logging — S3-based logging is sufficient for post-incident
+# investigation. CloudWatch adds cost (per-GB ingestion) and IAM complexity for
+# real-time alerting that isn't needed on a personal proxy project
+AVD-AWS-0162
