@@ -25,13 +25,13 @@ resource "cloudflare_ruleset" "waf_block_sensitive" {
       action      = "block"
       enabled     = true
       description = "Block path traversal sequences (defense-in-depth)"
-      expression  = "(http.host eq \"llm.matthewdeaves.com\") and raw.http.request.uri.path contains \"..\""
+      expression  = "(http.host eq \"${var.domain}\") and raw.http.request.uri.path contains \"..\""
     },
     {
       action      = "block"
       enabled     = true
       description = "Block double-slash path prefix (bypasses normalized allowlist)"
-      expression  = "(http.host eq \"llm.matthewdeaves.com\") and starts_with(raw.http.request.uri.path, \"//\")"
+      expression  = "(http.host eq \"${var.domain}\") and starts_with(raw.http.request.uri.path, \"//\")"
     },
     {
       action      = "block"
@@ -39,7 +39,7 @@ resource "cloudflare_ruleset" "waf_block_sensitive" {
       description = "Block non-allowlisted paths"
       expression = join(" and ", [
         # Only apply to Rockport's subdomain (not other apps on this zone)
-        "(http.host eq \"llm.matthewdeaves.com\")",
+        "(http.host eq \"${var.domain}\")",
         # Not an allowed API inference path
         "not starts_with(http.request.uri.path, \"/v1/chat/completions\")",
         "not starts_with(http.request.uri.path, \"/v1/messages\")",

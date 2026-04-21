@@ -97,8 +97,9 @@ requirements-ci.txt     # CI-only Python dependencies (pip-audit)
 - `prisma generate` MUST run as the `litellm` user (not root) — it hardcodes `$HOME/.cache/` paths into the generated client
 - The `litellm` user's home is `/var/lib/litellm` (not `/home/litellm`) so prisma cache works with `ProtectHome=yes`
 - Terraform `user_data` only runs on first boot; use `config push` or `upgrade` for runtime changes
-- Claude Code sends old model IDs (e.g. `claude-sonnet-4-5-20250929`); aliases in litellm-config.yaml map these to latest 4.6 Bedrock models
-- Chat models: Claude (Opus/Sonnet 4.6, Haiku 4.5), DeepSeek v3.2, Qwen3 Coder 480B, Kimi K2.5, Nova (Pro/Lite/Micro v1), Nova 2 Lite, Llama 4 (Scout/Maverick), Mistral Large 3, Ministral 8B, GPT-OSS (120B/20B)
+- Claude Code sends old model IDs (e.g. `claude-sonnet-4-5-20250929`) and the new runtime identifier `claude-opus-4-7[1m]`; aliases in litellm-config.yaml map these to the latest Bedrock versions
+- Chat models: Claude (Opus 4.7 with 1M context, Opus/Sonnet 4.6, Haiku 4.5), DeepSeek v3.2, Qwen3 Coder 480B, Kimi K2.5, Nova (Pro/Lite/Micro v1), Nova 2 Lite, Llama 4 (Scout/Maverick), Mistral Large 3, Ministral 8B, GPT-OSS (120B/20B)
+- Claude Opus 4.7 rejects `temperature`/`top_p`/`top_k` and legacy thinking params; the global `drop_params: true` setting in litellm-config.yaml silently strips them. Cache injection is applied to every `claude-*` entry including the `[1m]` Claude Code runtime alias
 - Llama 4 models use `us.` cross-region inference profiles (US-only); Nova 2 Lite uses `us.` cross-region (EU profiles not available); Mistral Large 3 is us-east-1 direct (not available in EU); Ministral 8B and GPT-OSS are direct in eu-west-2
 - Bedrock inference profiles need `eu.` prefix for cross-region models; IAM policy must cover ALL EU regions (the inference profile can route to any) + all 4 US regions (us-east-1, us-east-2, us-west-1, us-west-2) for Stability AI `us.` inference profiles + image/video models + Llama 4 `us.` models
 - Prompt caching: automatic via LiteLLM — `cache_control` blocks translate to Bedrock `cachePoint`. Supported on Claude and Nova 2 Lite. `cache_control_injection_points` configured for non-cache-aware clients
@@ -120,7 +121,7 @@ requirements-ci.txt     # CI-only Python dependencies (pip-audit)
 - Swagger/ReDoc docs disabled via `NO_DOCS=True` / `NO_REDOC=True` in the LiteLLM env file
 - Cloudflare Access (`terraform/access.tf`) requires a service token for all requests — `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers must be present or Cloudflare returns 403 before traffic reaches the tunnel. Token values are Terraform outputs (sensitive). To rotate: create a new service token in Terraform, update all clients, then remove the old one
 - Cloudflare WAF allowlist (`terraform/waf.tf`) is host-scoped to the Rockport subdomain only (does not affect other apps on the zone). Blocks all paths except those needed by Claude Code, image generation (`/v1/images/generations`), image services (`/v1/images/*` for sidecar + LiteLLM edits), video generation (`/v1/videos/*`), and the admin CLI
-- `setup-claude` creates keys restricted to Anthropic models only; `key create` without `--claude-only` grants access to all models including image generation
+- `setup-claude` creates keys restricted to Anthropic models only; `key create` without `--claude-only` grants access to all models including image generation. The Claude-only allowlist is derived at invocation time from every `- model_name: claude-*` entry in `config/litellm-config.yaml`; adding a new Claude model picks it up automatically. The CLI fails hard if the config is missing or contains zero Claude entries
 - Stability AI image models (SD3.5 Large, Stable Image Ultra, Stable Image Core, all 13 stability-* edit models) and Luma Ray2 need a one-time Marketplace subscription — invoke once in the Bedrock playground to activate
 - `deploy` auto-creates the SSM master key if missing, so `init` is not a strict prerequisite
 - The Cloudflare API token (in `terraform/.env`, gitignored) needs Zone DNS Edit, Zone WAF Edit, Account Cloudflare Tunnel Edit, and Account Zero Trust Edit permissions
@@ -152,14 +153,27 @@ requirements-ci.txt     # CI-only Python dependencies (pip-audit)
 - State bucket gets DenyNonSSL policy on creation via `rockport.sh init`
 - Bootstrap runs `prisma migrate deploy` before LiteLLM starts — avoids slow per-migration baseline resolve on first boot. Full bootstrap completes in ~3 minutes
 - Nova Canvas sidecar endpoints on (:4001): `/v1/images/variations`, `/v1/images/background-removal`, `/v1/images/outpaint`. All enforce auth, budgets, and block --claude-only keys
+- Video sidecar `/v1/videos/health` requires a valid Bearer token (spec 016 FR-007) — anonymous callers get HTTP 401, preventing enumeration of per-region Bedrock availability
+
+## Bedrock retirement calendar
+
+Known upstream end-of-life dates for models currently in `config/litellm-config.yaml`. Plan replacements before each date.
+
+| Model ID | Rockport alias | EOL | Notes |
+|---|---|---|---|
+| `amazon.titan-image-generator-v2:0` | `titan-image-v2` | **2026-06-30** | Kept by operator choice; replacement plan required ≤ 10 weeks |
+| `amazon.nova-canvas-v1:0` | `nova-canvas` (+ sidecar endpoints) | **2026-09-30** | No announced direct successor; likely migration to Stability Core/Ultra |
+| `amazon.nova-reel-v1:1` | Nova Reel video pipeline | **2026-09-30** | Luma Ray2 remains; no Ray3 on Bedrock yet |
 
 ## Active Technologies
-- Terraform (AWS + Cloudflare providers)
-- Python 3.11 + FastAPI — sidecar
-- PostgreSQL 15 — LiteLLM + video job tracking
+- Terraform 1.14 (AWS provider 6.41, Cloudflare provider ~> 5.0)
+- LiteLLM proxy 1.83.7 (exact pin) on Amazon Linux 2023
+- Python 3.11 + FastAPI — sidecar (port 4001)
+- PostgreSQL 15 — LiteLLM spend/keys + video job tracking
 - S3 — state + video output
 - Bash — CLI, bootstrap, smoke tests, pentest toolkit
 - CloudTrail — audit logging
+- Cloudflare Tunnel + Access + WAF — ingress and pre-auth
 
 ## Pentest Toolkit
 - 13-module security testing suite in `pentest/` — tests WAF allowlist, CF-Access tokens, API key auth, tunnel routing, sidecar endpoints, infrastructure security, supply chain integrity
@@ -178,5 +192,6 @@ requirements-ci.txt     # CI-only Python dependencies (pip-audit)
 - Quality hooks: PreToolUse `pentest-bash-gotchas.sh` checks for common bash pitfalls in pentest scripts
 
 ## Recent Changes
+- **016-security-claude-4-7-upgrade**: LiteLLM 1.82.6 → 1.83.7 (patches 6 advisories including a SQL-injection on the API-key auth path). Added Claude Opus 4.7 via `eu.anthropic.claude-opus-4-7` plus the literal `claude-opus-4-7[1m]` Claude Code runtime alias, both with cache injection. WAF rules now use `var.domain` (no hardcoded hostname). `--claude-only` key allowlist derived at invocation time from `config/litellm-config.yaml`. `/v1/videos/health` now requires Bearer auth (previously anonymous). psycopg2-binary 2.9.11 → 2.9.12. Bedrock retirement calendar documented for Titan Image v2 (2026-06-30), Nova Canvas v1 and Nova Reel v1.1 (both 2026-09-30).
 - Added pentest toolkit with 13 security modules, 3 Claude Code skills (`/pentest`, `/pentest-review`, `/pentest-align`), enhanced `/rockport-ops` with security posture checks, and quality hooks for pentest scripts
 - Added 9 new Bedrock chat models (Qwen3 Coder 480B, Kimi K2.5, Llama 4 Scout/Maverick, Nova 2 Lite, Mistral Large 3, Ministral 8B, GPT-OSS 120B/20B), prompt caching, extended thinking, and optional Bedrock Guardrails (`deploy --guardrails`)
