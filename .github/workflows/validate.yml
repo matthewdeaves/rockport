@@ -96,7 +96,7 @@ jobs:
           pip-audit -r /tmp/requirements-audit.txt
 
       - name: Checkov scan
-        uses: bridgecrewio/checkov-action@0ce65fae06c148e349f955c3c35ad049c11e838c # v12
+        uses: bridgecrewio/checkov-action@5ef773c6dcc9416c0e1973045ca575493c4ce41a # v12
         with:
           directory: terraform/
           config_file: .checkov.yaml
