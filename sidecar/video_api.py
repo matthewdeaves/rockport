@@ -402,8 +402,14 @@ def calculate_cost(model_name: str, duration: int, resolution: str | None = None
 # --- Endpoints ---
 
 @app.get("/v1/videos/health")
-def health():
-    """Health check — verifies DB connectivity and per-model Bedrock reachability."""
+def health(auth: dict = Depends(authenticate)):
+    """Health check — verifies DB connectivity and per-model Bedrock reachability.
+
+    Requires a valid Bearer token. Anonymous callers receive HTTP 401 from the
+    `authenticate` dependency before this handler runs, preventing per-region
+    Bedrock availability from being exposed to the public internet.
+    Feature 016 (spec FR-007).
+    """
     db_ok = False
     try:
         with db._get_conn() as conn:

@@ -1,5 +1,24 @@
 model_list:
   # Anthropic models via Bedrock
+  # Opus 4.7 — latest (1M-context native, no beta header required).
+  # Opus 4.7 rejects temperature/top_p/top_k; global drop_params: true handles it.
+  - model_name: claude-opus-4-7
+    litellm_params:
+      model: bedrock/eu.anthropic.claude-opus-4-7
+      aws_region_name: eu-west-2
+      cache_control_injection_points:
+        - location: message
+          role: system
+
+  # Claude Code runtime identifier for Opus 4.7 (literal square brackets preserved).
+  - model_name: "claude-opus-4-7[1m]"
+    litellm_params:
+      model: bedrock/eu.anthropic.claude-opus-4-7
+      aws_region_name: eu-west-2
+      cache_control_injection_points:
+        - location: message
+          role: system
+
   # Opus 4.6
   - model_name: claude-opus-4-6
     litellm_params:
@@ -27,7 +46,7 @@ model_list:
         - location: message
           role: system
 
-  # Claude Code aliases — route old model IDs to latest 4.6 versions
+  # Claude Code aliases — route old model IDs to latest Bedrock versions
   - model_name: claude-sonnet-4-5-20250929
     litellm_params:
       model: bedrock/eu.anthropic.claude-sonnet-4-6

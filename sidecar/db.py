@@ -302,7 +302,13 @@ def insert_job_if_under_limit(
             # Advisory lock scoped to this API key (auto-released on commit/rollback)
             cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (api_key_hash,))
 
-            # Count active jobs (pending or in_progress) while holding the lock
+            # Count active jobs (pending or in_progress) while holding the lock.
+            #
+            # Invariant: count across ALL models and ALL regions per api_key_hash.
+            # Do NOT add a `model = %s` or region predicate — the per-key limit is
+            # global by design so a single key can't multiply its intended budget
+            # by fanning out across providers (Nova Reel us-east-1 + Ray2 us-west-2).
+            # See spec 016 FR-008.
             cur.execute(
                 "SELECT COUNT(*) FROM rockport_video_jobs WHERE api_key_hash = %s AND status IN ('pending', 'in_progress')",
                 (api_key_hash,),

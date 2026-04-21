@@ -14,8 +14,28 @@ CACHED_TUNNEL_URL=""
 CACHED_CF_CLIENT_ID=""
 CACHED_CF_CLIENT_SECRET=""
 
-# Anthropic model names for Claude Code key restrictions
-CLAUDE_MODELS='["claude-opus-4-6","claude-sonnet-4-6","claude-haiku-4-5-20251001","claude-sonnet-4-5-20250929","claude-opus-4-5-20251101"]'
+# Anthropic model names for Claude Code key restrictions.
+# Derived from config/litellm-config.yaml at invocation time so that every
+# `- model_name: claude-*` entry is automatically included — no drift risk
+# when new Claude models are added. Fails hard if the config is missing or
+# has zero matches (prevents silent creation of "Claude-only" keys with no
+# Claude access). Spec 016 FR-006.
+claude_models() {
+  local config_file="$CONFIG_DIR/litellm-config.yaml"
+  [ -r "$config_file" ] || die "Cannot read $config_file — config/litellm-config.yaml is required to derive the Claude-only allowlist"
+
+  # Grep for `- model_name: claude-...` lines (quoted or unquoted), strip the
+  # prefix, trim whitespace, strip any surrounding quotes. Preserves literal
+  # characters such as the square brackets in `claude-opus-4-7[1m]`.
+  local raw
+  raw=$(grep -E '^[[:space:]]*-[[:space:]]*model_name:[[:space:]]*"?claude-' "$config_file" \
+    | sed -E 's/^[[:space:]]*-[[:space:]]*model_name:[[:space:]]*//; s/[[:space:]]*$//; s/^"//; s/"$//')
+
+  [ -n "$raw" ] || die "No 'model_name: claude-*' entries found in $config_file"
+
+  # Emit compact JSON array, preserving literal characters.
+  printf '%s\n' "$raw" | jq -R . | jq -s -c .
+}
 
 # Use the rockport AWS profile if it exists and no profile is already set
 if [[ -z "${AWS_PROFILE:-}" ]] && aws configure list-profiles 2>/dev/null | grep -q '^rockport$'; then
@@ -854,7 +874,9 @@ cmd_key_create() {
   fi
 
   if [[ "$claude_only" == "true" ]]; then
-    payload=$(echo "$payload" | jq --argjson models "$CLAUDE_MODELS" '. + {models: $models}') \
+    local claude_models_json
+    claude_models_json=$(claude_models) || die "Failed to derive Claude-only model allowlist"
+    payload=$(echo "$payload" | jq --argjson models "$claude_models_json" '. + {models: $models}') \
       || die "Failed to add model restriction to payload"
     echo "Restricting key to Anthropic models only."
   fi
