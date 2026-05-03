@@ -443,12 +443,49 @@ ensure_deployer_access() {
   attach_iam_policy "$caller_user" "RockportAdmin" "$account_id"
 
   # --- Deployer policies ---
-  local policy_names=("RockportDeployerCompute" "RockportDeployerIamSsm" "RockportDeployerMonitoringStorage")
-  local policy_files=("$policy_dir/compute.json" "$policy_dir/iam-ssm.json" "$policy_dir/monitoring-storage.json")
+  # The three legacy "deployer" policies still attach directly to the deploy
+  # role (rockport-deploy-role) and, through phase 4 of spec 017, to the
+  # rockport-deployer USER as a fallback. Phase 5 detaches them from the user.
+  #
+  # The two operator-tier policies (RockportOperatorReadonly, ...RuntimeOps)
+  # back rockport-readonly-role and rockport-runtime-ops-role respectively.
+  # They are referenced by terraform/iam-operator-roles.tf via ARN.
+  #
+  # RockportDeployerAssumeRoles is the policy that attaches to the deployer
+  # USER (phase 2 onwards) and grants MFA-conditioned sts:AssumeRole on the
+  # three operator roles.
+  local policy_names=(
+    "RockportDeployerCompute"
+    "RockportDeployerIamSsm"
+    "RockportDeployerMonitoringStorage"
+    "RockportOperatorReadonly"
+    "RockportOperatorRuntimeOps"
+    "RockportDeployerAssumeRoles"
+  )
+  local policy_files=(
+    "$policy_dir/compute.json"
+    "$policy_dir/iam-ssm.json"
+    "$policy_dir/monitoring-storage.json"
+    "$policy_dir/readonly.json"
+    "$policy_dir/runtime-ops.json"
+    "$policy_dir/assume-roles.json"
+  )
 
   for i in "${!policy_names[@]}"; do
     upsert_iam_policy "${policy_names[$i]}" "${policy_files[$i]}" "$account_id"
   done
+
+  # Subset of the policies that actually attach to USERS in phase 1.
+  # Operator-tier policies (RockportOperator*) only attach to roles via
+  # terraform; they are NOT user-attached.
+  # RockportDeployerAssumeRoles attaches only to rockport-deployer (phase 2);
+  # rockport-admin doesn't need the indirection — admin already has direct
+  # broad permissions.
+  local user_policy_names=(
+    "RockportDeployerCompute"
+    "RockportDeployerIamSsm"
+    "RockportDeployerMonitoringStorage"
+  )
 
   # --- Deployer user ---
   if aws iam get-user --user-name "$deployer_user" &>/dev/null; then
@@ -460,12 +497,22 @@ ensure_deployer_access() {
   fi
 
   # Attach deployer policies to both the deployer user and the calling user
-  # so deploy/destroy work regardless of which user runs them
+  # so deploy/destroy work regardless of which user runs them.
+  #
+  # Phase 1-4 (017): both users keep all three legacy deployer policies.
+  # Phase 5 detaches them from the deployer user (operator roles take over);
+  # the calling admin user keeps them for emergency direct-deploys.
   for user in "$deployer_user" "$caller_user"; do
-    for i in "${!policy_names[@]}"; do
-      attach_iam_policy "$user" "${policy_names[$i]}" "$account_id"
+    for i in "${!user_policy_names[@]}"; do
+      attach_iam_policy "$user" "${user_policy_names[$i]}" "$account_id"
     done
   done
+
+  # Phase 2 (017): rockport-deployer also gets RockportDeployerAssumeRoles so
+  # it can call sts:AssumeRole on the three operator roles after MFA is
+  # enrolled. Idempotent — safe to run before MFA is configured (the policy
+  # only kicks in once the trust relationship + MFA condition both hold).
+  attach_iam_policy "$deployer_user" "RockportDeployerAssumeRoles" "$account_id"
 
   local existing_keys
   existing_keys=$(aws iam list-access-keys --user-name "$deployer_user" --query 'length(AccessKeyMetadata)' --output text) \
