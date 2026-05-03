@@ -59,9 +59,10 @@ You only get a TOTP prompt when:
 Cached sessions are reused silently. `rockport.sh auth status` shows
 which roles have valid sessions and how much time is left.
 
-The legacy long-lived `rockport` profile still works as a backwards-compat
-fallback through phase 4 of the 017 rollout (with a one-time deprecation
-warning per shell). Phase 5 removes it.
+The legacy long-lived `rockport` profile is no longer auto-used (phase 5
+of the 017 rollout). Subcommands either run under an MFA-derived
+`rockport-<role>` session, or — for the bootstrap path only — under the
+default credential chain when `ROCKPORT_AUTH_DISABLED=1` is set.
 
 ## Escape hatch: `ROCKPORT_AUTH_DISABLED=1`
 

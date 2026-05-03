@@ -152,6 +152,10 @@ assume_role() {
 
 # Idempotent: ensures AWS_PROFILE points at a valid session for the requested
 # operator role. Refreshes via assume_role if expired or missing.
+#
+# Phase 5 (017) cutover: the legacy long-lived `rockport` profile fallback
+# has been removed. Every operator-role subcommand now requires an
+# MFA-derived STS session.
 ensure_session_valid_for_role() {
   local role="$1"
   [[ "${ROCKPORT_AUTH_DISABLED:-0}" == "1" ]] && return 0
@@ -160,21 +164,6 @@ ensure_session_valid_for_role() {
   if _session_valid "$profile"; then
     export AWS_PROFILE="$profile"
     return 0
-  fi
-
-  # Backwards-compat (removed in phase 5): if no rockport-<role> profile is
-  # cached AND the legacy long-lived rockport profile works, fall through to
-  # it with a one-time deprecation warning.
-  if ! aws configure list-profiles 2>/dev/null | grep -q "^${profile}$"; then
-    if aws configure list-profiles 2>/dev/null | grep -q '^rockport$' \
-       && env -u AWS_PROFILE aws sts get-caller-identity --profile rockport >/dev/null 2>&1; then
-      if [[ -z "${_ROCKPORT_LEGACY_WARNED:-}" ]]; then
-        echo "WARN: using legacy long-lived 'rockport' profile (017 backwards-compat). Run './scripts/rockport.sh auth --role ${role}' to migrate." >&2
-        export _ROCKPORT_LEGACY_WARNED=1
-      fi
-      export AWS_PROFILE=rockport
-      return 0
-    fi
   fi
 
   assume_role "$role"
@@ -244,10 +233,11 @@ _cmd_auth_status() {
   echo "Active AWS_PROFILE: ${active}"
 }
 
-# Use the rockport AWS profile if it exists and no profile is already set
-if [[ -z "${AWS_PROFILE:-}" ]] && aws configure list-profiles 2>/dev/null | grep -q '^rockport$'; then
-  export AWS_PROFILE=rockport
-fi
+# Phase 5 (017): the legacy "auto-pick rockport profile if present" behaviour
+# is intentionally gone. AWS_PROFILE is set per-subcommand by
+# _ensure_role_for_subcommand, which assumes the right operator role with MFA.
+# The only escape hatch is ROCKPORT_AUTH_DISABLED=1 (used by the bootstrap
+# `init` flow on a fresh account, where operator roles don't yet exist).
 
 # --- Helper functions ---
 
@@ -619,6 +609,27 @@ attach_iam_policy() {
   fi
 }
 
+# Detach an IAM policy from a user if currently attached. Idempotent —
+# silently no-op when the user doesn't exist or the policy isn't attached.
+detach_iam_policy() {
+  local user="$1" name="$2" account_id="$3" reason="${4:-}"
+  local arn="arn:aws:iam::${account_id}:policy/${name}"
+
+  aws iam get-user --user-name "$user" &>/dev/null || return 0
+  local attached
+  attached=$(aws iam list-attached-user-policies --user-name "$user" \
+    --query "AttachedPolicies[?PolicyArn=='$arn']" --output text 2>/dev/null) || attached=""
+  if echo "$attached" | grep -q "$name"; then
+    aws iam detach-user-policy --user-name "$user" --policy-arn "$arn" \
+      || die "Failed to detach policy $name from $user"
+    if [[ -n "$reason" ]]; then
+      echo "  Policy attachment .... detached ($name → $user, $reason)"
+    else
+      echo "  Policy attachment .... detached ($name → $user)"
+    fi
+  fi
+}
+
 ensure_deployer_access() {
   local deployer_user="rockport-deployer"
   local policy_dir="$TERRAFORM_DIR/deployer-policies"
@@ -703,22 +714,19 @@ ensure_deployer_access() {
     echo "  IAM user ............. created ($deployer_user)"
   fi
 
-  # Attach deployer policies to both the deployer user and the calling user
-  # so deploy/destroy work regardless of which user runs them.
-  #
-  # Phase 1-4 (017): both users keep all three legacy deployer policies.
-  # Phase 5 detaches them from the deployer user (operator roles take over);
-  # the calling admin user keeps them for emergency direct-deploys.
-  for user in "$deployer_user" "$caller_user"; do
-    for i in "${!user_policy_names[@]}"; do
-      attach_iam_policy "$user" "${user_policy_names[$i]}" "$account_id"
-    done
+  # Phase 5 (017) cutover: rockport-deployer holds ONLY RockportDeployerAssumeRoles.
+  # The three legacy direct-attachments are removed — the deploy operator role
+  # is the only path to deployer-tier permissions. The calling admin user
+  # keeps the legacy policies attached so admin can still execute emergency
+  # direct-deploys without the role assumption flow (and so init itself works
+  # in the bootstrap chicken-and-egg).
+  for i in "${!user_policy_names[@]}"; do
+    attach_iam_policy "$caller_user" "${user_policy_names[$i]}" "$account_id"
+    detach_iam_policy "$deployer_user" "${user_policy_names[$i]}" "$account_id" "phase-5 cutover"
   done
 
-  # Phase 2 (017): rockport-deployer also gets RockportDeployerAssumeRoles so
-  # it can call sts:AssumeRole on the three operator roles after MFA is
-  # enrolled. Idempotent — safe to run before MFA is configured (the policy
-  # only kicks in once the trust relationship + MFA condition both hold).
+  # rockport-deployer's only attachment after phase 5 is the AssumeRoles
+  # policy. Idempotent.
   attach_iam_policy "$deployer_user" "RockportDeployerAssumeRoles" "$account_id"
 
   local existing_keys

@@ -270,22 +270,20 @@ out=$(ROCKPORT_AUTH_DISABLED=1 \
 echo "$out" | grep -q "rc=0"
 assert_pass "ensure_session_valid_for_role: AUTH_DISABLED bypasses entirely" $?
 
-# Phase 1-4 backwards-compat: legacy 'rockport' profile is used as fallback
-# when no rockport-<role> profile exists. (Phase 5 removes this; update test
-# alongside that commit.)
-SB=$(mk_sandbox legacy-fallback); make_stub_aws "$SB"; make_stub_terraform "$SB"
+# Phase 5 cutover: legacy 'rockport' profile fallback is REMOVED. Even with
+# the legacy profile present, no MFA = die. The only bypass is
+# ROCKPORT_AUTH_DISABLED=1 (covered above).
+SB=$(mk_sandbox legacy-removed); make_stub_aws "$SB"; make_stub_terraform "$SB"
 HOME="$SB/home" aws configure set aws_access_key_id     LEGACY    --profile rockport
 HOME="$SB/home" aws configure set aws_secret_access_key SECRET    --profile rockport
 HOME="$SB/home" aws configure set region                eu-west-2 --profile rockport
 
-out=$(STUB_ACCOUNT_ID=111122223333 STUB_LIST_PROFILES="rockport" \
-      run_in_sandbox "$SB" '
-        unset MFA_SERIAL_NUMBER
-        ensure_session_valid_for_role readonly 2>&1
-        echo "AWS_PROFILE=$AWS_PROFILE"
-      ')
-echo "$out" | grep -q "AWS_PROFILE=rockport"
-assert_pass "ensure_session_valid_for_role: legacy profile used as fallback (phase 1-4)" $?
+STUB_ACCOUNT_ID=111122223333 STUB_LIST_PROFILES="rockport" \
+  run_in_sandbox "$SB" '
+    unset MFA_SERIAL_NUMBER
+    ensure_session_valid_for_role readonly
+  ' >/dev/null 2>&1
+assert_fail "ensure_session_valid_for_role: legacy fallback removed (phase 5)" $?
 
 # ============================================================================
 # _cmd_auth_status — shows a line per role with state
