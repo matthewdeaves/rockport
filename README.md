@@ -71,7 +71,7 @@ aws configure
 # Default region name: eu-west-2
 ```
 
-The `init` command will create a dedicated `rockport-deployer` IAM user with scoped permissions and configure a `rockport` AWS CLI profile automatically. After init completes, you can delete the root access keys — all subsequent commands use the `rockport` profile.
+The `init` command will create a dedicated `rockport-deployer` IAM user with scoped permissions plus three MFA-gated operator roles (readonly / runtime-ops / deploy). After init completes, enrol an MFA device on `rockport-deployer` (see "MFA Enrolment" below) and the CLI handles role selection per subcommand via `SUBCOMMAND_ROLE`.
 
 **Existing AWS account with an admin IAM user:**
 
@@ -92,24 +92,40 @@ Again, `init` will create the `rockport-deployer` user and `rockport` CLI profil
 
 This is an interactive setup that:
 - Prompts for your AWS region, domain, Cloudflare IDs, and budget alert email
-- Creates 3 scoped deployer IAM policies (compute, IAM/SSM, monitoring/storage — least-privilege, no wildcards)
-- Creates a `rockport-deployer` IAM user with access keys and configures a `rockport` AWS CLI profile
+- Creates 6 scoped IAM policies: 3 deployer (compute, IAM/SSM, monitoring/storage) + 2 operator (readonly, runtime-ops) + 1 AssumeRole policy
+- Creates a `rockport-deployer` IAM user with access keys
 - Generates a master API key and stores it in SSM Parameter Store
 - Creates an S3 bucket for Terraform state
 
-After init, all `rockport.sh` commands automatically use the `rockport` AWS CLI profile (deployer credentials). Your admin credentials are only needed for `init` — the deployer has an explicit deny on attaching non-Rockport IAM policies, preventing privilege escalation.
-
 If you already have a `terraform.tfvars` from a previous setup, init will ask whether to keep it and just ensure the IAM policies, master key, and state bucket exist.
 
-### 4. Deploy
+### 4. MFA Enrolment
+
+Before any subsequent CLI command, enrol a TOTP MFA device on `rockport-deployer`:
+
+1. AWS console → IAM → Users → `rockport-deployer` → Security credentials → Multi-factor authentication → Assign MFA device.
+2. Choose Authenticator app, name it (e.g. `rockport-deployer-laptop`), scan the QR code, enter two consecutive codes.
+3. Copy the device ARN.
+4. Add it to `terraform/.env` (gitignored):
+
+   ```bash
+   echo 'export MFA_SERIAL_NUMBER="arn:aws:iam::<account>:mfa/rockport-deployer-laptop"' >> terraform/.env
+   ```
+
+Now `./scripts/rockport.sh auth --role readonly` will prompt for a 6-digit TOTP code and cache a 1-hour session. Subsequent diagnostic commands reuse the cached session; mutating commands (config push, deploy) prompt for MFA again because they use a different role.
+
+> **Bootstrap escape hatch:** for the very first `rockport.sh deploy` on a fresh account where the operator roles don't exist yet, prefix the command with `ROCKPORT_AUTH_DISABLED=1` to skip role assumption and use admin credentials directly.
+
+### 5. Deploy
 
 ```bash
-./scripts/rockport.sh deploy
+ROCKPORT_AUTH_DISABLED=1 ./scripts/rockport.sh deploy   # first deploy, before operator roles exist
+./scripts/rockport.sh deploy                            # subsequent deploys, prompts for MFA on the deploy role
 ```
 
 Takes ~2 minutes for Terraform, then ~3 minutes for the EC2 instance to bootstrap (installs PostgreSQL, LiteLLM, cloudflared).
 
-### 5. Verify and configure Claude Code
+### 6. Verify and configure Claude Code
 
 ```bash
 # Wait for bootstrap (~3 min), then check health:

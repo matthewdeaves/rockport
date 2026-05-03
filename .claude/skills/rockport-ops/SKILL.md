@@ -161,7 +161,7 @@ After the fix is implemented and deployed:
 - **Smoke tests need a temp API key.** `smoke-test.sh` creates and cleans up its own key. If the master key is wrong or LiteLLM is down, key creation fails and all 43 tests show as failures — the root cause is auth, not the individual tests.
 - **Config push is not atomic.** The SSM command stops services, downloads, extracts, restarts. If it fails mid-way, services may be down. Check SSM command output for which step failed before assuming the config is bad.
 - **`terraform output` needs init.** If terraform hasn't been initialized in this session, `terraform output` fails. Run `terraform -chdir=$PROJECT_ROOT/terraform init -backend=false` first if needed, or read values from `terraform.tfvars` directly.
-- **The deployer profile may not be set.** If `AWS_PROFILE=rockport` doesn't work, the profile may not exist yet (init not run). Fall back to checking `aws configure list-profiles` first.
+- **Operator-role profiles drive AWS access (017).** The CLI no longer relies on a long-lived `AWS_PROFILE=rockport`. Each subcommand resolves through `SUBCOMMAND_ROLE` and assumes one of `rockport-readonly-role`, `rockport-runtime-ops-role`, or `rockport-deploy-role` via MFA-gated STS. If a session is missing/expired the CLI prompts for a TOTP code. Run `./scripts/rockport.sh auth` once at session start and `auth status` to inspect cached sessions. The legacy `rockport` profile still works as a fallback through phase 4 (deprecation warning); phase 5 removes it.
 - **Cloudflare 403 vs LiteLLM 403.** Both return 403 but for different reasons. Cloudflare 403 = missing CF-Access headers or WAF block. LiteLLM 403 = invalid/expired API key or --claude-only restriction. Check response body to distinguish.
 - **Journalctl errors may be stale.** Always use `--since "10 min ago"` to scope log queries. Old errors from previous incidents will mislead diagnosis.
 
@@ -169,7 +169,7 @@ After the fix is implemented and deployed:
 
 1. **Subagents for I/O, main context for decisions.** All AWS CLI output, log dumps, curl responses, and smoke test output go through subagents. The main context only sees summaries.
 
-2. **Deployer profile by default.** Use `AWS_PROFILE=rockport` for diagnostics and operations. Only escalate to admin (unset AWS_PROFILE) if the issue involves IAM policy changes or admin-only operations. See [aws-access.md](references/aws-access.md).
+2. **Readonly role by default (017).** Diagnostics run under `rockport-readonly-role` — no `ssm:SendCommand`, no IAM, no mutate. The CLI's `SUBCOMMAND_ROLE` map already ensures this; just call subcommands and let MFA escalation happen as needed. Escalate to `runtime-ops` for `config push`, `upgrade`, `start`, `stop`, `logs`, or `status --instance`. Escalate to `deploy` only for `terraform apply` / `destroy`. Escalate to admin (unset AWS_PROFILE; uses `rockport-admin` directly) only for IAM policy changes or `rockport.sh init`. See [aws-access.md](references/aws-access.md).
 
 3. **Speckit for everything.** No direct code edits outside the speckit pipeline. The only exception is immediate operational actions (restart, start instance) to restore service — and even those get a spec if the root cause is a bug.
 

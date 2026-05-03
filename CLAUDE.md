@@ -23,8 +23,9 @@ terraform/monitoring.tf # Budget alarms (Bedrock daily, monthly total), auto-rec
 terraform/snapshots.tf  # EBS snapshot lifecycle (DLM policy)
 terraform/cloudtrail.tf # CloudTrail management event logging (S3 bucket + trail)
 terraform/guardrails.tf # Optional Bedrock Guardrail (behind enable_guardrails variable toggle)
-terraform/deployer-policies/ # 3 IAM policy JSONs (compute, iam-ssm, monitoring-storage)
-terraform/rockport-admin-policy.json # Bootstrap IAM policy for admin user
+terraform/iam-operator-roles.tf # Operator roles (017): readonly + runtime-ops + deploy with MFA-gated trust + boundaries
+terraform/deployer-policies/ # IAM policy JSONs: compute, iam-ssm, monitoring-storage, readonly, runtime-ops, assume-roles
+terraform/rockport-admin-policy.json # Bootstrap IAM policy for admin user (carries IAM-mutation actions, MFA management)
 terraform/terraform.tfvars.example   # Example tfvars with all variables (required + optional defaults)
 terraform/.env.example               # Example .env (Cloudflare API token placeholder)
 config/                 # LiteLLM config, systemd units, PostgreSQL tuning
@@ -57,6 +58,7 @@ pentest/                # Security testing toolkit
   reports/              #   Scan output (gitignored)
   tools/                #   Installed tool binaries (gitignored)
 tests/smoke-test.sh     # Post-deploy verification
+tests/auth-flow-test.sh # Sandbox tests for the 017 CLI auth helpers (assume_role, ensure_session_valid_for_role, SUBCOMMAND_ROLE)
 .github/workflows/      # CI/CD — validate (fmt, lint, security scan) + deploy (plan/apply/smoke)
 .checkov.yaml           # Checkov skip list with justifications
 .gitleaks.toml          # Gitleaks secret scanning config (allowlists)
@@ -69,9 +71,11 @@ requirements-ci.txt     # CI-only Python dependencies (pip-audit)
 
 ```bash
 ./scripts/rockport.sh init          # Interactive setup — creates tfvars + SSM master key
+./scripts/rockport.sh auth          # 017: assume an operator role via MFA [--role readonly|runtime-ops|deploy]
+./scripts/rockport.sh auth status   # 017: show cached operator-role sessions and time remaining
 ./scripts/rockport.sh deploy        # terraform init + apply
 ./scripts/rockport.sh destroy       # terraform destroy (confirms, cleans up SSM params)
-./scripts/rockport.sh status        # Health + model list
+./scripts/rockport.sh status        # Health + model list (readonly role; --instance escalates to runtime-ops for in-VM stats)
 ./scripts/rockport.sh models        # List available models
 ./scripts/rockport.sh start         # Start a stopped instance
 ./scripts/rockport.sh stop          # Stop the instance
@@ -125,8 +129,10 @@ requirements-ci.txt     # CI-only Python dependencies (pip-audit)
 - Stability AI image models (SD3.5 Large, Stable Image Ultra, Stable Image Core, all 13 stability-* edit models) and Luma Ray2 need a one-time Marketplace subscription — invoke once in the Bedrock playground to activate
 - `deploy` auto-creates the SSM master key if missing, so `init` is not a strict prerequisite
 - The Cloudflare API token (in `terraform/.env`, gitignored) needs Zone DNS Edit, Zone WAF Edit, Account Cloudflare Tunnel Edit, and Account Zero Trust Edit permissions
-- Deployer IAM is split into 3 policies under `terraform/deployer-policies/` (compute, iam-ssm, monitoring-storage) to stay under the 6144-byte per-policy limit while keeping all actions explicit (no wildcards). EC2/SSM mutating actions scoped to `aws:ResourceTag/Project=rockport`. An explicit Deny in iam-ssm.json blocks `AttachRolePolicy`/`DetachRolePolicy` for any policy ARN not matching `Rockport*`, `rockport*`, `AmazonSSMManagedInstanceCore`, or `service-role/AWSDataLifecycleManagerServiceRole`, preventing privilege escalation via the deployer role
-- Admin IAM policy (`terraform/rockport-admin-policy.json`): `init` auto-creates and attaches it to the calling user. If the calling user lacks `iam:CreatePolicy` (e.g. a non-admin IAM user), init prints instructions to create it manually via the AWS console first. On subsequent runs, `init` updates the policy in place.
+- Deployer IAM is split into 3 policies under `terraform/deployer-policies/` (compute, iam-ssm, monitoring-storage) to stay under the 6144-byte per-policy limit while keeping all actions explicit (no wildcards). EC2/SSM mutating actions scoped to `aws:ResourceTag/Project=rockport`. An explicit Deny in iam-ssm.json (017) blocks `AttachRolePolicy`/`DetachRolePolicy` ONLY when the modified role is a Rockport role (`arn:aws:iam::*:role/rockport*` or `dlm-lifecycle-*`); attaching anything to non-Rockport roles is unaffected — this lets Appserver share the AWS account without IAM collisions. Belt-and-braces `DenyAttachToInstanceRole` blocks any policy attachment to `rockport-instance-role` regardless of policy ARN.
+- 017 operator roles: `rockport.sh` maps every subcommand to one of three roles via `SUBCOMMAND_ROLE`. `rockport-readonly-role` (no SendCommand, no IAM) backs `status`/`models`/`spend`/`monitor`/`key`/`setup-claude`. `rockport-runtime-ops-role` adds SSM SendCommand on the tagged instance and S3 write to artifacts/video buckets — backs `config push`/`upgrade`/`start`/`stop`/`logs`/`status --instance`. `rockport-deploy-role` carries the three legacy deployer policies; the boundary explicitly denies `iam:CreatePolicy*`/`CreateUser`/`AttachUserPolicy`/`CreateAccessKey` so a compromised deploy session can't rewrite its own policies or mint access keys (Finding B from Appserver 003). Trust policies require MFA + age<3600; `MaxSessionDuration=3600`.
+- 017 auth flow: `rockport.sh auth [--role <name>]` prompts for TOTP and caches creds under `rockport-<role>` profile. `MFA_SERIAL_NUMBER` lives in `terraform/.env` (gitignored). Sessions reuse silently while valid (>5 min remaining). `rockport.sh auth status` lists cached sessions. The legacy long-lived `rockport` profile remains as backwards-compat fallback through phase 4 (one-time per-shell deprecation warning); phase 5 of the rollout removes it. `ROCKPORT_AUTH_DISABLED=1` is the bootstrap escape hatch for the first-ever `init` on a fresh account.
+- Admin IAM policy (`terraform/rockport-admin-policy.json`): `init` auto-creates and attaches it to the calling user. If the calling user lacks `iam:CreatePolicy` (e.g. a non-admin IAM user), init prints instructions to create it manually via the AWS console first. On subsequent runs, `init` updates the policy in place. After 017, `RockportAdmin` carries the IAM-policy and IAM-user mutation actions (CreatePolicy/CreatePolicyVersion/CreateUser/AttachUserPolicy/CreateAccessKey/...) plus full MFA-management actions (Enable/Deactivate/Resync/CreateVirtualMFADevice/...) so the admin can recover a lost MFA device on `rockport-deployer`.
 - HSTS and "Always Use HTTPS" are enabled in Cloudflare (not managed by Terraform)
 - Video generation: multi-model sidecar on port 4001 supporting Nova Reel v1.1 (us-east-1, 1280x720, 6-120s, $0.08/s) and Luma Ray2 (us-west-2, 540p/720p, 5s/9s, $0.75-1.50/s). Model selected via `model` field, defaults to `nova-reel`
 - Video sidecar authenticates via LiteLLM's `/key/info` endpoint; writes spend to `LiteLLM_SpendLogs` + `LiteLLM_VerificationToken` for unified tracking
@@ -192,6 +198,7 @@ Known upstream end-of-life dates for models currently in `config/litellm-config.
 - Quality hooks: PreToolUse `pentest-bash-gotchas.sh` checks for common bash pitfalls in pentest scripts
 
 ## Recent Changes
+- **017-iam-mfa-scoping**: MFA-gated short-lived STS sessions across three operator roles (`rockport-readonly-role`, `rockport-runtime-ops-role`, `rockport-deploy-role`). Each role has a permissions boundary; trust policies require `aws:MultiFactorAuthPresent=true` and `aws:MultiFactorAuthAge<3600`; `MaxSessionDuration=3600`. CLI maps subcommands to roles via `SUBCOMMAND_ROLE`; `rockport.sh auth [--role <name>]` prompts for TOTP and caches creds under `rockport-<role>` profile. Readonly has zero `ssm:SendCommand` (Finding A from Appserver 003 — `cmd_status` falls back to HTTP probes; `status --instance` escalates to runtime-ops). Deploy role drops `iam:CreatePolicy*` / `CreateUser` / `AttachUserPolicy` / `CreateAccessKey` (Finding B — IAM mutation moves to `RockportAdmin`, admin-only). Cross-project deny in `iam-ssm.json` is now Resource-scoped to `rockport*` roles so Appserver IAM operations no longer collide. `tests/auth-flow-test.sh` runs in CI; `ROCKPORT_AUTH_DISABLED=1` is the bootstrap escape hatch.
 - **016-security-claude-4-7-upgrade**: LiteLLM 1.82.6 → 1.83.7 (patches 6 advisories including a SQL-injection on the API-key auth path). Added Claude Opus 4.7 via `eu.anthropic.claude-opus-4-7` plus the literal `claude-opus-4-7[1m]` Claude Code runtime alias, both with cache injection. WAF rules now use `var.domain` (no hardcoded hostname). `--claude-only` key allowlist derived at invocation time from `config/litellm-config.yaml`. `/v1/videos/health` now requires Bearer auth (previously anonymous). psycopg2-binary 2.9.11 → 2.9.12. Bedrock retirement calendar documented for Titan Image v2 (2026-06-30), Nova Canvas v1 and Nova Reel v1.1 (both 2026-09-30).
 - Added pentest toolkit with 13 security modules, 3 Claude Code skills (`/pentest`, `/pentest-review`, `/pentest-align`), enhanced `/rockport-ops` with security posture checks, and quality hooks for pentest scripts
 - Added 9 new Bedrock chat models (Qwen3 Coder 480B, Kimi K2.5, Llama 4 Scout/Maverick, Nova 2 Lite, Mistral Large 3, Ministral 8B, GPT-OSS 120B/20B), prompt caching, extended thinking, and optional Bedrock Guardrails (`deploy --guardrails`)
