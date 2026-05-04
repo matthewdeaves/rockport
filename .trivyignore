@@ -30,3 +30,14 @@ AVD-AWS-0015
 # investigation. CloudWatch adds cost (per-GB ingestion) and IAM complexity for
 # real-time alerting that isn't needed on a personal proxy project
 AVD-AWS-0162
+
+# IAM policy s3:* wildcard — flagged in the rockport-deploy-role permissions
+# boundary in iam-operator-roles.tf. The boundary is an UPPER BOUND, not a grant:
+# the actual S3 permissions come from terraform/deployer-policies/monitoring-storage.json
+# which is resource-scoped to rockport-tfstate-*, rockport-artifacts-*, rockport-video-*
+# buckets only. Boundaries are coarse by design (every other service in the same
+# boundary — ec2:*, ssm:*, lambda:*, logs:*, events:*, cloudwatch:*, etc. — also uses
+# wildcards). Tightening to enumerate every S3 action would require maintaining a list
+# that drifts from AWS's evolving API while gaining no real security benefit beyond
+# what the resource-scoped attached policy already provides.
+AVD-AWS-0345
