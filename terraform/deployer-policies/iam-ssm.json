@@ -72,13 +72,18 @@
       }
     },
     {
-      "Sid": "DenyAttachToInstanceRole",
+      "Sid": "DenyAttachToInstanceRoleExceptAllowed",
       "Effect": "Deny",
       "Action": [
         "iam:AttachRolePolicy",
         "iam:DetachRolePolicy"
       ],
-      "Resource": "arn:aws:iam::*:role/rockport-instance-role"
+      "Resource": "arn:aws:iam::*:role/rockport-instance-role",
+      "Condition": {
+        "ArnNotEquals": {
+          "iam:PolicyARN": "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+        }
+      }
     },
     {
       "Sid": "SSMParameters",

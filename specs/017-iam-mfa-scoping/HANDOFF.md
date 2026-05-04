@@ -49,6 +49,52 @@ ROCKPORT_AUTH_DISABLED=1 ./scripts/rockport.sh deploy
 
 `ROCKPORT_AUTH_DISABLED=1` skips `ensure_session_valid_for_role`. Admin creds (default credential chain) drive the apply. After this run, the operator roles exist and normal `rockport.sh auth` flow works for everything else.
 
+## Symmetric cross-project deny (Appserver → Rockport)
+
+Lesson learned during the live 017 apply on 2026-05-04: `AppserverDeployerIamSsm`
+has the **same** over-broad deny pattern Rockport's old `iam-ssm.json` had:
+
+```json
+{
+  "Effect": "Deny",
+  "Action": "iam:AttachRolePolicy",
+  "Resource": "*",
+  "Condition": { "StringNotLike": { "iam:PolicyARN": ["arn:aws:iam::*:policy/Appserver*", ...] } }
+}
+```
+
+When attached to `rockport-admin` (the shared admin user) it blocks every
+`iam:AttachRolePolicy` against any role with a non-Appserver policy ARN — the
+mirror image of the bug we just fixed in Rockport's `iam-ssm.json`.
+
+Fix on Rockport's side: detach permanently. The pre-flight phase of
+`rollout.sh` does this automatically. Mirror of what Appserver 003 had to do
+to `RockportDeployerIamSsm` (their HANDOFF documented the same conclusion).
+
+The proper longer-term fix lives in the Appserver repo: scope the deny to
+`Resource: arn:aws:iam::*:role/appserver-*` and `dlm-lifecycle-*` only, the
+same shape Rockport's 017 / D8 applies. Once Appserver ships that, it's safe
+to re-attach `AppserverDeployerIamSsm` to `rockport-admin`.
+
+## DenyAttachToInstanceRole carve-out (Rockport-only fix, lesson 2026-05-04)
+
+The original `DenyAttachToInstanceRole` was unconditioned, which terraform's
+`ssm_managed` attachment broke against — terraform legitimately attaches
+`arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore` to `rockport-instance-role`
+on every deploy. The fixed version carves out that one specific ARN:
+
+```json
+"Condition": {
+  "ArnNotEquals": {
+    "iam:PolicyARN": "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+  }
+}
+```
+
+Threat model still holds: the deploy role can't attach `RockportDeployer*` or
+any other policy to the instance role; only the AWS-managed SSM core policy
+gets through, which is read-only relative to the instance's existing reach.
+
 ## Cross-project leftovers (cleanup, safe to defer)
 
 `rockport-admin` currently has these Rockport-* policies attached (per `aws iam list-attached-user-policies --user-name rockport-admin` on 2026-05-03):

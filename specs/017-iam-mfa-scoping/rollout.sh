@@ -119,7 +119,7 @@ ok "AWS creds look right"
 
 # --- phase 1: pre-flight cleanup -----------------------------------------
 
-phase 1 "pre-flight cleanup (orphaned RockportDeployerAccess)"
+phase 1 "pre-flight cleanup (orphans + cross-project denies)"
 
 ACCESS_ARN="arn:aws:iam::${ACCOUNT}:policy/RockportDeployerAccess"
 if aws iam get-policy --policy-arn "$ACCESS_ARN" >/dev/null 2>&1; then
@@ -158,6 +158,28 @@ if aws iam get-policy --policy-arn "$ACCESS_ARN" >/dev/null 2>&1; then
   fi
 else
   ok "RockportDeployerAccess not present"
+fi
+
+# AppserverDeployerIamSsm has the same over-broad deny pattern Rockport's
+# used to have (Resource: "*" + Appserver-only policy-ARN allowlist). When
+# attached to rockport-admin it blocks attaching Rockport* policies to
+# rockport-* roles — terraform fails with explicit-deny. Until Appserver
+# scopes its deny to appserver-* roles, we keep this policy detached from
+# rockport-admin (mirror of what Appserver 003 did to RockportDeployerIamSsm).
+APPSERVER_IAMSSM_ARN="arn:aws:iam::${ACCOUNT}:policy/AppserverDeployerIamSsm"
+if aws iam list-attached-user-policies --user-name rockport-admin \
+     --query "AttachedPolicies[?PolicyArn=='$APPSERVER_IAMSSM_ARN']" --output text 2>/dev/null \
+     | grep -q "$APPSERVER_IAMSSM_ARN"; then
+  warn "AppserverDeployerIamSsm is attached to rockport-admin — its over-broad deny blocks Rockport IAM operations"
+  if ask "detach it (recommended)?"; then
+    aws iam detach-user-policy --user-name rockport-admin --policy-arn "$APPSERVER_IAMSSM_ARN" \
+      && ok "detached AppserverDeployerIamSsm from rockport-admin" \
+      || { bad "detach failed"; exit 1; }
+  else
+    warn "skipped — terraform deploy will likely fail with cross-project denies"
+  fi
+else
+  ok "AppserverDeployerIamSsm not attached to rockport-admin"
 fi
 
 # --- phase 2: rockport.sh init -------------------------------------------
