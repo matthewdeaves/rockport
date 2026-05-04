@@ -1,4 +1,7 @@
 #!/bin/bash
+# shellcheck source-path=SCRIPTDIR
+# (`source-path=SCRIPTDIR` tells shellcheck to resolve `source $SCRIPT_DIR/lib/*.sh`
+# directives relative to this file's directory, silencing SC1091 in CI.)
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
