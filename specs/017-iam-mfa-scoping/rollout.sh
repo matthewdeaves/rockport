@@ -366,21 +366,38 @@ else
 
 EOM
   if ask "run smoke tests?"; then
+    # IMPORTANT: ./scripts/rockport.sh auth sets AWS_PROFILE inside its own
+    # subshell only — that export does not propagate back. We must therefore
+    # invoke each test under --profile rockport-<role> explicitly, and
+    # verify the caller really is the role before grading the result. The
+    # earlier version of this harness silently ran the smoke calls under
+    # the parent shell's default credential chain (rockport-admin), which
+    # produced false-positive PASS on SC-006 and a false-positive REGRESSION
+    # on SC-005 — see the 2026-05-04 incident note in HANDOFF.md.
+
     # SC-006: readonly must NOT be allowed to SendCommand.
     if ./scripts/rockport.sh auth --role readonly; then
-      out=$(aws ssm send-command \
-              --document-name AWS-RunShellScript \
-              --instance-ids i-0000000000000fake \
-              --parameters '{"commands":["whoami"]}' 2>&1 || true)
-      if echo "$out" | grep -qE "AccessDenied|not authorized"; then
-        ok "SC-006: readonly is denied ssm:SendCommand AWS-RunShellScript"
-      elif echo "$out" | grep -qE "InvalidInstanceId|InstanceIdNotFound"; then
-        # IAM allow happened first (bad) — would mean readonly has SendCommand.
-        bad "SC-006 REGRESSION: readonly was allowed past IAM into instance lookup — readonly has SendCommand it shouldn't"
-        bad "    response: $out"
-        ALL_OK=0
+      caller=$(aws --profile rockport-readonly sts get-caller-identity \
+                 --query Arn --output text 2>/dev/null || true)
+      if [[ "$caller" == *":assumed-role/rockport-readonly-role/"* ]]; then
+        ok "harness running as readonly role: $caller"
+        out=$(aws --profile rockport-readonly ssm send-command \
+                --document-name AWS-RunShellScript \
+                --instance-ids i-0000000000000fake \
+                --parameters '{"commands":["whoami"]}' 2>&1 || true)
+        if echo "$out" | grep -qE "AccessDenied|not authorized"; then
+          ok "SC-006: readonly is denied ssm:SendCommand AWS-RunShellScript"
+        elif echo "$out" | grep -qE "InvalidInstanceId|InstanceIdNotFound"; then
+          # IAM allow happened first — would mean readonly has SendCommand.
+          bad "SC-006 REGRESSION: readonly was allowed past IAM into instance lookup — readonly has SendCommand it shouldn't"
+          bad "    response: $out"
+          ALL_OK=0
+        else
+          warn "SC-006: unexpected response: $out"
+        fi
       else
-        warn "SC-006: unexpected response: $out"
+        bad "harness sanity check failed — caller is $caller, expected rockport-readonly-role"
+        ALL_OK=0
       fi
     else
       bad "could not assume readonly role"
@@ -388,16 +405,25 @@ EOM
 
     # SC-005: deploy must NOT be allowed to mutate IAM policies.
     if ./scripts/rockport.sh auth --role deploy; then
-      out=$(aws iam create-policy-version \
-              --policy-arn "arn:aws:iam::${ACCOUNT}:policy/RockportDeployerCompute" \
-              --policy-document '{"Version":"2012-10-17","Statement":[{"Sid":"Pwnz","Effect":"Allow","Action":"*","Resource":"*"}]}' \
-              --set-as-default 2>&1 || true)
-      if echo "$out" | grep -qE "AccessDenied|not authorized"; then
-        ok "SC-005: deploy is denied iam:CreatePolicyVersion (Finding B closed)"
+      caller=$(aws --profile rockport-deploy sts get-caller-identity \
+                 --query Arn --output text 2>/dev/null || true)
+      if [[ "$caller" == *":assumed-role/rockport-deploy-role/"* ]]; then
+        ok "harness running as deploy role: $caller"
+        out=$(aws --profile rockport-deploy iam create-policy-version \
+                --policy-arn "arn:aws:iam::${ACCOUNT}:policy/RockportDeployerCompute" \
+                --policy-document '{"Version":"2012-10-17","Statement":[{"Sid":"Pwnz","Effect":"Allow","Action":"*","Resource":"*"}]}' \
+                --set-as-default 2>&1 || true)
+        if echo "$out" | grep -qE "AccessDenied|not authorized"; then
+          ok "SC-005: deploy is denied iam:CreatePolicyVersion (Finding B closed)"
+        else
+          bad "SC-005 REGRESSION: deploy created a new policy version of RockportDeployerCompute"
+          bad "    response: $out"
+          say "    *** rotate RockportDeployerCompute now and investigate ***"
+          ALL_OK=0
+        fi
       else
-        bad "SC-005 REGRESSION: deploy created a new policy version of RockportDeployerCompute"
-        bad "    response: $out"
-        say "    *** rotate RockportDeployerCompute now and investigate ***"
+        bad "harness sanity check failed — caller is $caller, expected rockport-deploy-role"
+        ALL_OK=0
       fi
     else
       bad "could not assume deploy role"

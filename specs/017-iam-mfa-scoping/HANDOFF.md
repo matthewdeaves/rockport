@@ -95,6 +95,40 @@ Threat model still holds: the deploy role can't attach `RockportDeployer*` or
 any other policy to the instance role; only the AWS-managed SSM core policy
 gets through, which is read-only relative to the instance's existing reach.
 
+## Smoke-test harness bug (lesson 2026-05-04)
+
+Phase 7 of `rollout.sh` originally invoked `./scripts/rockport.sh auth --role <role>`
+as a subshell, which exports `AWS_PROFILE=rockport-<role>` *inside that subshell only*.
+The export does not propagate back to the parent shell, so the subsequent
+`aws ssm send-command` / `aws iam create-policy-version` ran under the parent's
+default credential chain — i.e. as `rockport-admin`, not the operator role under
+test.
+
+Effects observed on the live 2026-05-04 run:
+
+- **SC-006 false-positive PASS:** admin's `ssm:SendCommand` is gated on
+  `aws:ResourceTag/Project=rockport`. The smoke test sends to fake instance
+  `i-0000000000000fake`, which has no tag — IAM returned AccessDenied for the
+  *wrong reason*. The harness graded this as PASS even though it never
+  exercised the readonly role.
+- **SC-005 false-positive REGRESSION:** admin legitimately has
+  `iam:CreatePolicyVersion` (post-017 `RockportAdmin` carries IAM-mutation
+  actions). The call succeeded, creating `RockportDeployerCompute` v19 with
+  `{Action:"*", Resource:"*"}`. The harness graded this as REGRESSION.
+  Cleanup: `aws iam set-default-policy-version --version-id v18` then
+  `aws iam delete-policy-version --version-id v19`.
+
+The actual deploy role's permissions were correct throughout — `aws iam
+simulate-principal-policy` against `rockport-deploy-role` returned
+`explicitDeny` on `iam:CreatePolicyVersion`, matching the boundary statement
+`DenyIAMPolicyAndUserMutation`. Finding B is closed in the IAM model;
+the harness was just measuring the wrong thing.
+
+Fix: phase 7 now passes `--profile rockport-<role>` to every aws call and
+asserts `sts:get-caller-identity` returns the assumed-role ARN before grading
+results. If the sanity check fails (i.e. profile not configured), the test
+hard-fails rather than silently running as admin.
+
 ## Cross-project leftovers (cleanup, safe to defer)
 
 `rockport-admin` currently has these Rockport-* policies attached (per `aws iam list-attached-user-policies --user-name rockport-admin` on 2026-05-03):
