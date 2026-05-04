@@ -150,6 +150,58 @@ assume_role() {
   echo "  Assumed ${role_name} until ${expiration}" >&2
 }
 
+# Mints a 1-hour MFA-derived STS session for the rockport-admin user (used by
+# `init` and any other admin-only path). Reads ROCKPORT_ADMIN_MFA_SERIAL from
+# terraform/.env. Writes creds under the rockport-admin-mfa profile and
+# exports AWS_PROFILE. Skipped if ROCKPORT_AUTH_DISABLED=1 (true bootstrap on
+# a fresh account where no IAM policy enforces MFA yet).
+admin_mfa_session() {
+  [[ "${ROCKPORT_AUTH_DISABLED:-0}" == "1" ]] && return 0
+
+  local profile="rockport-admin-mfa"
+
+  load_env
+  if [[ -z "${ROCKPORT_ADMIN_MFA_SERIAL:-}" ]]; then
+    die "ROCKPORT_ADMIN_MFA_SERIAL not set. Enrol MFA on rockport-admin in the AWS console and add the device ARN to terraform/.env (see terraform/.env.example). Or set ROCKPORT_AUTH_DISABLED=1 only when bootstrapping a fresh account where the RockportAdmin policy isn't deployed yet."
+  fi
+
+  if _session_valid "$profile"; then
+    export AWS_PROFILE="$profile"
+    return 0
+  fi
+
+  local code=""
+  while [[ ! "$code" =~ ^[0-9]{6}$ ]]; do
+    read -rsp "TOTP code for rockport-admin: " code
+    echo
+    [[ ! "$code" =~ ^[0-9]{6}$ ]] && echo "  (need a 6-digit code; try again)" >&2
+  done
+
+  local creds
+  creds=$(env -u AWS_PROFILE aws sts get-session-token \
+    --serial-number "$ROCKPORT_ADMIN_MFA_SERIAL" \
+    --token-code "$code" \
+    --duration-seconds 3600 \
+    --output json) || die "sts:GetSessionToken failed for rockport-admin"
+
+  local access_key secret_key session_token expiration
+  access_key=$(echo "$creds"    | jq -r '.Credentials.AccessKeyId')
+  secret_key=$(echo "$creds"    | jq -r '.Credentials.SecretAccessKey')
+  session_token=$(echo "$creds" | jq -r '.Credentials.SessionToken')
+  expiration=$(echo "$creds"    | jq -r '.Credentials.Expiration')
+  [[ -n "$access_key" && "$access_key" != "null" ]] || die "Failed to parse sts:GetSessionToken response"
+
+  aws configure set aws_access_key_id "$access_key" --profile "$profile"
+  aws configure set aws_secret_access_key "$secret_key" --profile "$profile"
+  aws configure set aws_session_token "$session_token" --profile "$profile"
+  aws configure set aws_session_expiration "$expiration" --profile "$profile"
+  aws configure set region "$(get_region 2>/dev/null || echo eu-west-2)" --profile "$profile"
+  aws configure set output json --profile "$profile"
+
+  export AWS_PROFILE="$profile"
+  echo "  Assumed rockport-admin (MFA) until ${expiration}" >&2
+}
+
 # Idempotent: ensures AWS_PROFILE points at a valid session for the requested
 # operator role. Refreshes via assume_role if expired or missing.
 #
@@ -866,6 +918,13 @@ cmd_init() {
       exit 1
     fi
   done
+
+  # 018: every admin operation requires an MFA-derived session. The
+  # RockportAdmin policy explicit-denies all actions outside a small
+  # safe-list (sts:GetSessionToken, MFA management, self-introspection)
+  # when aws:MultiFactorAuthPresent is false. admin_mfa_session() mints
+  # the session via sts:GetSessionToken and exports AWS_PROFILE.
+  admin_mfa_session
 
   if [[ -f "$TERRAFORM_DIR/terraform.tfvars" ]]; then
     echo "Existing terraform.tfvars found."
