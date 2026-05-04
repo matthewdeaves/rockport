@@ -35,7 +35,9 @@ jobs:
         working-directory: terraform
 
       - name: ShellCheck
-        run: shellcheck scripts/*.sh tests/*.sh
+        # -x lets shellcheck follow `source "$SCRIPT_DIR/lib/*.sh"` directives,
+        # silencing SC1091 ("not following") on the lib split (019).
+        run: shellcheck -x scripts/*.sh scripts/lib/*.sh tests/*.sh
 
       - name: Auth flow tests (017)
         run: bash tests/auth-flow-test.sh
