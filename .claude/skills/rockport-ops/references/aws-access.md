@@ -44,11 +44,21 @@ a different role or when a session expires.
   mutation lives only on `RockportAdmin`.
 - **Subcommands:** `deploy`, `destroy`
 
-### Admin (default credential chain, no `AWS_PROFILE` set)
+### Admin (MFA-derived session, profile `rockport-admin-mfa`)
 - **Used for:** `rockport.sh init` only — the bootstrap path that creates
   policies and users before operator roles exist
 - **User:** `rockport-admin` (shared with Appserver in this AWS account)
-- **Policy:** `RockportAdmin` (auto-created by init)
+- **Policy:** `RockportAdmin` (auto-created by init). Includes
+  `DenyAllWithoutMFA` (018): every action except a tiny safe-list
+  (`sts:GetSessionToken`, MFA management, `iam:GetUser`, `ChangePassword`,
+  `iam:ListAccessKeys`, `sts:GetCallerIdentity`) is denied when
+  `aws:MultiFactorAuthPresent` is false. A leaked access key is therefore
+  useless without the MFA second factor.
+- **Auth flow:** `rockport.sh init` calls `admin_mfa_session()` first —
+  reads `ROCKPORT_ADMIN_MFA_SERIAL` from `terraform/.env`, prompts for TOTP,
+  mints a 1-hour session via `sts:GetSessionToken`, caches it under the
+  `rockport-admin-mfa` profile. Subsequent calls within the hour reuse the
+  cached session silently.
 
 ## When the CLI prompts for MFA
 
