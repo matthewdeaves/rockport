@@ -3,7 +3,10 @@
 die() { echo "ERROR: $*" >&2; exit 1; }
 
 MASTER_KEY_SSM_PATH="/rockport/master-key"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Use BASH_SOURCE so SCRIPT_DIR resolves to scripts/ even when sourced (e.g.
+# from tests/auth-flow-test.sh). $0 falls back to "bash" when sourced via
+# `bash -c 'source ...'`, breaking the relative cd.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 TERRAFORM_DIR="$(cd "$SCRIPT_DIR/../terraform" && pwd)" || { echo "ERROR: terraform/ directory not found" >&2; exit 1; }
 CONFIG_DIR="$(cd "$SCRIPT_DIR/../config" && pwd)" || { echo "ERROR: config/ directory not found" >&2; exit 1; }
 ENV_FILE="$TERRAFORM_DIR/.env"
@@ -37,10 +40,204 @@ claude_models() {
   printf '%s\n' "$raw" | jq -R . | jq -s -c .
 }
 
-# Use the rockport AWS profile if it exists and no profile is already set
-if [[ -z "${AWS_PROFILE:-}" ]] && aws configure list-profiles 2>/dev/null | grep -q '^rockport$'; then
-  export AWS_PROFILE=rockport
-fi
+# --- 017: per-subcommand role assumption (MFA-gated STS) ---
+#
+# Map top-level subcommands to operator roles. Special values:
+#   admin — bypass the auth flow and use the default credential chain
+#           (used by `init` which bootstraps IAM before roles exist)
+#   meta  — auth subcommand handles its own session lifecycle
+#
+# `_resolve_role` consults flags for nuanced cases (e.g. status --instance
+# escalates to runtime-ops).
+declare -A SUBCOMMAND_ROLE=(
+  [init]=admin
+  [auth]=meta
+  [status]=readonly
+  [models]=readonly
+  [spend]=readonly
+  [monitor]=readonly
+  [key]=readonly
+  [setup-claude]=readonly
+  [logs]=runtime-ops
+  [config]=runtime-ops
+  [upgrade]=runtime-ops
+  [start]=runtime-ops
+  [stop]=runtime-ops
+  [deploy]=deploy
+  [destroy]=deploy
+)
+
+_resolve_role() {
+  local subcmd="$1"; shift
+  local role="${SUBCOMMAND_ROLE[$subcmd]:-}"
+  [[ -z "$role" ]] && { echo "readonly"; return 0; }
+  # status --instance escalates to runtime-ops (needs ssm:SendCommand)
+  if [[ "$subcmd" == "status" ]]; then
+    for arg in "$@"; do
+      [[ "$arg" == "--instance" ]] && { echo "runtime-ops"; return 0; }
+    done
+  fi
+  echo "$role"
+}
+
+# Returns 0 if the AWS profile $1 has a usable session token whose expiry is
+# more than 5 minutes from now. Returns 1 otherwise.
+_session_valid() {
+  local profile="$1"
+  aws configure list-profiles 2>/dev/null | grep -q "^${profile}$" || return 1
+  local expiration
+  expiration=$(aws configure get aws_session_expiration --profile "$profile" 2>/dev/null) || return 1
+  [[ -z "$expiration" ]] && return 1
+  local exp_epoch now_epoch
+  exp_epoch=$(date -d "$expiration" +%s 2>/dev/null) || return 1
+  now_epoch=$(date +%s)
+  (( exp_epoch - now_epoch > 300 ))
+}
+
+# Mints a 1-hour STS session for one of the operator roles. Prompts for the
+# operator's TOTP code; reads MFA_SERIAL_NUMBER from terraform/.env. Writes
+# creds under the rockport-<role> profile and exports AWS_PROFILE.
+assume_role() {
+  local role="$1"
+  local profile="rockport-${role}"
+  local role_name="rockport-${role}-role"
+
+  load_env
+  if [[ -z "${MFA_SERIAL_NUMBER:-}" ]]; then
+    die "MFA_SERIAL_NUMBER not set. Add it to terraform/.env after enrolling MFA on rockport-deployer (see specs/017-iam-mfa-scoping/HANDOFF.md phase 2)."
+  fi
+
+  local account_id
+  account_id=$(env -u AWS_PROFILE aws sts get-caller-identity --profile rockport --query Account --output text 2>/dev/null) \
+    || die "Could not get account ID via the long-lived rockport profile. Configure ~/.aws/credentials [rockport] first or run rockport.sh init."
+
+  local role_arn="arn:aws:iam::${account_id}:role/${role_name}"
+  local session_name
+  session_name="${role//-/_}_$(date +%s)"
+
+  local code=""
+  while [[ ! "$code" =~ ^[0-9]{6}$ ]]; do
+    read -rsp "TOTP code for ${role_name}: " code
+    echo
+    [[ ! "$code" =~ ^[0-9]{6}$ ]] && echo "  (need a 6-digit code; try again)" >&2
+  done
+
+  local creds
+  creds=$(env -u AWS_PROFILE aws sts assume-role \
+    --profile rockport \
+    --role-arn "$role_arn" \
+    --role-session-name "$session_name" \
+    --serial-number "$MFA_SERIAL_NUMBER" \
+    --token-code "$code" \
+    --duration-seconds 3600 \
+    --output json) || die "sts:AssumeRole failed for ${role_name}"
+
+  local access_key secret_key session_token expiration
+  access_key=$(echo "$creds"    | jq -r '.Credentials.AccessKeyId')
+  secret_key=$(echo "$creds"    | jq -r '.Credentials.SecretAccessKey')
+  session_token=$(echo "$creds" | jq -r '.Credentials.SessionToken')
+  expiration=$(echo "$creds"    | jq -r '.Credentials.Expiration')
+  [[ -n "$access_key" && "$access_key" != "null" ]] || die "Failed to parse sts:AssumeRole response"
+
+  aws configure set aws_access_key_id "$access_key" --profile "$profile"
+  aws configure set aws_secret_access_key "$secret_key" --profile "$profile"
+  aws configure set aws_session_token "$session_token" --profile "$profile"
+  aws configure set aws_session_expiration "$expiration" --profile "$profile"
+  aws configure set region "$(get_region 2>/dev/null || echo us-east-1)" --profile "$profile"
+  aws configure set output json --profile "$profile"
+
+  export AWS_PROFILE="$profile"
+  echo "  Assumed ${role_name} until ${expiration}" >&2
+}
+
+# Idempotent: ensures AWS_PROFILE points at a valid session for the requested
+# operator role. Refreshes via assume_role if expired or missing.
+#
+# Phase 5 (017) cutover: the legacy long-lived `rockport` profile fallback
+# has been removed. Every operator-role subcommand now requires an
+# MFA-derived STS session.
+ensure_session_valid_for_role() {
+  local role="$1"
+  [[ "${ROCKPORT_AUTH_DISABLED:-0}" == "1" ]] && return 0
+
+  local profile="rockport-${role}"
+  if _session_valid "$profile"; then
+    export AWS_PROFILE="$profile"
+    return 0
+  fi
+
+  assume_role "$role"
+}
+
+# Top-level dispatcher hook: figure out which role this subcommand needs,
+# then either bypass (admin/meta) or refresh the session.
+_ensure_role_for_subcommand() {
+  local subcmd="$1"; shift
+  [[ "${ROCKPORT_AUTH_DISABLED:-0}" == "1" ]] && return 0
+  local role
+  role="$(_resolve_role "$subcmd" "$@")"
+  case "$role" in
+    admin|meta) return 0 ;;
+    readonly|runtime-ops|deploy) ensure_session_valid_for_role "$role" ;;
+    *) die "Internal error: unknown role '$role' for subcommand '$subcmd'" ;;
+  esac
+}
+
+cmd_auth() {
+  local role=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --role) role="${2:?--role requires a name}"; shift 2 ;;
+      status) shift; _cmd_auth_status "$@"; return ;;
+      *) echo "Unknown auth option: $1"; echo "Usage: rockport auth [--role <readonly|runtime-ops|deploy>] | rockport auth status"; exit 1 ;;
+    esac
+  done
+  if [[ -z "$role" ]]; then
+    read -rp "Role to assume [readonly]: " role
+    role="${role:-readonly}"
+  fi
+  case "$role" in
+    readonly|runtime-ops|deploy) assume_role "$role" ;;
+    *) die "Unknown role: $role (must be readonly, runtime-ops, or deploy)" ;;
+  esac
+}
+
+_cmd_auth_status() {
+  echo "Cached operator-role sessions:"
+  local active="${AWS_PROFILE:-<unset>}"
+  for role in readonly runtime-ops deploy; do
+    local profile="rockport-${role}"
+    local marker=" "
+    [[ "$profile" == "$active" ]] && marker="*"
+    if aws configure list-profiles 2>/dev/null | grep -q "^${profile}$"; then
+      local expiration
+      expiration=$(aws configure get aws_session_expiration --profile "$profile" 2>/dev/null) || expiration=""
+      if [[ -n "$expiration" ]]; then
+        local exp_epoch now_epoch remaining
+        exp_epoch=$(date -d "$expiration" +%s 2>/dev/null) || exp_epoch=0
+        now_epoch=$(date +%s)
+        remaining=$(( exp_epoch - now_epoch ))
+        if (( remaining > 0 )); then
+          printf "  %s %-20s valid for %d min (until %s)\n" "$marker" "$profile" "$((remaining / 60))" "$expiration"
+        else
+          printf "  %s %-20s expired (%s)\n" "$marker" "$profile" "$expiration"
+        fi
+      else
+        printf "  %s %-20s present but no expiration recorded\n" "$marker" "$profile"
+      fi
+    else
+      printf "    %-20s not yet assumed\n" "$profile"
+    fi
+  done
+  echo
+  echo "Active AWS_PROFILE: ${active}"
+}
+
+# Phase 5 (017): the legacy "auto-pick rockport profile if present" behaviour
+# is intentionally gone. AWS_PROFILE is set per-subcommand by
+# _ensure_role_for_subcommand, which assumes the right operator role with MFA.
+# The only escape hatch is ROCKPORT_AUTH_DISABLED=1 (used by the bootstrap
+# `init` flow on a fresh account, where operator roles don't yet exist).
 
 # --- Helper functions ---
 
@@ -412,6 +609,27 @@ attach_iam_policy() {
   fi
 }
 
+# Detach an IAM policy from a user if currently attached. Idempotent —
+# silently no-op when the user doesn't exist or the policy isn't attached.
+detach_iam_policy() {
+  local user="$1" name="$2" account_id="$3" reason="${4:-}"
+  local arn="arn:aws:iam::${account_id}:policy/${name}"
+
+  aws iam get-user --user-name "$user" &>/dev/null || return 0
+  local attached
+  attached=$(aws iam list-attached-user-policies --user-name "$user" \
+    --query "AttachedPolicies[?PolicyArn=='$arn']" --output text 2>/dev/null) || attached=""
+  if echo "$attached" | grep -q "$name"; then
+    aws iam detach-user-policy --user-name "$user" --policy-arn "$arn" \
+      || die "Failed to detach policy $name from $user"
+    if [[ -n "$reason" ]]; then
+      echo "  Policy attachment .... detached ($name → $user, $reason)"
+    else
+      echo "  Policy attachment .... detached ($name → $user)"
+    fi
+  fi
+}
+
 ensure_deployer_access() {
   local deployer_user="rockport-deployer"
   local policy_dir="$TERRAFORM_DIR/deployer-policies"
@@ -443,12 +661,49 @@ ensure_deployer_access() {
   attach_iam_policy "$caller_user" "RockportAdmin" "$account_id"
 
   # --- Deployer policies ---
-  local policy_names=("RockportDeployerCompute" "RockportDeployerIamSsm" "RockportDeployerMonitoringStorage")
-  local policy_files=("$policy_dir/compute.json" "$policy_dir/iam-ssm.json" "$policy_dir/monitoring-storage.json")
+  # The three legacy "deployer" policies still attach directly to the deploy
+  # role (rockport-deploy-role) and, through phase 4 of spec 017, to the
+  # rockport-deployer USER as a fallback. Phase 5 detaches them from the user.
+  #
+  # The two operator-tier policies (RockportOperatorReadonly, ...RuntimeOps)
+  # back rockport-readonly-role and rockport-runtime-ops-role respectively.
+  # They are referenced by terraform/iam-operator-roles.tf via ARN.
+  #
+  # RockportDeployerAssumeRoles is the policy that attaches to the deployer
+  # USER (phase 2 onwards) and grants MFA-conditioned sts:AssumeRole on the
+  # three operator roles.
+  local policy_names=(
+    "RockportDeployerCompute"
+    "RockportDeployerIamSsm"
+    "RockportDeployerMonitoringStorage"
+    "RockportOperatorReadonly"
+    "RockportOperatorRuntimeOps"
+    "RockportDeployerAssumeRoles"
+  )
+  local policy_files=(
+    "$policy_dir/compute.json"
+    "$policy_dir/iam-ssm.json"
+    "$policy_dir/monitoring-storage.json"
+    "$policy_dir/readonly.json"
+    "$policy_dir/runtime-ops.json"
+    "$policy_dir/assume-roles.json"
+  )
 
   for i in "${!policy_names[@]}"; do
     upsert_iam_policy "${policy_names[$i]}" "${policy_files[$i]}" "$account_id"
   done
+
+  # Subset of the policies that actually attach to USERS in phase 1.
+  # Operator-tier policies (RockportOperator*) only attach to roles via
+  # terraform; they are NOT user-attached.
+  # RockportDeployerAssumeRoles attaches only to rockport-deployer (phase 2);
+  # rockport-admin doesn't need the indirection — admin already has direct
+  # broad permissions.
+  local user_policy_names=(
+    "RockportDeployerCompute"
+    "RockportDeployerIamSsm"
+    "RockportDeployerMonitoringStorage"
+  )
 
   # --- Deployer user ---
   if aws iam get-user --user-name "$deployer_user" &>/dev/null; then
@@ -459,13 +714,20 @@ ensure_deployer_access() {
     echo "  IAM user ............. created ($deployer_user)"
   fi
 
-  # Attach deployer policies to both the deployer user and the calling user
-  # so deploy/destroy work regardless of which user runs them
-  for user in "$deployer_user" "$caller_user"; do
-    for i in "${!policy_names[@]}"; do
-      attach_iam_policy "$user" "${policy_names[$i]}" "$account_id"
-    done
+  # Phase 5 (017) cutover: rockport-deployer holds ONLY RockportDeployerAssumeRoles.
+  # The three legacy direct-attachments are removed — the deploy operator role
+  # is the only path to deployer-tier permissions. The calling admin user
+  # keeps the legacy policies attached so admin can still execute emergency
+  # direct-deploys without the role assumption flow (and so init itself works
+  # in the bootstrap chicken-and-egg).
+  for i in "${!user_policy_names[@]}"; do
+    attach_iam_policy "$caller_user" "${user_policy_names[$i]}" "$account_id"
+    detach_iam_policy "$deployer_user" "${user_policy_names[$i]}" "$account_id" "phase-5 cutover"
   done
+
+  # rockport-deployer's only attachment after phase 5 is the AssumeRoles
+  # policy. Idempotent.
+  attach_iam_policy "$deployer_user" "RockportDeployerAssumeRoles" "$account_id"
 
   local existing_keys
   existing_keys=$(aws iam list-access-keys --user-name "$deployer_user" --query 'length(AccessKeyMetadata)' --output text) \
@@ -704,6 +966,18 @@ EOF
 }
 
 cmd_status() {
+  # 017: --instance flag asks for the in-VM resource block (free/uptime/nproc),
+  # which requires ssm:SendCommand. The dispatcher has already escalated us to
+  # runtime-ops if the flag is present; without it we run under readonly and
+  # the SSM probe is skipped (FR-008 graceful degradation).
+  local include_instance=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --instance) include_instance=true; shift ;;
+      *) echo "Unknown status option: $1"; exit 1 ;;
+    esac
+  done
+
   local url key
   url="$(get_tunnel_url)"
   key="$(get_master_key)"
@@ -821,26 +1095,33 @@ cmd_status() {
     done
   fi
 
-  # Instance resource usage via SSM
-  echo ""
-  echo "Instance:"
-  local stats
-  stats=$(ssm_run "free -m && echo === && uptime && echo === && nproc" 30 2>/dev/null) || stats=""
-  if [[ -n "$stats" ]]; then
-    local mem_used mem_total mem_pct swap_used swap_total load cpus upstr
-    mem_total=$(echo "$stats" | awk '/^Mem:/{print $2}')
-    mem_used=$(echo "$stats" | awk '/^Mem:/{print $3}')
-    swap_total=$(echo "$stats" | awk '/^Swap:/{print $2}')
-    swap_used=$(echo "$stats" | awk '/^Swap:/{print $3}')
-    mem_pct=$((mem_used * 100 / mem_total))
-    load=$(echo "$stats" | grep "load average" | sed 's/.*load average: //')
-    cpus=$(echo "$stats" | tail -1)
-    upstr=$(echo "$stats" | grep "load average" | sed 's/.*up //;s/,.*load.*//')
-    echo "  Memory:   ${mem_used}/${mem_total}MB (${mem_pct}%)  Swap: ${swap_used}/${swap_total}MB"
-    echo "  CPU:      load ${load} (${cpus} vCPU)"
-    echo "  Uptime:   ${upstr}"
+  # Instance resource usage via SSM (017: only with --instance; otherwise
+  # we are running under readonly which has no ssm:SendCommand).
+  if [[ "$include_instance" == "true" ]]; then
+    echo ""
+    echo "Instance:"
+    local stats
+    stats=$(ssm_run "free -m && echo === && uptime && echo === && nproc" 30 2>/dev/null) || stats=""
+    if [[ -n "$stats" ]]; then
+      local mem_used mem_total mem_pct swap_used swap_total load cpus upstr
+      mem_total=$(echo "$stats" | awk '/^Mem:/{print $2}')
+      mem_used=$(echo "$stats" | awk '/^Mem:/{print $3}')
+      swap_total=$(echo "$stats" | awk '/^Swap:/{print $2}')
+      swap_used=$(echo "$stats" | awk '/^Swap:/{print $3}')
+      mem_pct=$((mem_used * 100 / mem_total))
+      load=$(echo "$stats" | grep "load average" | sed 's/.*load average: //')
+      cpus=$(echo "$stats" | tail -1)
+      upstr=$(echo "$stats" | grep "load average" | sed 's/.*up //;s/,.*load.*//')
+      echo "  Memory:   ${mem_used}/${mem_total}MB (${mem_pct}%)  Swap: ${swap_used}/${swap_total}MB"
+      echo "  CPU:      load ${load} (${cpus} vCPU)"
+      echo "  Uptime:   ${upstr}"
+    else
+      echo "  (could not retrieve instance stats)"
+    fi
   else
-    echo "  (could not retrieve instance stats)"
+    echo ""
+    echo "Instance:"
+    echo "  (instance stats require runtime-ops role; rerun with: rockport.sh status --instance)"
   fi
 }
 
@@ -1827,8 +2108,10 @@ Usage: rockport <command> [args]
 
 Commands:
   init                Interactive setup — creates terraform.tfvars and master key
+  auth                Authenticate via MFA-gated STS [--role readonly|runtime-ops|deploy]
+  auth status         Show cached operator-role sessions and time remaining
   deploy              Run terraform apply [--guardrails] [--no-guardrails]
-  status              Check service health and model list
+  status [--instance] Check service health and model list (--instance: includes in-VM stats; escalates to runtime-ops)
   models              List available models
   key create <name>   Create a new API key [--budget <amount>] [--claude-only]
   key list            List all API keys with spend
@@ -1854,6 +2137,14 @@ EOF
 # All commands need these tools
 check_dependencies
 
+# 017: resolve the right operator role for this subcommand and ensure the
+# AWS_PROFILE points at a fresh STS session before any AWS API calls. Skipped
+# when ROCKPORT_AUTH_DISABLED=1 (first-ever bootstrap escape hatch).
+case "${1:-}" in
+  -h|--help|"") : ;;
+  *) _ensure_role_for_subcommand "${1:-}" "${@:2}" ;;
+esac
+
 # Pre-cache CF Access credentials for commands that make API calls
 case "${1:-}" in
   status|key|models|spend|monitor|setup-claude)
@@ -1864,7 +2155,8 @@ esac
 
 case "${1:-}" in
   init)     cmd_init ;;
-  status)   cmd_status ;;
+  auth)     cmd_auth "${@:2}" ;;
+  status)   cmd_status "${@:2}" ;;
   key)
     case "${2:-}" in
       create) cmd_key_create "${@:3}" ;;

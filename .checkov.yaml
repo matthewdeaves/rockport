@@ -28,6 +28,23 @@ skip-check:
   # aws-marketplace:ViewSubscriptions also requires wildcard.
   - CKV_AWS_355  # IAM wildcard resource (required for describe/list actions)
 
+  # --- IAM operator deploy boundary (017) ---
+  # The rockport-deploy-role permissions BOUNDARY (data.aws_iam_policy_document.operator_deploy_boundary
+  # in iam-operator-roles.tf) is intentionally coarse — it's an upper bound, not a grant.
+  # Effective permissions = intersection(boundary, attached managed policies). The actual
+  # grants are in terraform/deployer-policies/{compute,iam-ssm,monitoring-storage}.json,
+  # which are resource-scoped (rockport* tags / role names / bucket prefixes / instance ARNs).
+  # The boundary also carries an EXPLICIT DENY on iam:CreatePolicy*, iam:CreateUser,
+  # iam:AttachUserPolicy, iam:CreateAccessKey, iam:PutUserPolicy, etc. (Finding B from
+  # Appserver 003 — privilege escalation specifically prevented). Each of these checks
+  # fires on the boundary's intentional wildcards.
+  - CKV_AWS_107  # Credentials exposure (boundary explicitly denies iam:CreateAccessKey + UpdateAccessKey)
+  - CKV_AWS_108  # Data exfiltration (s3:*/ec2:* in boundary; resource-scoped grants in attached policy)
+  - CKV_AWS_109  # Permissions management without constraints (boundary denies CreatePolicy/AttachUserPolicy)
+  - CKV_AWS_110  # Privilege escalation (boundary's explicit-deny statement IS the escalation prevention)
+  - CKV_AWS_111  # Write access without constraint (constraints live in attached policies)
+  - CKV_AWS_356  # Wildcard resource on restrictable actions (boundary is coarse by design)
+
   # Triggered by EventBridge (max 1 every 5 min); concurrency limit adds no value
   - CKV_AWS_115  # Lambda concurrent execution limit
 

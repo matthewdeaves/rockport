@@ -11,29 +11,64 @@
         "iam:CreatePolicyVersion",
         "iam:ListPolicyVersions",
         "iam:DeletePolicyVersion",
-        "iam:GetPolicyVersion"
+        "iam:GetPolicyVersion",
+        "iam:SetDefaultPolicyVersion",
+        "iam:TagPolicy",
+        "iam:UntagPolicy"
       ],
       "Resource": [
         "arn:aws:iam::*:policy/RockportDeployer*",
+        "arn:aws:iam::*:policy/RockportOperator*",
         "arn:aws:iam::*:policy/RockportAdmin"
       ]
+    },
+    {
+      "Sid": "ListPoliciesForAudit",
+      "Effect": "Allow",
+      "Action": "iam:ListPolicies",
+      "Resource": "*"
     },
     {
       "Sid": "ManageDeployerUser",
       "Effect": "Allow",
       "Action": [
         "iam:CreateUser",
+        "iam:DeleteUser",
         "iam:GetUser",
         "iam:ListAttachedUserPolicies",
         "iam:AttachUserPolicy",
         "iam:DetachUserPolicy",
         "iam:ListAccessKeys",
-        "iam:CreateAccessKey"
+        "iam:CreateAccessKey",
+        "iam:DeleteAccessKey",
+        "iam:UpdateAccessKey"
       ],
       "Resource": [
         "arn:aws:iam::*:user/rockport-deployer",
         "arn:aws:iam::*:user/rockport-admin"
       ]
+    },
+    {
+      "Sid": "ManageDeployerMFA",
+      "Effect": "Allow",
+      "Action": [
+        "iam:ListMFADevices",
+        "iam:EnableMFADevice",
+        "iam:DeactivateMFADevice",
+        "iam:ResyncMFADevice",
+        "iam:CreateVirtualMFADevice",
+        "iam:DeleteVirtualMFADevice"
+      ],
+      "Resource": [
+        "arn:aws:iam::*:user/rockport-deployer",
+        "arn:aws:iam::*:mfa/rockport-*"
+      ]
+    },
+    {
+      "Sid": "ListDeployerMFADevices",
+      "Effect": "Allow",
+      "Action": "iam:ListVirtualMFADevices",
+      "Resource": "*"
     },
     {
       "Sid": "ManageMasterKey",

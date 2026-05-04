@@ -32,41 +32,34 @@
       ]
     },
     {
-      "Sid": "IAMDeployerSelfManage",
+      "Sid": "IAMReadOnlyForDeployer",
       "Effect": "Allow",
       "Action": [
-        "iam:CreatePolicy",
         "iam:GetPolicy",
-        "iam:DeletePolicy",
-        "iam:CreatePolicyVersion",
+        "iam:GetPolicyVersion",
         "iam:ListPolicyVersions",
-        "iam:DeletePolicyVersion",
-        "iam:GetPolicyVersion"
-      ],
-      "Resource": "arn:aws:iam::*:policy/RockportDeployer*"
-    },
-    {
-      "Sid": "IAMDeployerUserManage",
-      "Effect": "Allow",
-      "Action": [
-        "iam:CreateUser",
         "iam:GetUser",
         "iam:ListAttachedUserPolicies",
-        "iam:AttachUserPolicy",
-        "iam:DetachUserPolicy",
-        "iam:ListAccessKeys",
-        "iam:CreateAccessKey"
+        "iam:ListAccessKeys"
       ],
-      "Resource": "arn:aws:iam::*:user/rockport-deployer"
+      "Resource": [
+        "arn:aws:iam::*:policy/RockportDeployer*",
+        "arn:aws:iam::*:policy/RockportOperator*",
+        "arn:aws:iam::*:policy/RockportAdmin",
+        "arn:aws:iam::*:user/rockport-deployer"
+      ]
     },
     {
-      "Sid": "DenyNonRockportPolicyAttachment",
+      "Sid": "DenyNonRockportPolicyAttachmentToRockportRoles",
       "Effect": "Deny",
       "Action": [
         "iam:AttachRolePolicy",
         "iam:DetachRolePolicy"
       ],
-      "Resource": "*",
+      "Resource": [
+        "arn:aws:iam::*:role/rockport*",
+        "arn:aws:iam::*:role/dlm-lifecycle-*"
+      ],
       "Condition": {
         "StringNotLike": {
           "iam:PolicyARN": [
@@ -75,6 +68,20 @@
             "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
             "arn:aws:iam::aws:policy/service-role/AWSDataLifecycleManagerServiceRole"
           ]
+        }
+      }
+    },
+    {
+      "Sid": "DenyAttachToInstanceRoleExceptAllowed",
+      "Effect": "Deny",
+      "Action": [
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy"
+      ],
+      "Resource": "arn:aws:iam::*:role/rockport-instance-role",
+      "Condition": {
+        "ArnNotEquals": {
+          "iam:PolicyARN": "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
         }
       }
     },

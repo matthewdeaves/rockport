@@ -1,52 +1,88 @@
 # AWS Access and IAM
 
-How Rockport's two-tier IAM model works and which profile to use for what.
+How Rockport's IAM model works and which role to use for what. Hardened in
+spec 017 to MFA-gated short-lived STS sessions across three operator roles.
 
-## Profiles
+## Operator roles (017)
 
-### Deployer Profile (`AWS_PROFILE=rockport`)
-- **Used for:** All routine operations (diagnostics, deploy, key management, config push, spend)
-- **User:** `rockport-deployer` IAM user
-- **Created by:** `rockport.sh init`
-- **Policies:** 3 deployer policies (compute, iam-ssm, monitoring-storage)
+The CLI maps every subcommand to one of three operator roles via
+`SUBCOMMAND_ROLE` in `scripts/rockport.sh`. Each role is assumed via
+MFA-gated `sts:AssumeRole`; sessions are 1 hour. Run
+`./scripts/rockport.sh auth` once at session start; subsequent subcommands
+reuse the cached session and only prompt for MFA again when escalating to
+a different role or when a session expires.
 
-### Admin Profile (default / no AWS_PROFILE)
-- **Used for:** Bootstrap only (`rockport.sh init`)
-- **User:** Your personal IAM user (must have admin-level access)
-- **Policy:** `rockport-admin-policy.json` (auto-created by init)
+### `rockport-readonly-role`
+- **Used for:** diagnostics, model list, spend, monitor, key CRUD (HTTP
+  to LiteLLM), `setup-claude`, `pentest`
+- **Permissions:** EC2/SSM/CloudWatch/Logs/S3/CloudTrail read; SSM
+  `GetParameter` on `/rockport/*`; CE `GetCostAndUsage`. **No
+  `ssm:SendCommand`** (FR-008 / Finding A from Appserver 003 — readonly
+  must not be silently root-on-the-box). **No IAM, no mutate.**
+- **Subcommands:** `status` (without `--instance`), `models`, `spend`,
+  `monitor`, `key list/info/create/revoke`, `setup-claude`
 
-## When to Use Each
+### `rockport-runtime-ops-role`
+- **Used for:** in-VM operations that need shell on the instance
+- **Permissions:** everything in readonly + `ssm:SendCommand` /
+  `StartSession` on the rockport-tagged instance with documents
+  `AWS-RunShellScript` and `AWS-StartInteractiveCommand`;
+  `ec2:StartInstances`/`StopInstances` on the tagged instance;
+  `s3:PutObject`/`DeleteObject` on `rockport-artifacts-*` and
+  `rockport-video-*`
+- **Subcommands:** `config push`, `upgrade`, `start`, `stop`, `logs`,
+  `status --instance`
 
-### Use Deployer (default for rockport-ops)
+### `rockport-deploy-role`
+- **Used for:** terraform apply / destroy
+- **Permissions:** the three legacy deployer policies (compute,
+  iam-ssm, monitoring-storage). The role boundary explicitly **denies**
+  `iam:CreatePolicy*`, `iam:DeletePolicy*`, `iam:CreatePolicyVersion`,
+  `iam:CreateUser`, `iam:AttachUserPolicy`, `iam:CreateAccessKey`
+  (Finding B from Appserver 003 — a compromised deploy session can't
+  rewrite its own boundary or mint access keys). IAM-policy and IAM-user
+  mutation lives only on `RockportAdmin`.
+- **Subcommands:** `deploy`, `destroy`
 
-Almost everything:
-- `aws ec2 describe-instances` (instance status)
-- `aws ssm send-command` / `describe-instance-information` (remote commands)
-- `aws ssm get-parameter` (read secrets like master key)
-- `aws s3 cp` (upload/download artifacts)
-- `aws cloudwatch describe-alarms` (alarm status)
-- `aws logs filter-log-events` (Lambda logs)
-- `aws ce get-cost-and-usage` (spend data)
-- `terraform plan` / `terraform apply` / `terraform destroy`
-- All `rockport.sh` commands except `init`
+### Admin (default credential chain, no `AWS_PROFILE` set)
+- **Used for:** `rockport.sh init` only — the bootstrap path that creates
+  policies and users before operator roles exist
+- **User:** `rockport-admin` (shared with Appserver in this AWS account)
+- **Policy:** `RockportAdmin` (auto-created by init)
 
-### Use Admin (escalation only)
+## When the CLI prompts for MFA
 
-Only when the issue involves:
-- Creating or modifying IAM policies (e.g., adding a new Bedrock model family to the instance role)
-- Creating or modifying IAM users
-- Managing the state bucket DenyNonSSL policy
-- First-time setup (`rockport.sh init`)
+You only get a TOTP prompt when:
+- The role for this subcommand has no cached `rockport-<role>` profile, OR
+- The cached session is within 5 minutes of expiry / already expired
 
-**To escalate:** Unset the deployer profile:
-```bash
-unset AWS_PROFILE
-# Now commands use the default credential chain (your admin user)
-```
+Cached sessions are reused silently. `rockport.sh auth status` shows
+which roles have valid sessions and how much time is left.
 
-**Rockport-ops should almost never need admin.** If a fix requires IAM policy changes, those changes should go through terraform (which runs as the deployer), not manual IAM API calls.
+The legacy long-lived `rockport` profile is no longer auto-used (phase 5
+of the 017 rollout). Subcommands either run under an MFA-derived
+`rockport-<role>` session, or — for the bootstrap path only — under the
+default credential chain when `ROCKPORT_AUTH_DISABLED=1` is set.
 
-## Deployer Capabilities Detail
+## Escape hatch: `ROCKPORT_AUTH_DISABLED=1`
+
+For the very first `rockport.sh init` on a fresh AWS account (when
+operator roles don't exist yet), set `ROCKPORT_AUTH_DISABLED=1` to skip
+role assumption entirely. The CLI then uses the default credential chain.
+This is documented in `specs/017-iam-mfa-scoping/HANDOFF.md`.
+
+## Cross-project safety
+
+`rockport-admin` is shared with Appserver (matthewdeaves/appserver) in
+the same AWS account. Rockport's `iam-ssm.json` deny is resource-scoped
+to `arn:aws:iam::*:role/rockport*` so it does NOT block Appserver IAM
+operations. If you reintroduce a similar deny in Rockport's policies,
+keep it Resource-scoped — never Resource: `*`.
+
+## Capabilities detail (deploy role)
+
+The deploy role inherits the three legacy deployer policies, with the
+boundary explicitly denying IAM-policy / IAM-user / access-key mutation.
 
 ### Compute (deployer-policies/compute.json)
 - EC2: Full describe, create/modify/terminate with `Project=rockport` tag
@@ -54,10 +90,14 @@ unset AWS_PROFILE
 - DLM: Lifecycle policy management (EBS snapshots)
 
 ### IAM + SSM (deployer-policies/iam-ssm.json)
-- IAM: Manage `rockport*` roles, instance profiles, policies
+- IAM: Manage `rockport*` roles, instance profiles. Read-only on the
+  policies that bound the role itself (no policy mutation —
+  `iam:CreatePolicyVersion` etc. were removed in 017 / Finding B).
 - SSM: SendCommand + StartSession to rockport-tagged instances
 - SSM documents: Only `AWS-RunShellScript` and `AWS-StartInteractiveCommand`
-- **Security:** Explicit Deny on AttachRolePolicy/DetachRolePolicy for non-Rockport policies
+- **Security:** Explicit Deny on `AttachRolePolicy`/`DetachRolePolicy`
+  scoped to Rockport roles (017 / D8 — does not affect Appserver-* roles
+  in the shared account). Belt-and-braces `DenyAttachToInstanceRole`.
 
 ### Monitoring + Storage (deployer-policies/monitoring-storage.json)
 - CloudWatch: Logs, alarms, EventBridge for `rockport-*` resources
@@ -95,11 +135,14 @@ aws ssm get-command-invocation \
 
 ## Terraform Credentials
 
-Terraform uses the deployer profile. The backend config is in `terraform/`:
+Terraform uses the deploy operator role (017). Don't invoke `terraform`
+directly — go through `rockport.sh deploy` / `destroy`, which assumes
+`rockport-deploy-role` first:
+
 ```bash
-cd $PROJECT_ROOT/terraform
-AWS_PROFILE=rockport terraform plan
-AWS_PROFILE=rockport terraform apply
+cd $PROJECT_ROOT
+./scripts/rockport.sh deploy   # prompts for MFA on first call this hour
+./scripts/rockport.sh destroy
 ```
 
 The Cloudflare API token is in `terraform/.env` (gitignored):

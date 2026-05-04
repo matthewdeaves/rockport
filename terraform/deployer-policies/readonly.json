@@ -1,0 +1,200 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EC2Read",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeInstances",
+        "ec2:DescribeInstanceStatus",
+        "ec2:DescribeInstanceTypes",
+        "ec2:DescribeImages",
+        "ec2:DescribeVpcs",
+        "ec2:DescribeVpcAttribute",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeNetworkInterfaces",
+        "ec2:DescribeVolumes",
+        "ec2:DescribeAccountAttributes",
+        "ec2:DescribeAvailabilityZones",
+        "ec2:DescribeKeyPairs",
+        "ec2:DescribeTags",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSecurityGroupRules",
+        "ec2:DescribeInstanceAttribute",
+        "ec2:DescribeInstanceCreditSpecifications"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DLMRead",
+      "Effect": "Allow",
+      "Action": [
+        "dlm:GetLifecyclePolicy",
+        "dlm:GetLifecyclePolicies",
+        "dlm:ListTagsForResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SSMReadParams",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParameters"
+      ],
+      "Resource": "arn:aws:ssm:*:*:parameter/rockport/*"
+    },
+    {
+      "Sid": "SSMReadAuxParams",
+      "Effect": "Allow",
+      "Action": "ssm:GetParameter",
+      "Resource": "arn:aws:ssm:*::parameter/aws/service/*"
+    },
+    {
+      "Sid": "SSMReadDescribe",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:DescribeParameters",
+        "ssm:DescribeInstanceInformation",
+        "ssm:GetCommandInvocation",
+        "ssm:ListCommands",
+        "ssm:ListCommandInvocations"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "CloudWatchRead",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:DescribeAlarms",
+        "cloudwatch:DescribeAlarmHistory",
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:GetMetricData",
+        "cloudwatch:ListMetrics",
+        "cloudwatch:ListTagsForResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "CostExplorer",
+      "Effect": "Allow",
+      "Action": "ce:GetCostAndUsage",
+      "Resource": "*"
+    },
+    {
+      "Sid": "LogsRead",
+      "Effect": "Allow",
+      "Action": [
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams",
+        "logs:GetLogEvents",
+        "logs:FilterLogEvents",
+        "logs:ListTagsForResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "S3ReadOurBuckets",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket",
+        "s3:GetObject",
+        "s3:HeadObject",
+        "s3:GetBucketLocation",
+        "s3:GetBucketTagging",
+        "s3:GetBucketVersioning",
+        "s3:GetEncryptionConfiguration",
+        "s3:GetLifecycleConfiguration",
+        "s3:GetBucketPolicy"
+      ],
+      "Resource": [
+        "arn:aws:s3:::rockport-artifacts-*",
+        "arn:aws:s3:::rockport-artifacts-*/*",
+        "arn:aws:s3:::rockport-tfstate-*",
+        "arn:aws:s3:::rockport-tfstate-*/*",
+        "arn:aws:s3:::rockport-video-*",
+        "arn:aws:s3:::rockport-video-*/*",
+        "arn:aws:s3:::rockport-cloudtrail-*",
+        "arn:aws:s3:::rockport-cloudtrail-*/*"
+      ]
+    },
+    {
+      "Sid": "S3ListBuckets",
+      "Effect": "Allow",
+      "Action": "s3:ListAllMyBuckets",
+      "Resource": "*"
+    },
+    {
+      "Sid": "CloudTrailRead",
+      "Effect": "Allow",
+      "Action": [
+        "cloudtrail:DescribeTrails",
+        "cloudtrail:GetTrailStatus",
+        "cloudtrail:GetTrail",
+        "cloudtrail:GetEventSelectors",
+        "cloudtrail:LookupEvents",
+        "cloudtrail:ListTags"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "LambdaRead",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+        "lambda:GetFunctionCodeSigningConfig",
+        "lambda:GetPolicy",
+        "lambda:ListVersionsByFunction",
+        "lambda:ListTags"
+      ],
+      "Resource": "arn:aws:lambda:*:*:function:rockport-*"
+    },
+    {
+      "Sid": "LambdaList",
+      "Effect": "Allow",
+      "Action": "lambda:ListFunctions",
+      "Resource": "*"
+    },
+    {
+      "Sid": "BudgetsRead",
+      "Effect": "Allow",
+      "Action": [
+        "budgets:DescribeBudget",
+        "budgets:DescribeBudgets",
+        "budgets:ViewBudget",
+        "budgets:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:budgets::*:budget/rockport-*"
+    },
+    {
+      "Sid": "BedrockReadModels",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:ListFoundationModels",
+        "bedrock:GetFoundationModel",
+        "bedrock:ListInferenceProfiles",
+        "bedrock:GetInferenceProfile",
+        "bedrock:ListGuardrails",
+        "bedrock:GetGuardrail"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EventsRead",
+      "Effect": "Allow",
+      "Action": [
+        "events:DescribeRule",
+        "events:ListTargetsByRule",
+        "events:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:events:*:*:rule/rockport-*"
+    },
+    {
+      "Sid": "AccountDiscovery",
+      "Effect": "Allow",
+      "Action": "sts:GetCallerIdentity",
+      "Resource": "*"
+    }
+  ]
+}

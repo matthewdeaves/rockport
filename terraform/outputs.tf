@@ -42,3 +42,18 @@ output "guardrail_version" {
   description = "Bedrock Guardrail version (only set when enable_guardrails = true)"
   value       = var.enable_guardrails ? aws_bedrock_guardrail.rockport[0].version : null
 }
+
+output "operator_readonly_role_arn" {
+  description = "ARN of the rockport-readonly-role operator role (017)"
+  value       = aws_iam_role.operator_readonly.arn
+}
+
+output "operator_runtime_ops_role_arn" {
+  description = "ARN of the rockport-runtime-ops-role operator role (017)"
+  value       = aws_iam_role.operator_runtime_ops.arn
+}
+
+output "operator_deploy_role_arn" {
+  description = "ARN of the rockport-deploy-role operator role (017)"
+  value       = aws_iam_role.operator_deploy.arn
+}
