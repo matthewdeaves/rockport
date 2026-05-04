@@ -136,8 +136,11 @@ run_in_sandbox() {
     cd "'"$sb"'/repo"
     set --
     source "'"$ROCKPORT_SH"'" >/dev/null 2>&1 || true
+    # Neuter ENV_FILE so load_env() cannot re-source the real terraform/.env
+    # and silently undo the test sandboxing of MFA_SERIAL_NUMBER etc.
+    ENV_FILE=/dev/null
     '"$body"'
-  '
+  ' </dev/null
 }
 
 assert_pass() { local label="$1" rc="$2"; if [ "$rc" -eq 0 ]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); FAILED_CASES+=("[fail rc=$rc] $label"); fi; }
