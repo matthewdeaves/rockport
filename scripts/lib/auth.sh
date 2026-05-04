@@ -28,7 +28,17 @@ declare -A SUBCOMMAND_ROLE=(
   [start]=runtime-ops
   [stop]=runtime-ops
   [deploy]=deploy
-  [destroy]=deploy
+  # 021: destroy runs under admin (not deploy). Two reasons:
+  # 1. The deploy boundary explicit-denies iam:DeletePolicy on Resource:*,
+  #    so terraform can't delete the operator boundary policies it itself
+  #    created (Finding-B protection working as designed).
+  # 2. terraform destroys aws_iam_role.operator_deploy mid-run — that
+  #    invalidates the deploy STS session; every subsequent call returns
+  #    InvalidAccessKeyId. Admin's session is independent of any
+  #    terraform-managed role.
+  # rockport-admin user already carries RockportAdmin + the three deployer
+  # policies, so it has every permission terraform destroy needs.
+  [destroy]=admin
 )
 
 _resolve_role() {
@@ -81,7 +91,7 @@ assume_role() {
 
   local code=""
   while [[ ! "$code" =~ ^[0-9]{6}$ ]]; do
-    read -rsp "TOTP code for ${role_name}: " code
+    read -rsp "TOTP code for ${role_name}: " code || die "no TOTP code on stdin (non-interactive shell?)"
     echo
     [[ ! "$code" =~ ^[0-9]{6}$ ]] && echo "  (need a 6-digit code; try again)" >&2
   done
@@ -136,7 +146,7 @@ admin_mfa_session() {
 
   local code=""
   while [[ ! "$code" =~ ^[0-9]{6}$ ]]; do
-    read -rsp "TOTP code for rockport-admin: " code
+    read -rsp "TOTP code for rockport-admin: " code || die "no TOTP code on stdin (non-interactive shell?)"
     echo
     [[ ! "$code" =~ ^[0-9]{6}$ ]] && echo "  (need a 6-digit code; try again)" >&2
   done

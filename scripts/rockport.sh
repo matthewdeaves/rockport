@@ -321,6 +321,12 @@ cmd_deploy() {
 }
 
 cmd_destroy() {
+  # 021: destroy runs under admin (not deploy) so terraform doesn't kill its
+  # own STS session by deleting aws_iam_role.operator_deploy mid-run, and so
+  # iam:DeletePolicy on the operator boundary policies works (the deploy
+  # boundary explicit-denies that action). See SUBCOMMAND_ROLE comment.
+  admin_mfa_session
+
   load_env
   echo "WARNING: This will destroy all Rockport infrastructure."
   read -rp "Type 'yes' to confirm: " confirm
