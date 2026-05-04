@@ -43,7 +43,15 @@ sidecar/                # Video + image services sidecar (FastAPI on port 4001)
   requirements.txt      #   Python dependencies for sidecar
   requirements.lock     #   Hashed lock file (pip-compile --generate-hashes)
 scripts/bootstrap.sh    # EC2 user_data — installs PostgreSQL, LiteLLM, cloudflared, video sidecar
-scripts/rockport.sh     # Admin CLI (init, keys, status, spend, logs, deploy, start/stop)
+scripts/rockport.sh     # Admin CLI dispatcher (init, deploy, destroy + sources lib/*.sh)
+scripts/lib/api.sh      #   Cloudflare tunnel + CF-Access + LiteLLM HTTP helper
+scripts/lib/auth.sh     #   Operator-role auth (017) + admin MFA session (018) + cmd_auth
+scripts/lib/diag.sh     #   cmd_status (HTTP + EC2 health probes) + cmd_models
+scripts/lib/iam.sh      #   IAM policy + deployer-user lifecycle helpers (used by init)
+scripts/lib/keys.sh     #   Virtual API key CRUD + Claude-only allowlist + setup-claude
+scripts/lib/spend.sh    #   Spend reporting + live monitor
+scripts/lib/ssm.sh      #   SSM helpers + cmd_config_push/upgrade/logs/start/stop
+scripts/lib/state.sh    #   Master-key SSM + Terraform state-bucket helpers
 scripts/setup.sh        # Install dev tools (AWS CLI, Terraform, shellcheck, trivy, etc.)
 docs/                   # Architecture diagrams
   rockport_architecture_overview.svg  # System architecture overview
@@ -198,6 +206,7 @@ Known upstream end-of-life dates for models currently in `config/litellm-config.
 - Quality hooks: PreToolUse `pentest-bash-gotchas.sh` checks for common bash pitfalls in pentest scripts
 
 ## Recent Changes
+- **019-rockport-cli-split**: Split the monolithic `scripts/rockport.sh` (~2250 lines) into a slim dispatcher (~460 lines) plus 8 lib files under `scripts/lib/` (api, auth, diag, iam, keys, spend, ssm, state). Pure refactor — no behavior change. CI's shellcheck now uses `-x` to follow source directives. Cuts review surface for future changes (a single subcommand modification touches ≤300 lines instead of scrolling past 2000+).
 - **018-rockport-admin-mfa**: Closes the residual gap from 017 — `rockport-admin`'s long-lived access key is no longer usable without MFA. Added `DenyAllWithoutMFA` to `terraform/rockport-admin-policy.json` (Effect:Deny, NotAction:[GetUser, ChangePassword, MFA-management, sts:GetSessionToken, sts:GetCallerIdentity, ListAccessKeys], Resource:*, Condition:`aws:MultiFactorAuthPresent=false`). `rockport.sh init` now calls `admin_mfa_session()` first — reads `ROCKPORT_ADMIN_MFA_SERIAL` from `terraform/.env`, prompts for TOTP, mints a 1-hour session via `sts:GetSessionToken`, caches it under the `rockport-admin-mfa` profile. `ROCKPORT_AUTH_DISABLED=1` still bypasses (true bootstrap on a fresh account where the policy isn't deployed yet). The admin user is shared with Appserver, so a parallel CLI update on the Appserver side is needed for `appserver.sh init` to keep working.
 - **017-iam-mfa-scoping**: MFA-gated short-lived STS sessions across three operator roles (`rockport-readonly-role`, `rockport-runtime-ops-role`, `rockport-deploy-role`). Each role has a permissions boundary; trust policies require `aws:MultiFactorAuthPresent=true` and `aws:MultiFactorAuthAge<3600`; `MaxSessionDuration=3600`. CLI maps subcommands to roles via `SUBCOMMAND_ROLE`; `rockport.sh auth [--role <name>]` prompts for TOTP and caches creds under `rockport-<role>` profile. Readonly has zero `ssm:SendCommand` (Finding A from Appserver 003 — `cmd_status` falls back to HTTP probes; `status --instance` escalates to runtime-ops). Deploy role drops `iam:CreatePolicy*` / `CreateUser` / `AttachUserPolicy` / `CreateAccessKey` (Finding B — IAM mutation moves to `RockportAdmin`, admin-only). Cross-project deny in `iam-ssm.json` is now Resource-scoped to `rockport*` roles so Appserver IAM operations no longer collide. `tests/auth-flow-test.sh` runs in CI; `ROCKPORT_AUTH_DISABLED=1` is the bootstrap escape hatch.
 - **016-security-claude-4-7-upgrade**: LiteLLM 1.82.6 → 1.83.7 (patches 6 advisories including a SQL-injection on the API-key auth path). Added Claude Opus 4.7 via `eu.anthropic.claude-opus-4-7` plus the literal `claude-opus-4-7[1m]` Claude Code runtime alias, both with cache injection. WAF rules now use `var.domain` (no hardcoded hostname). `--claude-only` key allowlist derived at invocation time from `config/litellm-config.yaml`. `/v1/videos/health` now requires Bearer auth (previously anonymous). psycopg2-binary 2.9.11 → 2.9.12. Bedrock retirement calendar documented for Titan Image v2 (2026-06-30), Nova Canvas v1 and Nova Reel v1.1 (both 2026-09-30).
