@@ -407,7 +407,7 @@ Commands:
   monitor             Key status and recent requests [--live] [--interval N] [--count N]
   config push         Push local config to instance and restart
   logs                Stream LiteLLM logs (via SSM)
-  upgrade             Restart LiteLLM service
+  upgrade             Restart LiteLLM + sidecar; --litellm [ver] upgrades LiteLLM in place (keeps DB)
   start               Start a stopped instance (waits for healthy)
   stop                Stop the instance (waits for stopped)
   setup-claude        Create key and show Claude Code config
@@ -459,7 +459,7 @@ case "${1:-}" in
   logs)         cmd_logs ;;
   deploy)       cmd_deploy "${@:2}" ;;
   destroy)      cmd_destroy ;;
-  upgrade)      cmd_upgrade ;;
+  upgrade)      cmd_upgrade "${@:2}" ;;
   start)        cmd_start ;;
   stop)         cmd_stop ;;
   setup-claude) cmd_setup_claude ;;

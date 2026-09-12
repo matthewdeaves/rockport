@@ -30,7 +30,7 @@ Before you start, you need:
 
 1. **An AWS account** with an IAM user that has admin access (or root credentials for first-time setup)
 2. **A Cloudflare account** with a domain — you'll create an API token and a tunnel
-3. **Bedrock model access** — chat models auto-enable on first use. Stability AI image models (SD3.5 Large, Stable Image Ultra, Stable Image Core, and all Stability AI image edit models) and Luma Ray2 require a one-time Marketplace subscription (use them once in the Bedrock playground to activate)
+3. **Bedrock model access** — see "Bedrock model access" below
 
 ### Cloudflare API token
 
@@ -71,7 +71,7 @@ aws configure
 # Default region name: eu-west-2
 ```
 
-The `init` command will create a dedicated `rockport-deployer` IAM user with scoped permissions plus three MFA-gated operator roles (readonly / runtime-ops / deploy). After init completes, enrol an MFA device on `rockport-deployer` (see "MFA Enrolment" below) and the CLI handles role selection per subcommand via `SUBCOMMAND_ROLE`.
+The `init` command will create a dedicated `rockport-deployer` IAM user and the scoped IAM policies; the first `deploy` then creates three MFA-gated operator roles (readonly / runtime-ops / deploy) via Terraform. After init completes, enrol an MFA device on `rockport-deployer` (see "MFA Enrolment" below) and the CLI handles role selection per subcommand via `SUBCOMMAND_ROLE`.
 
 **Existing AWS account with an admin IAM user:**
 
@@ -138,7 +138,7 @@ Takes ~2 minutes for Terraform, then ~3 minutes for the EC2 instance to bootstra
 cp config/claude-code-settings-<key-name>.json ~/.claude/settings.json
 ```
 
-Launch Claude Code. Default model routes to Opus 4.6.
+Launch Claude Code. The generated settings default to `claude-sonnet-5`; pick Opus per session with `/model`.
 
 ## Admin CLI
 
@@ -162,6 +162,7 @@ Launch Claude Code. Default model routes to Opus 4.6.
 ./scripts/rockport.sh config push                   # Push config to instance + restart
 ./scripts/rockport.sh logs                          # Stream LiteLLM logs
 ./scripts/rockport.sh upgrade                       # Restart LiteLLM + video sidecar
+./scripts/rockport.sh upgrade --litellm             # Upgrade LiteLLM in place to the pinned version (keeps DB)
 ./scripts/rockport.sh start                         # Start a stopped instance
 ./scripts/rockport.sh stop                          # Stop the instance
 ./scripts/rockport.sh setup-claude                  # Create Anthropic-only key + Claude Code config
@@ -212,7 +213,7 @@ Model configuration is in `config/litellm-config.yaml`. After editing, push chan
 
 Budget and rate limit defaults are also in `litellm-config.yaml`:
 - Global budget: `$10/day`
-- Per-key default budget: `$5/day`
+- Per-key budget: none unless `key create --budget N` (`$N/day`); internal users default to `$5/day`
 - Rate limits: `60 RPM`, `200K TPM` per key
 
 ### Image generation
@@ -351,7 +352,7 @@ Requires a one-time Marketplace subscription (same as the Stability AI models).
 
 ## CI/CD
 
-Two GitHub Actions workflows run on push to `main`:
+Three GitHub Actions workflows:
 
 **Validate** (`validate.yml`) — runs on pushes and PRs to `main` (paths: `terraform/`, `config/`, `scripts/`, `sidecar/`, `tests/`, CI config):
 - `terraform fmt -check` and `terraform validate`
@@ -366,6 +367,8 @@ Two GitHub Actions workflows run on push to `main`:
 - Plans and applies on merge to `main`
 - Smoke tests after deploy
 
+**Release** (`release.yml`) — runs on `v*` tags; creates a GitHub release with commit-log notes since the previous tag.
+
 CI uses GitHub OIDC for AWS authentication. Set `AWS_ROLE_ARN` in GitHub repository secrets to an IAM role with OIDC trust policy. Also set `CLOUDFLARE_ZONE_ID`, `CLOUDFLARE_ACCOUNT_ID`, and `CLOUDFLARE_API_TOKEN` as secrets.
 
 ## Security design
@@ -376,7 +379,7 @@ Rockport is designed so that the proxy has no direct internet exposure. Every la
 
 **Localhost-only binding** — LiteLLM listens on `127.0.0.1:4000`, not `0.0.0.0`. Even if the security group were misconfigured, the service would not accept external connections directly.
 
-**Admin UI disabled** — The LiteLLM admin dashboard is disabled via `disable_admin_ui: true` and Swagger/ReDoc docs are disabled via `NO_DOCS=True` / `NO_REDOC=True` environment variables. A Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation, image editing, image services, and the admin CLI — only `/v1/chat/completions`, `/v1/models`, `/v1/messages`, `/v1/images/generations`, `/v1/images/*`, `/v1/videos/*`, `/key/*`, `/health` (exact match), `/spend/*`, and a handful of other operational paths are reachable. Everything else (admin UI, OpenAPI schema, routes list, SSO, SCIM, debug endpoints, etc.) returns 403 at the Cloudflare edge.
+**Admin UI disabled** — The LiteLLM admin dashboard is disabled via `disable_admin_ui: true` and Swagger/ReDoc docs are disabled via `NO_DOCS=True` / `NO_REDOC=True` environment variables. A Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation, image editing, palette generation, video generation, and the admin CLI — only `/v1/chat/completions`, `/v1/models`, `/v1/messages`, `/v1/images/generations`, `/v1/images/edits`, `/v1/images/palette`, `/v1/videos/*`, `/key/*`, `/health` (exact match), `/spend/*`, and a handful of other operational paths are reachable. Everything else (admin UI, OpenAPI schema, routes list, SSO, SCIM, debug endpoints, etc.) returns 403 at the Cloudflare edge.
 
 **Key separation** — The master key (stored in SSM Parameter Store) is only used by the admin CLI. Users get virtual keys with per-key daily budgets and rate limits. Keys created with `--claude-only` (or via `setup-claude`) are restricted to Anthropic models only. Keys without this flag get access to all models including image generation. Virtual keys can only call model endpoints — they cannot create other keys, view spend, or manage the proxy.
 
@@ -386,7 +389,7 @@ Rockport is designed so that the proxy has no direct internet exposure. Every la
 
 **IMDSv2 enforced** — The instance metadata service requires session tokens (hop limit 1), preventing SSRF-based credential theft.
 
-**Transport security** — HSTS (6 months max-age) and "Always Use HTTPS" are enabled in Cloudflare, enforcing HTTPS-only access. HTTP requests are redirected with 301.
+**Transport security** — "Always Use HTTPS" is enabled in the Cloudflare dashboard (HTTP → 301). A Terraform response-header rule (`terraform/headers.tf`) adds HSTS (6 months max-age) and `X-Content-Type-Options: nosniff` to every proxied response.
 
 **Least-privilege IAM** — The deployer IAM policies (`terraform/deployer-policies/`) scope EC2 and SSM mutating actions to resources tagged `Project=rockport`. Read-only Describe actions use `Resource: *` as required by AWS. An explicit Deny statement prevents the deployer from attaching any AWS-managed policy (e.g. `AdministratorAccess`) to rockport roles — only rockport-prefixed custom policies are allowed, blocking privilege escalation via the CI/CD pipeline. The instance role is limited to Bedrock invoke and SSM parameter access.
 

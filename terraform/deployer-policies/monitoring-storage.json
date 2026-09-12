@@ -201,6 +201,24 @@
       ]
     },
     {
+      "Sid": "SNSAlerts",
+      "Effect": "Allow",
+      "Action": [
+        "sns:CreateTopic",
+        "sns:DeleteTopic",
+        "sns:GetTopicAttributes",
+        "sns:SetTopicAttributes",
+        "sns:ListTagsForResource",
+        "sns:TagResource",
+        "sns:UntagResource",
+        "sns:Subscribe",
+        "sns:Unsubscribe",
+        "sns:GetSubscriptionAttributes",
+        "sns:ListSubscriptionsByTopic"
+      ],
+      "Resource": "arn:aws:sns:*:*:rockport-*"
+    },
+    {
       "Sid": "AccountDiscovery",
       "Effect": "Allow",
       "Action": "sts:GetCallerIdentity",

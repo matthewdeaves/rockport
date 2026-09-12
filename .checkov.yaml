@@ -9,12 +9,17 @@ skip-check:
   - CKV_AWS_173  # Lambda env var KMS encryption
   # Only calls public AWS APIs (EC2, CloudWatch) — VPC would require NAT Gateway (~$32/mo)
   - CKV_AWS_117  # Lambda in VPC
-  # Code is inline in .tf file — no supply chain risk to validate
+  # Code is terraform/lambda/idle_shutdown.py in this repo, zipped by archive_file — no third-party supply chain to validate
   - CKV_AWS_272  # Lambda code signing
   # Single function, <1s runtime, 2 API calls — X-Ray adds cost for no debugging value
   - CKV_AWS_50   # Lambda X-Ray tracing
   # EventBridge retries on failure; non-critical function, next 5-min run self-heals
   - CKV_AWS_116  # Lambda DLQ
+
+  # --- SNS alerts topic ---
+  # Carries only alarm names. CloudWatch alarms cannot publish to a topic encrypted
+  # with the AWS-managed SNS key; a CMK would cost $1/mo to protect non-sensitive data.
+  - CKV_AWS_26   # SNS topic encryption
 
   # --- CloudWatch logs for idle-shutdown Lambda ---
   # Logs contain "Idle: X bytes" / "Active: X bytes" — no sensitive data, no compliance reqs
@@ -73,7 +78,5 @@ skip-check:
   - CKV_AWS_252  # CloudTrail SNS topic (no consumers, logs are in S3 for post-incident review)
   # SSE-S3 (AES-256) already applied via bucket encryption config; CMK adds $1/mo
   - CKV_AWS_35   # CloudTrail KMS CMK encryption (SSE-S3 is sufficient for audit logs)
-  # Intentionally single-region — all infra is in eu-west-2, IAM events covered by include_global_service_events
-  - CKV_AWS_67   # CloudTrail multi-region (single-region by design)
   # Audit logs stored in S3 with 90-day lifecycle; no real-time analysis pipeline needed
   - CKV2_AWS_10  # CloudTrail CloudWatch Logs integration (S3 is sufficient for this use case)

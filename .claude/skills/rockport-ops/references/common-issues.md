@@ -97,7 +97,7 @@ Known symptom-to-cause mappings for Rockport infrastructure. Organized by sympto
 
 ### Image endpoint 403/404
 **Symptoms:** `/v1/images/variations`, `/v1/images/background-removal` or `/v1/images/outpaint` returns 403 or 404
-**Cause:** These Nova Canvas sidecar endpoints were removed in the 2026-09 refresh (Nova Canvas EOL 2026-09-30). The WAF blocks them at the edge. Only `/v1/images/generations` and `/v1/images/edits` exist, both served by LiteLLM
+**Cause:** These Nova Canvas sidecar endpoints were removed in the 2026-09 refresh (Nova Canvas EOL 2026-09-30). The WAF blocks them at the edge. Only `/v1/images/generations` and `/v1/images/edits` (LiteLLM) and `/v1/images/palette` (sidecar) exist
 **Fix:** Use the Stability AI edit models via `/v1/images/edits` (`stability-remove-background`, `stability-outpaint`, etc.)
 
 ### --claude-only key blocked (403)

@@ -283,7 +283,7 @@ resource "aws_instance" "rockport" {
   ami                    = data.aws_ssm_parameter.al2023_ami.value
   instance_type          = var.instance_type
   iam_instance_profile   = aws_iam_instance_profile.rockport.name
-  subnet_id              = data.aws_subnets.default.ids[0]
+  subnet_id              = sort(data.aws_subnets.default.ids)[0]
   vpc_security_group_ids = [aws_security_group.rockport.id]
 
   user_data_base64 = base64gzip(templatefile("${path.module}/../scripts/bootstrap.sh", {
@@ -319,4 +319,13 @@ resource "aws_instance" "rockport" {
   tags = merge(local.common_tags, {
     Name = "rockport"
   })
+
+  # The AMI comes from the "latest AL2023" SSM parameter, which changes every few
+  # weeks. Without this, every `deploy` after an AMI release would destroy and
+  # recreate the instance — and PostgreSQL (virtual keys, spend logs, video jobs)
+  # lives on the root volume. Roll the AMI deliberately instead:
+  #   terraform apply -replace=aws_instance.rockport
+  lifecycle {
+    ignore_changes = [ami]
+  }
 }

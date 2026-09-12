@@ -17,6 +17,7 @@ terraform/moved.tf      # Moved blocks template for safe resource renames
 terraform/tunnel.tf     # Cloudflare Tunnel ingress rules (path→port routing)
 terraform/waf.tf        # Cloudflare WAF path allowlist
 terraform/access.tf     # Cloudflare Access application + service token (edge pre-auth)
+terraform/headers.tf    # Cloudflare response-header rule (HSTS + X-Content-Type-Options on proxied responses)
 terraform/s3.tf         # S3 buckets for artifacts + video output (us-west-2)
 terraform/idle.tf       # Lambda-based idle shutdown + failure alarm
 terraform/monitoring.tf # Budget alarms (Bedrock daily, monthly total), auto-recovery
@@ -65,7 +66,7 @@ pentest/                # Security testing toolkit
   tools/                #   Installed tool binaries (gitignored)
 tests/smoke-test.sh     # Post-deploy verification
 tests/auth-flow-test.sh # Sandbox tests for the 017 CLI auth helpers (assume_role, ensure_session_valid_for_role, SUBCOMMAND_ROLE)
-.github/workflows/      # CI/CD — validate (fmt, lint, security scan) + deploy (plan/apply/smoke)
+.github/workflows/      # CI/CD — validate (fmt, lint, security scan) + deploy (plan/apply/smoke) + release (GitHub release on v* tags)
 .checkov.yaml           # Checkov skip list with justifications
 .gitleaks.toml          # Gitleaks secret scanning config (allowlists)
 .trivyignore            # Trivy IaC scan skip list
@@ -86,6 +87,7 @@ requirements-ci.txt     # CI-only Python dependencies (pip-audit)
 ./scripts/rockport.sh start         # Start a stopped instance
 ./scripts/rockport.sh stop          # Stop the instance
 ./scripts/rockport.sh upgrade       # Restart LiteLLM + video sidecar via SSM
+./scripts/rockport.sh upgrade --litellm [ver] # In-place LiteLLM upgrade (pip + prisma generate/migrate), keeps the DB
 ./scripts/rockport.sh key create X  # Create virtual API key [--budget N] [--claude-only]
 ./scripts/rockport.sh key list      # List keys
 ./scripts/rockport.sh key info <k>  # Key details + spend
@@ -106,7 +108,8 @@ requirements-ci.txt     # CI-only Python dependencies (pip-audit)
 
 - `prisma generate` MUST run as the `litellm` user (not root) — it hardcodes `$HOME/.cache/` paths into the generated client
 - The `litellm` user's home is `/var/lib/litellm` (not `/home/litellm`) so prisma cache works with `ProtectHome=yes`
-- Terraform `user_data` only runs on first boot; use `config push` or `upgrade` for runtime changes
+- Terraform `user_data` only runs on first boot; use `config push` or `upgrade` for runtime changes. `config push` verifies the artifact SHA256 and installs `sidecar/requirements.lock` (`--require-hashes`) before restarting, so dependency bumps apply without a rebuild. Bumping `litellm_version` alone changes nothing on a running instance — run `upgrade --litellm` (reads the version from tfvars/variables.tf, mirrors the bootstrap pip/prisma steps over SSM, ~5 min) or replace the instance
+- `aws_instance.rockport` has `lifecycle { ignore_changes = [ami] }` so a new AL2023 AMI never triggers an implicit replace; to pick up a new AMI run `terraform apply -replace=aws_instance.rockport` (full re-bootstrap)
 - Claude Code sends old model IDs (e.g. `claude-sonnet-4-5-20250929`) and `[1m]`-suffixed runtime identifiers (`claude-opus-5[1m]`, `claude-opus-4-7[1m]`); aliases in litellm-config.yaml map these to Bedrock `eu.` inference profiles. `[1m]` aliases exist for Opus 5, Sonnet 5, Opus 4.8 and Opus 4.7
 - Chat models: Claude (Opus 5, Sonnet 5, Opus 4.8, Opus 4.7, Opus/Sonnet 4.6 — all 1M context — and Haiku 4.5), DeepSeek v3.2, Qwen3 Coder 480B, Kimi K2.5, Nova (Pro/Lite/Micro v1), Nova 2 Lite, Llama 4 (Scout/Maverick), Mistral Large 3, Ministral 8B, GPT-OSS (120B/20B)
 - Claude 4.6+ models reject `temperature`/`top_p`/`top_k` and legacy `budget_tokens` thinking params; the global `drop_params: true` setting in litellm-config.yaml silently strips them. Cache injection is applied to every `claude-*` entry including the `[1m]` Claude Code runtime aliases
@@ -123,9 +126,8 @@ requirements-ci.txt     # CI-only Python dependencies (pip-audit)
 - Palette & style control: LiteLLM forwards every extra top-level field on `/v1/images/generations` (`seed`, `negative_prompt`, `aspect_ratio`, Ultra `image`+`strength`) and the Stability edit params on `/v1/images/edits` (`fidelity`, `style_strength`, `composition_fidelity`, `change_strength`, `select_prompt`, `style_image`) straight to Bedrock — verified in the 1.100.1 source (`amazon_stability3_transformation.py`, `image_edit/stability_transformation.py`). `stability-style-guide` + `fidelity` is the `--sref` equivalent. No surviving Bedrock model takes hex colours; `POST /v1/images/palette` (sidecar) renders a swatch PNG from `colors`/`weights`, appends nearest CSS colour names to the prompt, and proxies to LiteLLM `/v1/images/edits` as `stability-style-guide` with the caller's key (LiteLLM keeps auth/budget/spend/--claude-only). Unverified against a live account as of 2026-09-12
 - Cloudflare blocks requests with Python's default `Python-urllib` user-agent (403) — OpenAI SDK and curl work fine
 - `ANTHROPIC_AUTH_TOKEN` (not `ANTHROPIC_API_KEY`) is the env var for Claude Code virtual keys
-- Instance auto-stops after 30min of inactivity by default (Lambda checks both NetworkIn and CPUUtilization — instance is only stopped when both are below threshold). A CloudWatch alarm fires if the idle-stop Lambda itself fails consecutively
+- Instance auto-stops after 30min of inactivity by default (Lambda checks both NetworkIn and CPUUtilization — instance is only stopped when both are below threshold). The `rockport-idle-shutdown-errors` and `rockport-auto-recovery` CloudWatch alarms notify the `rockport-alerts` SNS topic, which emails `budget_alert_email` — the subscription needs one-time email confirmation after the first apply
 - Region is read from `terraform.tfvars` by rockport.sh — no hardcoded region in the CLI
-- cloudflared version is pinned via `cloudflared_version` variable for stability
 - The admin CLI requires `aws`, `terraform`, and `jq` — run `./scripts/setup.sh` to install all tools (also installs session-manager-plugin, gh, shellcheck, trivy, checkov, gitleaks, pip-audit). Scripts use `#!/usr/bin/env bash` because `auth.sh` needs bash 4+ (`declare -A`) and macOS `/bin/bash` is 3.2. `auth.sh` parses STS expiry timestamps with `_iso_to_epoch`, which works on both GNU and BSD `date`
 - Three SSM parameters are managed: `/rockport/master-key` (by init), `/rockport/tunnel-token` (by Terraform), `/rockport/db-password` (by bootstrap)
 - CI/CD uses GitHub OIDC for AWS authentication — set the `AWS_ROLE_ARN` secret in GitHub to the IAM role ARN
@@ -139,9 +141,9 @@ requirements-ci.txt     # CI-only Python dependencies (pip-audit)
 - The Cloudflare API token (in `terraform/.env`, gitignored) needs Zone DNS Edit, Zone WAF Edit, Account Cloudflare Tunnel Edit, and Account Zero Trust Edit permissions
 - Deployer IAM is split into 3 policies under `terraform/deployer-policies/` (compute, iam-ssm, monitoring-storage) to stay under the 6144-byte per-policy limit while keeping all actions explicit (no wildcards). EC2/SSM mutating actions scoped to `aws:ResourceTag/Project=rockport`. An explicit Deny in iam-ssm.json (017) blocks `AttachRolePolicy`/`DetachRolePolicy` ONLY when the modified role is a Rockport role (`arn:aws:iam::*:role/rockport*` or `dlm-lifecycle-*`); attaching anything to non-Rockport roles is unaffected — this lets Appserver share the AWS account without IAM collisions. Belt-and-braces `DenyAttachToInstanceRole` blocks any policy attachment to `rockport-instance-role` regardless of policy ARN.
 - 017 operator roles: `rockport.sh` maps every subcommand to one of three roles via `SUBCOMMAND_ROLE`. `rockport-readonly-role` (no SendCommand, no IAM) backs `status`/`models`/`spend`/`monitor`/`key`/`setup-claude`. `rockport-runtime-ops-role` adds SSM SendCommand on the tagged instance and S3 write to artifacts/video buckets — backs `config push`/`upgrade`/`start`/`stop`/`logs`/`status --instance`. `rockport-deploy-role` carries the three legacy deployer policies; the boundary explicitly denies `iam:CreatePolicy*`/`CreateUser`/`AttachUserPolicy`/`CreateAccessKey` so a compromised deploy session can't rewrite its own policies or mint access keys (Finding B from Appserver 003). Trust policies require MFA + age<3600; `MaxSessionDuration=3600`.
-- 017 auth flow: `rockport.sh auth [--role <name>]` prompts for TOTP and caches creds under `rockport-<role>` profile. `MFA_SERIAL_NUMBER` lives in `terraform/.env` (gitignored). Sessions reuse silently while valid (>5 min remaining). `rockport.sh auth status` lists cached sessions. `ROCKPORT_AUTH_DISABLED=1` is the bootstrap escape hatch for the first-ever `init` on a fresh account; otherwise every AWS-touching subcommand requires an MFA-derived STS session (the legacy long-lived `rockport` profile is no longer auto-used).
+- 017 auth flow: `rockport.sh auth [--role <name>]` prompts for TOTP and caches creds under `rockport-<role>` profile. `MFA_SERIAL_NUMBER` lives in `terraform/.env` (gitignored). Sessions reuse silently while valid (>5 min remaining). `rockport.sh auth status` lists cached sessions. `ROCKPORT_AUTH_DISABLED=1` is the bootstrap escape hatch for a fresh account (skips `admin_mfa_session` for `init`/`destroy` and role assumption for the first `deploy`, before the operator roles exist); otherwise every AWS-touching subcommand requires an MFA-derived STS session (the legacy long-lived `rockport` profile is no longer auto-used).
 - Admin IAM policy (`terraform/rockport-admin-policy.json`): `init` auto-creates and attaches it to the calling user. If the calling user lacks `iam:CreatePolicy` (e.g. a non-admin IAM user), init prints instructions to create it manually via the AWS console first. On subsequent runs, `init` updates the policy in place. After 017, `RockportAdmin` carries the IAM-policy and IAM-user mutation actions (CreatePolicy/CreatePolicyVersion/CreateUser/AttachUserPolicy/CreateAccessKey/...) plus full MFA-management actions (Enable/Deactivate/Resync/CreateVirtualMFADevice/...) so the admin can recover a lost MFA device on `rockport-deployer`. After 018, `RockportAdmin` carries a `DenyAllWithoutMFA` statement (Effect:Deny, NotAction:[GetUser, ChangePassword, MFA-management, sts:GetSessionToken, sts:GetCallerIdentity, ListAccessKeys], Resource:*, Condition: aws:MultiFactorAuthPresent=false). A leaked rockport-admin access key is therefore useless without the second factor — every meaningful action requires an MFA-derived session minted via `sts:GetSessionToken`. `rockport.sh init` mints that session via the new `admin_mfa_session()` helper, which reads `ROCKPORT_ADMIN_MFA_SERIAL` from `terraform/.env` and caches creds under the `rockport-admin-mfa` profile.
-- HSTS and "Always Use HTTPS" are enabled in Cloudflare (not managed by Terraform)
+- "Always Use HTTPS" is a Cloudflare dashboard setting (not in Terraform). HSTS and `X-Content-Type-Options` on proxied responses come from `terraform/headers.tf` (host-scoped to `var.domain`) — Cloudflare only adds them to its own edge responses otherwise
 - Video generation: sidecar on port 4001 driving Luma Ray2 (us-west-2, 540p/720p, 5s/9s, $0.75-1.50/s). `model` field defaults to `luma-ray2` (the only model); defaults are the cheapest valid options (5s, 540p, 16:9). Nova Reel was removed ahead of its 2026-09-30 EOL. LiteLLM's `/v1/videos` endpoint does not support Bedrock (OpenAI/Azure/Gemini/Vertex/RunwayML only as of 1.100), so the sidecar stays
 - Video sidecar authenticates via LiteLLM's `/key/info` endpoint; writes spend to `LiteLLM_SpendLogs` + `LiteLLM_VerificationToken` for unified tracking
 - Video output stored in `rockport-video-{account}-us-west-2` with 7-day lifecycle; presigned URLs expire after 1 hour. Bedrock async invoke requires a same-region S3 bucket. The old us-east-1 bucket is gone; the `aws.us_east_1` provider alias in `s3.tf` is kept only so Terraform can destroy it from existing state and can be deleted after that apply
@@ -178,7 +180,7 @@ Known upstream lifecycle dates for models in `config/litellm-config.yaml` (sourc
 Retired from this repo (2026-09-12): Titan Image v2 (EOL 2026-06-30), Nova Canvas v1 and Nova Reel v1.1 (both EOL 2026-09-30). Legacy Bedrock models are cut off for accounts after 15 days of inactivity, so these were effectively dead for an idle-stopped instance before the EOL date.
 
 ## Active Technologies
-- Terraform 1.14 (AWS provider 6.41, Cloudflare provider ~> 5.0)
+- Terraform ~> 1.5 (AWS provider ~> 6.0, Cloudflare provider ~> 5.0)
 - LiteLLM proxy 1.100.1 (exact pin) on Amazon Linux 2023
 - Python 3.11 + FastAPI — sidecar (port 4001)
 - PostgreSQL 15 — LiteLLM spend/keys + video job tracking

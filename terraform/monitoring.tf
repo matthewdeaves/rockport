@@ -53,6 +53,20 @@ resource "aws_budgets_budget" "monthly_total" {
   }
 }
 
+# Operational alerts — CloudWatch alarms need a target or they fire silently.
+# Reuses the budget alert address; the subscription must be confirmed by email once.
+resource "aws_sns_topic" "alerts" {
+  name = "rockport-alerts"
+
+  tags = local.common_tags
+}
+
+resource "aws_sns_topic_subscription" "alerts_email" {
+  topic_arn = aws_sns_topic.alerts.arn
+  protocol  = "email"
+  endpoint  = var.budget_alert_email
+}
+
 resource "aws_cloudwatch_metric_alarm" "auto_recovery" {
   alarm_name          = "rockport-auto-recovery"
   alarm_description   = "Auto-recover Rockport instance on system status check failure"
@@ -69,7 +83,8 @@ resource "aws_cloudwatch_metric_alarm" "auto_recovery" {
   }
 
   alarm_actions = [
-    "arn:aws:automate:${var.region}:ec2:recover"
+    "arn:aws:automate:${var.region}:ec2:recover",
+    aws_sns_topic.alerts.arn,
   ]
 
   tags = local.common_tags

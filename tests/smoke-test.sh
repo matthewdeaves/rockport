@@ -26,7 +26,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 echo "Creating temporary test key..."
 KEY_OUTPUT=$("$SCRIPT_DIR/../scripts/rockport.sh" key create smoke-test-$$ 2>&1)
-VALID_KEY=$(echo "$KEY_OUTPUT" | grep -oP '(?<=Key:\s{4})sk-[a-zA-Z0-9_-]+')
+VALID_KEY=$(echo "$KEY_OUTPUT" | sed -nE 's/.*Key:[[:space:]]+(sk-[a-zA-Z0-9_-]+).*/\1/p' | head -1)
 [[ -n "$VALID_KEY" ]] || die "Failed to create test key. Output: $KEY_OUTPUT"
 echo "  Test key created: ${VALID_KEY:0:12}..."
 sleep 2  # Allow key to propagate through LiteLLM

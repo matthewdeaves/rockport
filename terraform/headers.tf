@@ -16,7 +16,7 @@ resource "cloudflare_ruleset" "response_headers" {
       action      = "rewrite"
       enabled     = true
       description = "Add HSTS and security headers to Rockport responses"
-      expression  = "(http.host eq \"llm.matthewdeaves.com\")"
+      expression  = "(http.host eq \"${var.domain}\")"
       action_parameters = {
         headers = {
           "Strict-Transport-Security" = {

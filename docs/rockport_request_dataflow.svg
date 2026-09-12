@@ -195,7 +195,7 @@
   <!-- 5e: Budget Check  y=436..512 -->
   <rect x="658" y="436" width="508" height="76" rx="4" fill="#111827" stroke="#3fb950" stroke-width="1"/>
   <text x="668" y="452" fill="#3fb950" font-size="9" font-weight="bold">e.  Per-Key Budget Check</text>
-  <text x="668" y="468" fill="#8b949e" font-size="9">$5/day default budget if configured  ·  spend read from PostgreSQL</text>
+  <text x="668" y="468" fill="#8b949e" font-size="9">per-key budget (set via --budget)  ·  spend read from PostgreSQL</text>
   <!-- error badge -->
   <rect x="1060" y="454" width="96" height="22" rx="3" fill="#1a1200" stroke="#e3b341" stroke-width="1"/>
   <text x="1108" y="469" text-anchor="middle" fill="#e3b341" font-size="9" font-weight="bold">→ 400 Over Budget</text>
@@ -396,7 +396,7 @@
 
   <!-- 5V-b: Validation  y=870..934 -->
   <rect x="523" y="870" width="640" height="64" rx="4" fill="#0a1a1a" stroke="#39d2c0" stroke-width="1"/>
-  <text x="533" y="888" fill="#39d2c0" font-size="9" font-weight="bold">b.  Validation: prompt, shots, duration, image</text>
+  <text x="533" y="888" fill="#39d2c0" font-size="9" font-weight="bold">b.  Validation: prompt, duration, resolution, image</text>
   <text x="533" y="904" fill="#8b949e" font-size="9">Luma Ray2: 5s (default) or 9s · 540p (default) or 720p · 7 aspect ratios</text>
   <text x="533" y="922" fill="#8b949e" font-size="8">keyframes 512–4096px PNG/JPEG ≤25MB · end_image requires image</text>
   <!-- error badge -->
@@ -449,8 +449,8 @@
 
   <rect x="1373" y="864" width="404" height="52" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
   <text x="1380" y="882" fill="#f85149" font-size="10" font-weight="bold">Step 5V-b: Validation Failed → 400</text>
-  <text x="1380" y="898" fill="#8b949e" font-size="9">bad duration, invalid image, mixed prompt+shots</text>
-  <text x="1380" y="910" fill="#8b949e" font-size="8">image auto-resized to 1280x720 · PNG or JPEG</text>
+  <text x="1380" y="898" fill="#8b949e" font-size="9">bad duration/resolution/aspect ratio, invalid keyframe</text>
+  <text x="1380" y="910" fill="#8b949e" font-size="8">512–4096px PNG/JPEG ≤25MB · end_image needs image</text>
 
   <rect x="1373" y="930" width="404" height="52" rx="4" fill="#1a1200" stroke="#e3b341" stroke-width="1.5"/>
   <text x="1380" y="948" fill="#e3b341" font-size="10" font-weight="bold">Step 5V-c: Budget Exceeded → 402</text>

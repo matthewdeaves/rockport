@@ -31,10 +31,10 @@ Read these files:
 - `sidecar/db.py` — extract what tables are used
 - `sidecar/requirements.txt` — list of dependencies
 
-## 4. Admin CLI — `scripts/rockport.sh`
+## 4. Admin CLI — `scripts/rockport.sh` + `scripts/lib/*.sh`
 
-- Extract ALL subcommands by reading the usage/help section at the bottom
-- Extract the `CLAUDE_MODELS` variable (exact model list for --claude-only)
+- Extract ALL subcommands by reading the usage/help section at the bottom of `rockport.sh`
+- Extract `claude_models()` in `lib/keys.sh` (derives the --claude-only allowlist from litellm-config.yaml) and `SUBCOMMAND_ROLE` in `lib/auth.sh`
 - Extract any hardcoded values (ports, paths, model names, version strings)
 - Check the health check logic — what patterns are matched, what gets probed vs skipped
 
@@ -79,7 +79,7 @@ Read ALL service files and config:
 
 ## 12. Init/deploy flow — `scripts/rockport.sh`
 
-- Extract the admin vs deployer credential flow (auto-profile selection, init override)
+- Extract the credential flow: `admin_mfa_session` (init/destroy), `SUBCOMMAND_ROLE` → `ensure_session_valid_for_role` (all other subcommands), `ROCKPORT_AUTH_DISABLED=1` bypass
 - Extract what `cmd_init` creates (IAM policies, deployer user, access keys, CLI profile, master key, state bucket)
 - Extract what `cmd_destroy` cleans up (and what it doesn't — IAM users/policies, CLI profile, orphaned log groups)
 

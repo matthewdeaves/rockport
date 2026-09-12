@@ -4,11 +4,12 @@ Layer-by-layer diagnostic commands for Rockport infrastructure. Use these in sub
 
 ## Prerequisites
 
-All commands use the deployer AWS profile unless noted otherwise.
+All commands use a readonly operator session unless noted otherwise (SSM `send-command` steps need `--role runtime-ops` and `AWS_PROFILE=rockport-runtime-ops`).
 
 ```bash
-# Set profile for all commands
-export AWS_PROFILE=rockport
+# Mint a 1-hour MFA session and set the profile for all commands
+./scripts/rockport.sh auth --role readonly
+export AWS_PROFILE=rockport-readonly
 ```
 
 To get the instance ID and region:
@@ -271,7 +272,7 @@ aws cloudtrail lookup-events \
   --lookup-attributes AttributeKey=EventSource,AttributeValue=iam.amazonaws.com \
   --start-time "$(date -d '24 hours ago' -u +%Y-%m-%dT%H:%M:%SZ)" \
   --query 'Events[].{Time:EventTime,Name:EventName,User:Username}' \
-  --output table --profile rockport --region "$REGION"
+  --output table --region "$REGION"
 ```
 
 **Check spend for anomalous keys:**

@@ -19,7 +19,7 @@ Use these checklists in Phase 2 to cross-reference every documentation claim aga
 - [ ] Smoke test description — cost estimate accurate, test count correct
 - [ ] Setup section — IAM policy names match actual policies created by init (3 deployer policies, not 1)
 - [ ] Setup section — admin vs deployer credential flow accurately described
-- [ ] Setup section — profile auto-selection behavior documented
+- [ ] Setup section — 017 auth flow documented (MFA enrolment, `auth --role`, `ROCKPORT_AUTH_DISABLED=1` bootstrap)
 - [ ] No dead links or references to removed features/endpoints
 
 ## CLAUDE.md

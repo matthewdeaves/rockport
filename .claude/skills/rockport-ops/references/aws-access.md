@@ -42,11 +42,13 @@ a different role or when a session expires.
   (Finding B from Appserver 003 — a compromised deploy session can't
   rewrite its own boundary or mint access keys). IAM-policy and IAM-user
   mutation lives only on `RockportAdmin`.
-- **Subcommands:** `deploy`, `destroy`
+- **Subcommands:** `deploy`
 
 ### Admin (MFA-derived session, profile `rockport-admin-mfa`)
-- **Used for:** `rockport.sh init` only — the bootstrap path that creates
-  policies and users before operator roles exist
+- **Used for:** `rockport.sh init` (bootstrap path that creates policies and
+  users before operator roles exist) and `rockport.sh destroy` (021: terraform
+  deletes `rockport-deploy-role` mid-run, which would invalidate a deploy
+  session, and the deploy boundary denies `iam:DeletePolicy`)
 - **User:** `rockport-admin` (shared with Appserver in this AWS account)
 - **Policy:** `RockportAdmin` (auto-created by init). Includes
   `DenyAllWithoutMFA` (018): every action except a tiny safe-list
@@ -145,14 +147,13 @@ aws ssm get-command-invocation \
 
 ## Terraform Credentials
 
-Terraform uses the deploy operator role (017). Don't invoke `terraform`
-directly — go through `rockport.sh deploy` / `destroy`, which assumes
-`rockport-deploy-role` first:
+Don't invoke `terraform` directly — go through the CLI. `deploy` assumes
+`rockport-deploy-role` (017); `destroy` uses the admin MFA session (021):
 
 ```bash
 cd $PROJECT_ROOT
-./scripts/rockport.sh deploy   # prompts for MFA on first call this hour
-./scripts/rockport.sh destroy
+./scripts/rockport.sh deploy   # prompts for deploy-role MFA on first call this hour
+./scripts/rockport.sh destroy  # prompts for rockport-admin MFA
 ```
 
 The Cloudflare API token is in `terraform/.env` (gitignored):

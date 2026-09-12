@@ -82,6 +82,7 @@ data "aws_iam_policy_document" "operator_deploy_boundary" {
       "logs:*",
       "events:*",
       "cloudwatch:*",
+      "sns:*",
       "budgets:*",
       "dlm:*",
       "cloudtrail:*",
