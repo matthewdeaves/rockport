@@ -64,7 +64,7 @@ Use the diagnostic procedures in [diagnostics.md](references/diagnostics.md) for
 
 **Cost discipline:** Use logs and status checks first. Only make a test API call if you cannot determine the issue from logs. If a test call is needed, use the cheapest option: `claude-haiku-4-5-20251001` with `max_tokens: 1`.
 
-**AWS profile:** Use `AWS_PROFILE=rockport` (deployer) for all diagnostic commands. See [aws-access.md](references/aws-access.md) for role capabilities and escalation.
+**AWS profile:** Run `./scripts/rockport.sh auth --role readonly` first, then use `AWS_PROFILE=rockport-readonly` for diagnostic commands (the long-lived `rockport` profile only holds `sts:AssumeRole`). See [aws-access.md](references/aws-access.md) for role capabilities and escalation.
 
 ### Phase 2: Diagnosis
 

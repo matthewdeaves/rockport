@@ -59,7 +59,7 @@ def ensure_tables() -> None:
                     api_key_hash VARCHAR(128) NOT NULL,
                     invocation_arn VARCHAR(512) UNIQUE,
                     status VARCHAR(20) NOT NULL DEFAULT 'pending',
-                    model VARCHAR(30) NOT NULL DEFAULT 'nova-reel',
+                    model VARCHAR(30) NOT NULL DEFAULT 'luma-ray2',
                     mode VARCHAR(20) NOT NULL,
                     prompt TEXT NOT NULL,
                     num_shots INTEGER NOT NULL DEFAULT 1,
@@ -74,7 +74,8 @@ def ensure_tables() -> None:
                 CREATE INDEX IF NOT EXISTS idx_video_jobs_api_key_hash ON rockport_video_jobs (api_key_hash);
                 CREATE INDEX IF NOT EXISTS idx_video_jobs_status ON rockport_video_jobs (status);
                 CREATE INDEX IF NOT EXISTS idx_video_jobs_created_at ON rockport_video_jobs (created_at);
-                ALTER TABLE rockport_video_jobs ADD COLUMN IF NOT EXISTS model VARCHAR(30) NOT NULL DEFAULT 'nova-reel';
+                ALTER TABLE rockport_video_jobs ADD COLUMN IF NOT EXISTS model VARCHAR(30) NOT NULL DEFAULT 'luma-ray2';
+                ALTER TABLE rockport_video_jobs ALTER COLUMN model SET DEFAULT 'luma-ray2';
                 ALTER TABLE rockport_video_jobs ADD COLUMN IF NOT EXISTS resolution VARCHAR(10);
                 -- Migration: make invocation_arn nullable and change default status for CRIT-1 fix
                 ALTER TABLE rockport_video_jobs ALTER COLUMN invocation_arn DROP NOT NULL;
@@ -307,7 +308,7 @@ def insert_job_if_under_limit(
             # Invariant: count across ALL models and ALL regions per api_key_hash.
             # Do NOT add a `model = %s` or region predicate — the per-key limit is
             # global by design so a single key can't multiply its intended budget
-            # by fanning out across providers (Nova Reel us-east-1 + Ray2 us-west-2).
+            # by fanning out across providers if more video models are added later.
             # See spec 016 FR-008.
             cur.execute(
                 "SELECT COUNT(*) FROM rockport_video_jobs WHERE api_key_hash = %s AND status IN ('pending', 'in_progress')",
@@ -389,37 +390,4 @@ def log_spend(
                 WHERE token = %s
                 """,
                 (cost, api_key_hash),
-            )
-
-
-def log_image_spend(
-    api_key_hash: str,
-    model: str,
-    cost: float,
-    request_id: str,
-) -> None:
-    """Write image operation spend to LiteLLM_SpendLogs and increment key spend.
-
-    Same pattern as video spend logging, but simpler — no job tracking table,
-    no duration/mode metadata. Image operations are synchronous.
-    """
-    with _get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO "LiteLLM_SpendLogs"
-                    (request_id, call_type, api_key, model, spend, total_tokens,
-                     prompt_tokens, completion_tokens, "startTime", "endTime", metadata)
-                VALUES (%s, 'image_generation', %s, %s, %s, 0, 0, 0, NOW(), NOW(), %s)
-                """,
-                (request_id, api_key_hash, model,
-                 Decimal(str(cost)), json.dumps({"type": "image"})),
-            )
-            cur.execute(
-                """
-                UPDATE "LiteLLM_VerificationToken"
-                SET spend = spend + %s
-                WHERE token = %s
-                """,
-                (Decimal(str(cost)), api_key_hash),
             )

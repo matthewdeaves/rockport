@@ -33,7 +33,8 @@ resource "aws_dlm_lifecycle_policy" "rockport_snapshots" {
 }
 
 resource "aws_iam_role" "dlm" {
-  name = "rockport-dlm-role"
+  name                 = "rockport-dlm-role"
+  permissions_boundary = local.workload_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

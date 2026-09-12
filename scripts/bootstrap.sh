@@ -167,49 +167,6 @@ TUNNEL_TOKEN=$(aws ssm get-parameter \
 [[ -n "$TUNNEL_TOKEN" ]] || { echo "FATAL: Tunnel token is empty"; exit 1; }
 echo "Secrets fetched from SSM."
 
-# --- LiteLLM ---
-echo "Installing LiteLLM..."
-dnf install -y python3.11 python3.11-pip libatomic || die "Failed to install Python 3.11"
-pip3.11 install "litellm[proxy]==$LITELLM_VERSION" "prisma==0.11.0" || die "Failed to install LiteLLM"
-
-# Cache/data directory for LiteLLM runtime — must exist before user creation
-# so we can set it as the user's home directory
-mkdir -p /var/lib/litellm || die "Failed to create /var/lib/litellm"
-
-# Create litellm user with home at /var/lib/litellm (not /home/litellm).
-# This ensures prisma generate caches binaries under /var/lib/litellm/.cache,
-# which is accessible under ProtectHome=yes (only /home is blocked).
-if ! id litellm &>/dev/null; then
-  useradd --system --home-dir /var/lib/litellm --no-create-home --shell /usr/sbin/nologin litellm
-fi
-chown litellm:litellm /var/lib/litellm || die "Failed to chown /var/lib/litellm"
-
-# Generate prisma client AS the litellm user so binary paths resolve correctly.
-# prisma generate hardcodes $HOME/.cache paths into the generated client.
-chown -R litellm:litellm /usr/local/lib/python3.11/site-packages/prisma \
-  || die "Failed to chown prisma package"
-chown -R litellm:litellm /usr/local/lib/python3.11/site-packages/litellm_proxy_extras/migrations \
-  || die "Failed to chown migrations"
-sudo -u litellm prisma generate \
-  --schema /usr/local/lib/python3.11/site-packages/litellm/proxy/schema.prisma \
-  || die "Failed to run prisma generate"
-
-# Apply all Prisma migrations now while DB is empty.
-# This avoids the slow per-migration baseline resolve that LiteLLM does on
-# startup when it finds tables but no migration history (~10s × 108 migrations).
-# Prisma expects a migrations/ dir next to the schema; LiteLLM stores them in
-# litellm_proxy_extras, so we symlink.
-echo "Applying Prisma migrations..."
-mkdir -p /usr/local/lib/python3.11/site-packages/litellm/proxy/prisma \
-  || die "Failed to create prisma directory"
-ln -sfn /usr/local/lib/python3.11/site-packages/litellm_proxy_extras/migrations \
-  /usr/local/lib/python3.11/site-packages/litellm/proxy/prisma/migrations \
-  || die "Failed to symlink migrations"
-sudo -u litellm DATABASE_URL="$DATABASE_URL" prisma migrate deploy \
-  --schema /usr/local/lib/python3.11/site-packages/litellm/proxy/schema.prisma \
-  || die "Failed to run prisma migrate deploy"
-echo "Prisma migrations applied."
-
 # --- Download deploy artifact from S3 ---
 echo "Downloading deploy artifact from S3..."
 aws s3 cp "s3://$ARTIFACTS_BUCKET/deploy/rockport-artifact.tar.gz" /tmp/rockport-artifact.tar.gz \
@@ -228,6 +185,28 @@ if aws s3 cp "s3://$ARTIFACTS_BUCKET/deploy/rockport-artifact.tar.gz.sha256" /tm
 else
   echo "WARNING: No checksum file found, skipping integrity verification."
 fi
+
+# --- LiteLLM ---
+echo "Installing LiteLLM..."
+dnf install -y python3.11 python3.11-pip libatomic || die "Failed to install Python 3.11"
+
+# Cache/data directory for LiteLLM runtime — must exist before user creation
+# so we can set it as the user's home directory
+mkdir -p /var/lib/litellm || die "Failed to create /var/lib/litellm"
+
+# Create litellm user with home at /var/lib/litellm (not /home/litellm).
+# This ensures prisma generate caches binaries under /var/lib/litellm/.cache,
+# which is accessible under ProtectHome=yes (only /home is blocked).
+if ! id litellm &>/dev/null; then
+  useradd --system --home-dir /var/lib/litellm --no-create-home --shell /usr/sbin/nologin litellm
+fi
+chown litellm:litellm /var/lib/litellm || die "Failed to chown /var/lib/litellm"
+
+# pip install + prisma generate + migrate — shared with `rockport.sh upgrade --litellm`
+tar xzf /tmp/rockport-artifact.tar.gz -C /tmp rockport-artifact/scripts/install-litellm.sh \
+  || die "Failed to extract install-litellm.sh from artifact"
+DATABASE_URL="$DATABASE_URL" bash /tmp/rockport-artifact/scripts/install-litellm.sh "$LITELLM_VERSION" \
+  || die "Failed to install LiteLLM"
 
 # Extract config files
 mkdir -p /etc/litellm || die "Failed to create /etc/litellm"
@@ -286,7 +265,8 @@ sudo -u postgres psql -d litellm -c "
   CREATE INDEX IF NOT EXISTS idx_video_jobs_status ON rockport_video_jobs (status);
   CREATE INDEX IF NOT EXISTS idx_video_jobs_created_at ON rockport_video_jobs (created_at);
   ALTER TABLE rockport_video_jobs OWNER TO litellm_user;
-  ALTER TABLE rockport_video_jobs ADD COLUMN IF NOT EXISTS model VARCHAR(30) NOT NULL DEFAULT 'nova-reel';
+  ALTER TABLE rockport_video_jobs ADD COLUMN IF NOT EXISTS model VARCHAR(30) NOT NULL DEFAULT 'luma-ray2';
+  ALTER TABLE rockport_video_jobs ALTER COLUMN model SET DEFAULT 'luma-ray2';
   ALTER TABLE rockport_video_jobs ADD COLUMN IF NOT EXISTS resolution VARCHAR(10);
   ALTER TABLE rockport_video_jobs ALTER COLUMN invocation_arn DROP NOT NULL;
   ALTER TABLE rockport_video_jobs ALTER COLUMN status SET DEFAULT 'pending';
@@ -297,7 +277,6 @@ echo "Video jobs table ready."
 (
   umask 077
   cat >> /etc/litellm/env <<VIDENVEOF
-VIDEO_BUCKET=${video_bucket_name}
 VIDEO_BUCKET_US_WEST_2=${video_bucket_us_west_2}
 VIDEO_MAX_CONCURRENT_JOBS=${video_max_concurrent_jobs}
 VIDENVEOF

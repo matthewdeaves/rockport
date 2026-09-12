@@ -11,11 +11,11 @@ OpenAI-compatible LiteLLM proxy on EC2 that routes any application to Bedrock mo
 ## What you get
 
 - Claude Code connects via `ANTHROPIC_BASE_URL` to your own proxy
-- Anthropic (Opus 4.6, Sonnet 4.6, Haiku 4.5), DeepSeek V3.2, Qwen3 Coder 480B, Kimi K2.5, Nova Pro/Lite/Micro, Nova 2 Lite, Llama 4 Scout/Maverick, Mistral Large 3, Ministral 8B, GPT-OSS 120B/20B on Bedrock
-- Image generation via OpenAI-compatible `/v1/images/generations` (Nova Canvas, Titan Image v2, SD3.5 Large, Stable Image Ultra, Stable Image Core)
+- Anthropic (Opus 5, Sonnet 5, Opus 4.8/4.7/4.6, Sonnet 4.6, Haiku 4.5), DeepSeek V3.2, Qwen3 Coder 480B, Kimi K2.5, Nova Pro/Lite/Micro, Nova 2 Lite, Llama 4 Scout/Maverick, Mistral Large 3, Ministral 8B, GPT-OSS 120B/20B on Bedrock
+- Image generation via OpenAI-compatible `/v1/images/generations` (Stable Image Core, Stable Image Ultra, SD3.5 Large)
 - Image editing via `/v1/images/edits` — 13 Stability AI operations (structure, sketch, style transfer, upscale, inpaint, erase, search & recolor, and more) via LiteLLM native
-- Image services via sidecar: variations, background removal, outpainting (Nova Canvas)
-- Video generation via `/v1/videos/generations` (Nova Reel v1.1 + Luma Ray2 — async jobs with presigned S3 URLs)
+- Palette & style control: style reference (`--sref`-style) via Stability Style Guide, hex colour palettes via the sidecar `/v1/images/palette` endpoint
+- Video generation via `/v1/videos/generations` (Luma Ray2 — async jobs with presigned S3 URLs)
 - Virtual API keys with per-key budgets, rate limits, and model restrictions
 - Zero inbound security group rules — all traffic flows through Cloudflare Tunnel
 - Daily EBS snapshots with 7-day retention
@@ -30,7 +30,7 @@ Before you start, you need:
 
 1. **An AWS account** with an IAM user that has admin access (or root credentials for first-time setup)
 2. **A Cloudflare account** with a domain — you'll create an API token and a tunnel
-3. **Bedrock model access** — chat models auto-enable on first use. Stability AI image models (SD3.5 Large, Stable Image Ultra, Stable Image Core, and all Stability AI image edit models) and Luma Ray2 require a one-time Marketplace subscription (use them once in the Bedrock playground to activate)
+3. **Bedrock model access** — see "Bedrock model access" below
 
 ### Cloudflare API token
 
@@ -71,7 +71,7 @@ aws configure
 # Default region name: eu-west-2
 ```
 
-The `init` command will create a dedicated `rockport-deployer` IAM user with scoped permissions plus three MFA-gated operator roles (readonly / runtime-ops / deploy). After init completes, enrol an MFA device on `rockport-deployer` (see "MFA Enrolment" below) and the CLI handles role selection per subcommand via `SUBCOMMAND_ROLE`.
+The `init` command will create a dedicated `rockport-deployer` IAM user and the scoped IAM policies; the first `deploy` then creates three MFA-gated operator roles (readonly / runtime-ops / deploy) via Terraform. After init completes, enrol an MFA device on `rockport-deployer` (see "MFA Enrolment" below) and the CLI handles role selection per subcommand via `SUBCOMMAND_ROLE`.
 
 **Existing AWS account with an admin IAM user:**
 
@@ -92,7 +92,7 @@ Again, `init` will create the `rockport-deployer` user and `rockport` CLI profil
 
 This is an interactive setup that:
 - Prompts for your AWS region, domain, Cloudflare IDs, and budget alert email
-- Creates 6 scoped IAM policies: 3 deployer (compute, IAM/SSM, monitoring/storage) + 2 operator (readonly, runtime-ops) + 1 AssumeRole policy
+- Creates 7 scoped IAM policies: 3 deployer (compute, IAM/SSM, monitoring/storage) + 2 operator (readonly, runtime-ops) + 1 AssumeRole policy + 1 workload boundary
 - Creates a `rockport-deployer` IAM user with access keys
 - Generates a master API key and stores it in SSM Parameter Store
 - Creates an S3 bucket for Terraform state
@@ -138,13 +138,13 @@ Takes ~2 minutes for Terraform, then ~3 minutes for the EC2 instance to bootstra
 cp config/claude-code-settings-<key-name>.json ~/.claude/settings.json
 ```
 
-Launch Claude Code. Default model routes to Opus 4.6.
+Launch Claude Code. The generated settings default to `claude-sonnet-5`; pick Opus per session with `/model`.
 
 ## Admin CLI
 
 ```bash
 ./scripts/rockport.sh init                          # Interactive setup
-./scripts/rockport.sh deploy                        # Run terraform apply
+./scripts/rockport.sh deploy                        # Run terraform apply [--admin when an operator boundary policy changes]
 ./scripts/rockport.sh status                        # Health check + model list
 ./scripts/rockport.sh models                        # List available models
 ./scripts/rockport.sh key create <name> [--budget N] [--claude-only] # Create API key
@@ -162,6 +162,7 @@ Launch Claude Code. Default model routes to Opus 4.6.
 ./scripts/rockport.sh config push                   # Push config to instance + restart
 ./scripts/rockport.sh logs                          # Stream LiteLLM logs
 ./scripts/rockport.sh upgrade                       # Restart LiteLLM + video sidecar
+./scripts/rockport.sh upgrade --litellm             # Upgrade LiteLLM in place to the pinned version (keeps DB)
 ./scripts/rockport.sh start                         # Start a stopped instance
 ./scripts/rockport.sh stop                          # Stop the instance
 ./scripts/rockport.sh setup-claude                  # Create Anthropic-only key + Claude Code config
@@ -193,8 +194,8 @@ All settings are in `terraform/terraform.tfvars`. These variables have defaults 
 | `region` | `eu-west-2` | AWS region |
 | `tunnel_subdomain` | `llm` | Subdomain for the Cloudflare Tunnel |
 | `instance_type` | `t3.small` | EC2 instance type |
-| `litellm_version` | `1.82.6` | LiteLLM version to install |
-| `cloudflared_version` | `2026.3.0` | Cloudflared version (pinned for stability) |
+| `litellm_version` | `1.100.1` | LiteLLM version to install |
+| `cloudflared_version` | `2026.9.1` | Cloudflared version (pinned for stability) |
 | `cloudflared_sha256` | *(matches version)* | SHA256 of cloudflared binary — must update when changing version |
 | `bedrock_daily_budget` | `10` | Daily Bedrock spend alert threshold (USD) |
 | `monthly_budget` | `30` | Monthly overall AWS budget alert threshold (USD) |
@@ -212,54 +213,31 @@ Model configuration is in `config/litellm-config.yaml`. After editing, push chan
 
 Budget and rate limit defaults are also in `litellm-config.yaml`:
 - Global budget: `$10/day`
-- Per-key default budget: `$5/day`
+- Per-key budget: none unless `key create --budget N` (`$N/day`); internal users default to `$5/day`
 - Rate limits: `60 RPM`, `200K TPM` per key
 
 ### Image generation
 
 Image generation uses the OpenAI-compatible `/v1/images/generations` endpoint. Pass dimensions via the `size` parameter (e.g. `"1024x768"`).
 
-| Model | Dimensions | Constraint | Default |
-|-------|-----------|------------|---------|
-| Nova Canvas | 320–4096 per side | Must be divisible by 16 | 1024x1024 |
-| Titan Image v2 | Preset sizes | 256, 512, 768, 1024, 1152, 1408 combinations | 512x512 |
-| SD3.5 Large | Fixed 1024x1024 | `size` parameter ignored, returns JPEG not PNG | 1024x1024 |
-| Stable Image Ultra | Aspect ratio based | High quality, supports image-to-image, JPEG/PNG only | 1:1 |
-| Stable Image Core | Aspect ratio based | Text-to-image only, cheap drafts, JPEG/PNG only | 1:1 |
+All image models are Stability AI on Bedrock (us-west-2). Cheapest first — pick a bigger model when you need it:
 
-Nova Canvas also supports 8 built-in style presets via the `textToImageParams.style` field: `3D_ANIMATED_FAMILY_FILM`, `DESIGN_SKETCH`, `FLAT_VECTOR_ILLUSTRATION`, `GRAPHIC_NOVEL_ILLUSTRATION`, `MAXIMALISM`, `MIDCENTURY_RETRO`, `PHOTOREALISM`, `SOFT_DIGITAL_PAINTING`.
+| Model | Dimensions | Notes |
+|-------|-----------|-------|
+| Stable Image Core | Aspect ratio based | Text-to-image only, cheapest, good for drafts. JPEG/PNG |
+| Stable Image Ultra | Aspect ratio based | Highest quality, supports image-to-image. JPEG/PNG |
+| SD3.5 Large | Fixed 1024x1024 | `size` parameter ignored, returns JPEG not PNG |
 
 ```bash
 curl -X POST https://<your-domain>/v1/images/generations \
   -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"nova-canvas","prompt":"a mountain landscape","size":"1024x768","n":1}'
+  -d '{"model":"stable-image-core","prompt":"a mountain landscape","n":1}'
 ```
 
-Response contains `data[0].b64_json` with the base64-encoded PNG. Keys created with `--claude-only` cannot access image models.
+Response contains `data[0].b64_json` with the base64-encoded image. Keys created with `--claude-only` cannot access image models.
 
-#### Image-to-image (conditioned generation)
-
-Pass a source image to modify it with a text prompt. Use the same `/v1/images/generations` endpoint with model-specific parameters:
-
-**Nova Canvas** — pass `conditionImage` (base64) in `textToImageParams`:
-
-```bash
-curl -X POST https://<your-domain>/v1/images/generations \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "nova-canvas",
-    "prompt": "transform into a watercolor painting",
-    "size": "512x512",
-    "n": 1,
-    "textToImageParams": {"conditionImage": "<base64-encoded-image>"}
-  }'
-```
-
-Source images must be base64-encoded PNG or JPEG. Nova Canvas requires minimum 320px per side. SD3.5 Large also supports `mode: "image-to-image"` with an `image` and `strength` parameter, but always outputs 1024x1024 JPEG — Nova Canvas is recommended for image-to-image.
-
-**Note:** For Nova Canvas and Titan, use `/v1/images/generations` with `conditionImage` for image-to-image. `/v1/images/edits` is the Stability AI image edit endpoint (see below).
+Nova Canvas and Titan Image v2 were removed ahead of their Bedrock end-of-life dates (2026-09-30 and 2026-06-30). For image-to-image use Stable Image Ultra (`mode: "image-to-image"` with `image` and `strength`), or the Stability AI edit operations below.
 
 #### Stability AI image editing (via LiteLLM)
 
@@ -290,23 +268,37 @@ curl -X POST https://<your-domain>/v1/images/edits \
 
 Response contains `data[0].b64_json` with the base64-encoded image. LiteLLM handles auth, budget enforcement, and spend tracking natively.
 
-#### Nova Canvas sidecar endpoints
+#### Palette & style control
 
-Advanced Nova Canvas operations run on the sidecar (port 4001) and are routed via `/v1/images/*` (except `/v1/images/generations` and `/v1/images/edits` which go to LiteLLM). Keys created with `--claude-only` cannot access these endpoints.
+No surviving Bedrock image model takes a hex palette directly, but LiteLLM forwards every extra field on `/v1/images/generations` and the Stability edit parameters on `/v1/images/edits` straight to Bedrock:
 
-| Endpoint | Description |
-|----------|-------------|
-| `POST /v1/images/variations` | Generate variations of input images with a text prompt |
-| `POST /v1/images/background-removal` | Remove the background from an image |
-| `POST /v1/images/outpaint` | Extend an image beyond its borders using a mask |
+| Goal | Model | Parameters |
+|---|---|---|
+| Match a reference image's style (≈ `--sref`) | `stability-style-guide` (edits) | `image`, `prompt`, `fidelity` 0–1 (default 0.5), `negative_prompt`, `aspect_ratio`, `seed` |
+| Stick to a hex palette | `POST /v1/images/palette` (sidecar) | `colors`, `weights`, `fidelity`, `layout`, `negative_prompt`, `aspect_ratio`, `seed` |
+| Restyle an image from another image | `stability-style-transfer` (edits) | `image`, `style_image`, `style_strength`, `composition_fidelity`, `change_strength` |
+| Recolour a region | `stability-search-recolor` (edits) | `image`, `select_prompt`, `prompt`, `grow_mask` |
+| Steer colours in text-to-image | `stable-image-core` / `-ultra` / `sd3.5-large` | `negative_prompt`, `seed`, `aspect_ratio`; Ultra also `image` + `strength` |
 
-These endpoints authenticate via LiteLLM, enforce per-key budgets, and log spend to the unified tracking tables.
+```bash
+# Style reference
+curl -X POST https://<your-domain>/v1/images/edits -H "Authorization: Bearer $KEY" \
+  -F model=stability-style-guide -F image=@reference.png -F "prompt=a lighthouse at dusk" -F fidelity=0.8
+
+# Hex palette — sidecar renders a swatch, appends nearest CSS colour names to the prompt,
+# and submits a stability-style-guide edit through LiteLLM with your key ($0.04)
+curl -X POST https://<your-domain>/v1/images/palette -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"a lighthouse at dusk","colors":["#1e3a5f","#f4d35e","#ee964b"],"weights":[2,1,1],"fidelity":0.7}'
+```
+
+`colors` takes 1–8 `#RRGGBB` values; `layout` is `stripes` (weighted bands, default) or `blocks`; `augment_prompt: false` skips the colour-name suffix. The response adds a `palette` object (normalised colours, names, final prompt, `swatch_b64`). Style Guide learns texture as well as colour from its reference — lower `fidelity` if results look banded, raise it if the palette drifts. Unverified against a live account as of 2026-09-12.
 
 ### Video generation
 
-Video generation uses a sidecar service on port 4001 that supports multiple Bedrock video models. Bedrock's async invoke API (`StartAsyncInvoke` / `GetAsyncInvoke` with S3 output) isn't supported by LiteLLM ([tracking discussion](https://github.com/BerriAI/litellm/discussions/9320)) — the sidecar handles this and can be decommissioned if LiteLLM adds Bedrock async invoke support. The workflow is asynchronous — submit a job, then poll for completion. Specify the model via the `model` field (defaults to `nova-reel`).
+Video generation uses a sidecar service on port 4001 that drives Luma Ray2 on Bedrock. Bedrock's async invoke API (`StartAsyncInvoke` / `GetAsyncInvoke` with S3 output) isn't supported by LiteLLM's `/v1/videos` endpoint (which covers OpenAI, Azure, Gemini, Vertex and RunwayML only) — the sidecar handles this and can be decommissioned if LiteLLM adds Bedrock video support. The workflow is asynchronous — submit a job, then poll for completion. Nova Reel was removed ahead of its 2026-09-30 Bedrock end-of-life.
 
-**Single-shot mode** — one prompt, variable duration:
+Defaults are the cheapest valid options (5 seconds, 540p, 16:9); opt into 9 seconds or 720p per request.
 
 ```bash
 # Submit a video generation job
@@ -314,18 +306,18 @@ curl -X POST https://<your-domain>/v1/videos/generations \
   -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "prompt": "a drone flyover of a coastal cliff at sunset",
-    "duration": 12,
-    "seed": 42
+    "prompt": "a tiger walking through snow",
+    "duration": 5,
+    "aspect_ratio": "16:9",
+    "resolution": "540p",
+    "loop": false
   }'
 ```
-
-Duration must be a multiple of 6, from 6 to 120 seconds. `seed` is optional (for reproducibility). You can also pass an optional reference image as a PNG or JPEG data URI in the `image` field (auto-resized to 1280x720 if needed — see resize modes below).
 
 The POST returns `202 Accepted` with a job ID:
 
 ```json
-{"id": "job_abc123", "status": "in_progress", "mode": "single_shot", "duration": 12, "estimated_cost": 0.96, "created_at": "..."}
+{"id": "job_abc123", "status": "in_progress", "mode": "single_shot", "duration": 5, "estimated_cost": 3.75, "created_at": "..."}
 ```
 
 Poll for completion:
@@ -335,79 +327,32 @@ curl https://<your-domain>/v1/videos/generations/job_abc123 \
   -H "Authorization: Bearer $KEY"
 ```
 
-A completed job returns a presigned S3 URL (expires after 1 hour):
+A completed job returns a presigned S3 URL (expires after 1 hour). Once the file is gone (7-day bucket lifecycle, or the model's bucket was retired) the job reports `"status": "expired"` with an `error` message.
 
 ```json
-{"id": "job_abc123", "status": "completed", "mode": "single_shot", "duration": 12, "cost": 0.96, "url": "https://...s3.amazonaws.com/...", "url_expires_at": "..."}
+{"id": "job_abc123", "status": "completed", "mode": "single_shot", "duration": 5, "cost": 3.75, "url": "https://...s3.amazonaws.com/...", "url_expires_at": "..."}
 ```
 
-**Multi-shot mode** — 2 to 20 per-shot prompts, 6 seconds each:
+**Image-to-video** — pass a start frame as a PNG or JPEG data URI in `image`, and optionally an end frame in `end_image` (both 512–4096px per side, max 25MB).
 
-```bash
-curl -X POST https://<your-domain>/v1/videos/generations \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "shots": [
-      {"prompt": "a rocket on the launchpad, pre-dawn light"},
-      {"prompt": "the rocket lifts off with a plume of smoke"},
-      {"prompt": "aerial view of the rocket climbing through clouds"}
-    ]
-  }'
-```
+| Detail | Luma Ray2 |
+|--------|-----------|
+| Cost | $0.75/s (540p), $1.50/s (720p) |
+| Resolution | 540p (default) or 720p |
+| Aspect ratios | 16:9 (default), 9:16, 1:1, 4:3, 3:4, 21:9, 9:21 |
+| Duration | 5s (default) or 9s |
+| Prompt | Up to 5000 characters |
+| Image-to-video | Start + optional end frame (512–4096px, PNG/JPEG, ≤25MB) |
+| Loop | Yes (`loop: true`) |
+| Concurrent jobs per key | 3 (configurable via `VIDEO_MAX_CONCURRENT_JOBS`) |
+| Output storage | S3 bucket (us-west-2) with 7-day lifecycle |
+| Presigned URL expiry | 1 hour |
 
-Each shot is 6 seconds. Shots can optionally include a per-shot `image` field (1280x720 data URI).
-
-**Automated multi-shot mode** — single prompt, model determines shot breakdown:
-
-```bash
-curl -X POST https://<your-domain>/v1/videos/generations \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "mode": "multi-shot-automated",
-    "prompt": "A detailed story of a rocket launching from a coastal pad at sunrise, climbing through clouds, and reaching orbit with Earth visible below",
-    "duration": 24
-  }'
-```
-
-Duration must be 12–120 seconds (multiples of 6). Prompt can be up to 4000 characters. Nova Reel only.
-
-**Luma Ray2** — shorter clips with flexible aspect ratios and resolutions:
-
-```bash
-curl -X POST https://<your-domain>/v1/videos/generations \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "luma-ray2",
-    "prompt": "a tiger walking through snow",
-    "duration": 5,
-    "aspect_ratio": "16:9",
-    "resolution": "720p",
-    "loop": true
-  }'
-```
-
-Ray2 supports 7 aspect ratios (16:9, 9:16, 1:1, 4:3, 3:4, 21:9, 9:21), two resolutions (540p, 720p), and optional start/end frame images via `image` and `end_image` fields. Requires a one-time Marketplace subscription (same as SD3.5 Large).
-
-| Detail | Nova Reel | Luma Ray2 |
-|--------|-----------|-----------|
-| Cost | $0.08/second | $0.75/s (540p), $1.50/s (720p) |
-| Resolution | 1280x720 fixed | 540p or 720p, 7 aspect ratios |
-| Duration | 6–120s (multiples of 6) | 5s or 9s |
-| Multi-shot (manual) | 2–20 shots, 6s each | Not supported |
-| Multi-shot (automated) | Single prompt, 12–120s, model picks shots | Not supported |
-| Image-to-video | Start frame (auto-resized to 1280x720, 6s only) | Start + optional end frame (512–4096px) |
-| Loop | No | Yes |
-| Seed | Yes | No |
-| Concurrent jobs per key | 3 (configurable via `VIDEO_MAX_CONCURRENT_JOBS`) | Same |
-| Output storage | S3 bucket with 7-day lifecycle | Same |
-| Presigned URL expiry | 1 hour | Same |
+Requires a one-time Marketplace subscription (same as the Stability AI models).
 
 ## CI/CD
 
-Two GitHub Actions workflows run on push to `main`:
+Three GitHub Actions workflows:
 
 **Validate** (`validate.yml`) — runs on pushes and PRs to `main` (paths: `terraform/`, `config/`, `scripts/`, `sidecar/`, `tests/`, CI config):
 - `terraform fmt -check` and `terraform validate`
@@ -422,6 +367,8 @@ Two GitHub Actions workflows run on push to `main`:
 - Plans and applies on merge to `main`
 - Smoke tests after deploy
 
+**Release** (`release.yml`) — runs on `v*` tags; creates a GitHub release with commit-log notes since the previous tag.
+
 CI uses GitHub OIDC for AWS authentication. Set `AWS_ROLE_ARN` in GitHub repository secrets to an IAM role with OIDC trust policy. Also set `CLOUDFLARE_ZONE_ID`, `CLOUDFLARE_ACCOUNT_ID`, and `CLOUDFLARE_API_TOKEN` as secrets.
 
 ## Security design
@@ -432,7 +379,7 @@ Rockport is designed so that the proxy has no direct internet exposure. Every la
 
 **Localhost-only binding** — LiteLLM listens on `127.0.0.1:4000`, not `0.0.0.0`. Even if the security group were misconfigured, the service would not accept external connections directly.
 
-**Admin UI disabled** — The LiteLLM admin dashboard is disabled via `disable_admin_ui: true` and Swagger/ReDoc docs are disabled via `NO_DOCS=True` / `NO_REDOC=True` environment variables. A Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation, image editing, image services, and the admin CLI — only `/v1/chat/completions`, `/v1/models`, `/v1/messages`, `/v1/images/generations`, `/v1/images/*`, `/v1/videos/*`, `/key/*`, `/health` (exact match), `/spend/*`, and a handful of other operational paths are reachable. Everything else (admin UI, OpenAPI schema, routes list, SSO, SCIM, debug endpoints, etc.) returns 403 at the Cloudflare edge.
+**Admin UI disabled** — The LiteLLM admin dashboard is disabled via `disable_admin_ui: true` and Swagger/ReDoc docs are disabled via `NO_DOCS=True` / `NO_REDOC=True` environment variables. A Cloudflare WAF allowlist (`terraform/waf.tf`) blocks all paths except those needed by Claude Code, image generation, image editing, palette generation, video generation, and the admin CLI — only `/v1/chat/completions`, `/v1/models`, `/v1/messages`, `/v1/images/generations`, `/v1/images/edits`, `/v1/images/palette`, `/v1/videos/*`, `/key/*`, `/health` (exact match), `/spend/*`, and a handful of other operational paths are reachable. Everything else (admin UI, OpenAPI schema, routes list, SSO, SCIM, debug endpoints, etc.) returns 403 at the Cloudflare edge.
 
 **Key separation** — The master key (stored in SSM Parameter Store) is only used by the admin CLI. Users get virtual keys with per-key daily budgets and rate limits. Keys created with `--claude-only` (or via `setup-claude`) are restricted to Anthropic models only. Keys without this flag get access to all models including image generation. Virtual keys can only call model endpoints — they cannot create other keys, view spend, or manage the proxy.
 
@@ -442,7 +389,7 @@ Rockport is designed so that the proxy has no direct internet exposure. Every la
 
 **IMDSv2 enforced** — The instance metadata service requires session tokens (hop limit 1), preventing SSRF-based credential theft.
 
-**Transport security** — HSTS (6 months max-age) and "Always Use HTTPS" are enabled in Cloudflare, enforcing HTTPS-only access. HTTP requests are redirected with 301.
+**Transport security** — "Always Use HTTPS" is enabled in the Cloudflare dashboard (HTTP → 301). A Terraform response-header rule (`terraform/headers.tf`) adds HSTS (6 months max-age) and `X-Content-Type-Options: nosniff` to every proxied response.
 
 **Least-privilege IAM** — The deployer IAM policies (`terraform/deployer-policies/`) scope EC2 and SSM mutating actions to resources tagged `Project=rockport`. Read-only Describe actions use `Resource: *` as required by AWS. An explicit Deny statement prevents the deployer from attaching any AWS-managed policy (e.g. `AdministratorAccess`) to rockport roles — only rockport-prefixed custom policies are allowed, blocking privilege escalation via the CI/CD pipeline. The instance role is limited to Bedrock invoke and SSM parameter access.
 

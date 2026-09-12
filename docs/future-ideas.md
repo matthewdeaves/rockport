@@ -8,13 +8,17 @@ Cloudflare Rate Limiting rules could throttle requests before they reach the tun
 
 When the idle-stop Lambda stops the instance, it could publish to an SNS topic to notify the operator. Currently stops are visible in CloudWatch but don't trigger a notification. Useful if you want a push alert when the instance goes idle.
 
-## Pipeline Orchestration (Canvas-to-Reel in One Call)
+## Pipeline Orchestration (Image-to-Video in One Call)
 
-A `POST /v1/videos/pipeline` endpoint that accepts a character description, reference image, and list of shots, then orchestrates: (1) Nova Canvas IMAGE_VARIATION per shot with consistent seed/cfgScale to generate per-shot frames, (2) Nova Reel MULTI_SHOT_MANUAL with the generated frames. Eliminates the multi-step manual workflow. Deferred because it's the most complex and opinionated feature — better to prove the building blocks first.
+A `POST /v1/videos/pipeline` endpoint that accepts a character description, reference image, and list of shots, then orchestrates: (1) a Stability AI edit model per shot (style-guide / structure) to generate consistent per-shot keyframes, (2) one Ray2 job per shot using those keyframes as `image`/`end_image`. Eliminates the multi-step manual workflow. Deferred because it's the most complex and opinionated feature — better to prove the building blocks first. (Originally scoped for Nova Canvas + Nova Reel multi-shot; both retired 2026-09-30.)
 
-## Nova Lite Prompt Rewriting
+## Prompt Rewriting
 
-Opt-in parameter on `/v1/videos/generations` that calls Nova Lite (LLM) to convert rough animation intent into an optimised Nova Reel prompt before submission. Follows the AWS storyboarding pipeline pattern. Excluded because it adds latency (~2-5s), cost (LLM invocation), and an LLM dependency to what should be a video endpoint.
+Opt-in parameter on `/v1/videos/generations` that calls a cheap LLM (Haiku 4.5 or Nova 2 Lite) to convert rough animation intent into an optimised Ray2 prompt before submission. Excluded because it adds latency (~2-5s), cost (LLM invocation), and an LLM dependency to what should be a video endpoint.
+
+## Drop the video sidecar once LiteLLM supports Bedrock video
+
+LiteLLM's `/v1/videos` endpoint (1.100) supports OpenAI, Azure, Gemini, Vertex AI and RunwayML but not Bedrock async invoke. When Bedrock lands, the sidecar, port 4001, `rockport-video.service`, the us-west-2 video bucket and the `/v1/videos*` tunnel route can all go.
 
 ## Cloudflare Access with identity provider
 

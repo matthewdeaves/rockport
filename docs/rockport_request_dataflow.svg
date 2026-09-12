@@ -142,9 +142,9 @@
   <rect x="523" y="104" width="108" height="84" rx="4" fill="#1a1327" stroke="#d2a8ff" stroke-width="1.5"/>
   <text x="577" y="122" text-anchor="middle" fill="#d2a8ff" font-size="10" font-weight="bold">cloudflared</text>
   <text x="577" y="140" text-anchor="middle" fill="#8b949e" font-size="9">recv via tunnel</text>
-  <text x="577" y="155" text-anchor="middle" fill="#8b949e" font-size="9">/v1/videos*,images/* (not gen/edits) → :4001</text>
-  <text x="577" y="169" text-anchor="middle" fill="#8b949e" font-size="9">all else → :4000</text>
-  <text x="577" y="183" text-anchor="middle" fill="#58a6ff" font-size="8">path-based routing</text>
+  <text x="577" y="153" text-anchor="middle" fill="#8b949e" font-size="8">/v1/videos* → :4001</text>
+  <text x="577" y="165" text-anchor="middle" fill="#8b949e" font-size="8">/v1/images/palette* → :4001</text>
+  <text x="577" y="177" text-anchor="middle" fill="#8b949e" font-size="8">all else → :4000</text>
 
   <!-- ═══════════════════════════════════════════════════════════ -->
   <!-- STEP 5: LITELLM PROXY — sub-steps stacked vertically -->
@@ -195,7 +195,7 @@
   <!-- 5e: Budget Check  y=436..512 -->
   <rect x="658" y="436" width="508" height="76" rx="4" fill="#111827" stroke="#3fb950" stroke-width="1"/>
   <text x="668" y="452" fill="#3fb950" font-size="9" font-weight="bold">e.  Per-Key Budget Check</text>
-  <text x="668" y="468" fill="#8b949e" font-size="9">$5/day default budget if configured  ·  spend read from PostgreSQL</text>
+  <text x="668" y="468" fill="#8b949e" font-size="9">per-key budget (set via --budget)  ·  spend read from PostgreSQL</text>
   <!-- error badge -->
   <rect x="1060" y="454" width="96" height="22" rx="3" fill="#1a1200" stroke="#e3b341" stroke-width="1"/>
   <text x="1108" y="469" text-anchor="middle" fill="#e3b341" font-size="9" font-weight="bold">→ 400 Over Budget</text>
@@ -205,7 +205,7 @@
   <rect x="658" y="520" width="508" height="76" rx="4" fill="#111827" stroke="#3fb950" stroke-width="1"/>
   <text x="668" y="536" fill="#3fb950" font-size="9" font-weight="bold">f.  Model Routing</text>
   <text x="668" y="552" fill="#8b949e" font-size="9">map model name → Bedrock ARN + region</text>
-  <text x="668" y="568" fill="#8b949e" font-size="9">eu.* prefix for EU  ·  us-east-1 / us-west-2 for image models</text>
+  <text x="668" y="568" fill="#8b949e" font-size="9">eu.* prefix for EU  ·  us-west-2 for image models</text>
   <text x="668" y="584" fill="#8b949e" font-size="8">attach IAM role credentials · forward to Bedrock endpoint</text>
 
   <!-- ═══════════════════════════════════════════════════════════ -->
@@ -251,7 +251,7 @@
   <rect x="1373" y="328" width="404" height="52" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
   <text x="1380" y="346" fill="#f85149" font-size="10" font-weight="bold">Step 5c: Model Denied → 403</text>
   <text x="1380" y="362" fill="#8b949e" font-size="9">key restricted to specific model subset</text>
-  <text x="1380" y="374" fill="#8b949e" font-size="8">e.g. claude-only key used with nova-canvas</text>
+  <text x="1380" y="374" fill="#8b949e" font-size="8">e.g. claude-only key used with stable-image-core</text>
 
   <!-- 5d 429 -->
   <rect x="1373" y="388" width="404" height="52" rx="4" fill="#1a1200" stroke="#e3b341" stroke-width="1.5"/>
@@ -378,12 +378,12 @@
   <!-- Step badge -->
   <circle cx="535" cy="775" r="14" fill="#39d2c0"/>
   <text x="535" y="780" text-anchor="middle" fill="#0d1117" font-size="9" font-weight="bold">5V</text>
-  <text x="700" y="780" text-anchor="start" fill="#39d2c0" font-size="10" font-weight="bold">Video Sidecar Processing (alternate path from Step 4 when /v1/videos*)</text>
+  <text x="700" y="780" text-anchor="start" fill="#39d2c0" font-size="10" font-weight="bold">Sidecar Processing (alternate path from Step 4 when /v1/videos*; /v1/images/palette* renders a swatch and re-enters Step 5 as stability-style-guide)</text>
 
   <!-- 4→5V: cloudflared → Video Sidecar (downward arrow from step 4 box) -->
   <path d="M 577 188 L 577 770" stroke="#d2a8ff" stroke-width="2" marker-end="url(#ah-purple)"/>
   <text x="584" y="480" fill="#d2a8ff" font-size="8">:4001</text>
-  <text x="584" y="494" fill="#d2a8ff" font-size="8">/v1/videos*</text>
+  <text x="584" y="494" fill="#d2a8ff" font-size="8">/v1/videos* · /v1/images/palette*</text>
 
   <!-- 5V-a: Auth via LiteLLM  y=798..862 -->
   <rect x="523" y="798" width="640" height="64" rx="4" fill="#0a1a1a" stroke="#39d2c0" stroke-width="1"/>
@@ -396,9 +396,9 @@
 
   <!-- 5V-b: Validation  y=870..934 -->
   <rect x="523" y="870" width="640" height="64" rx="4" fill="#0a1a1a" stroke="#39d2c0" stroke-width="1"/>
-  <text x="533" y="888" fill="#39d2c0" font-size="9" font-weight="bold">b.  Validation: prompt, shots, duration, image</text>
-  <text x="533" y="904" fill="#8b949e" font-size="9">Nova Reel: 6-120s · multi-shot 2-20 × 6s · Luma Ray2: 5s or 9s</text>
-  <text x="533" y="922" fill="#8b949e" font-size="8">model-specific image constraints · cannot mix prompt + shots (Nova Reel)</text>
+  <text x="533" y="888" fill="#39d2c0" font-size="9" font-weight="bold">b.  Validation: prompt, duration, resolution, image</text>
+  <text x="533" y="904" fill="#8b949e" font-size="9">Luma Ray2: 5s (default) or 9s · 540p (default) or 720p · 7 aspect ratios</text>
+  <text x="533" y="922" fill="#8b949e" font-size="8">keyframes 512–4096px PNG/JPEG ≤25MB · end_image requires image</text>
   <!-- error badge -->
   <rect x="1060" y="880" width="96" height="22" rx="3" fill="#2a0808" stroke="#f85149" stroke-width="1"/>
   <text x="1108" y="895" text-anchor="middle" fill="#f85149" font-size="9" font-weight="bold">→ 400 Invalid</text>
@@ -406,7 +406,7 @@
   <!-- 5V-c: Budget check  y=942..1006 -->
   <rect x="523" y="942" width="640" height="64" rx="4" fill="#0a1a1a" stroke="#39d2c0" stroke-width="1"/>
   <text x="533" y="960" fill="#39d2c0" font-size="9" font-weight="bold">c.  Budget Check: estimated_cost vs remaining</text>
-  <text x="533" y="976" fill="#8b949e" font-size="9">Nova Reel: $0.08/s · Ray2: $0.75-1.50/s · checks remaining budget from key info</text>
+  <text x="533" y="976" fill="#8b949e" font-size="9">Ray2: $0.75/s (540p) · $1.50/s (720p) · checks remaining budget from key info</text>
   <text x="533" y="994" fill="#8b949e" font-size="8">estimated cost exceeds remaining budget → 402 Payment Required</text>
   <!-- error badge -->
   <rect x="1060" y="952" width="96" height="22" rx="3" fill="#1a1200" stroke="#e3b341" stroke-width="1"/>
@@ -423,7 +423,7 @@
 
   <!-- 5V-e: Concurrent job limit + store  y=1086..1150 -->
   <rect x="523" y="1086" width="640" height="64" rx="4" fill="#0a1a1a" stroke="#39d2c0" stroke-width="1"/>
-  <text x="533" y="1104" fill="#39d2c0" font-size="9" font-weight="bold">e.  Bedrock StartAsyncInvoke → Nova Reel (us-east-1) or Luma Ray2 (us-west-2)</text>
+  <text x="533" y="1104" fill="#39d2c0" font-size="9" font-weight="bold">e.  Bedrock StartAsyncInvoke → Luma Ray2 (us-west-2)</text>
   <text x="533" y="1120" fill="#8b949e" font-size="9">per-model region routing · MP4 output → region-matched S3 bucket</text>
   <text x="533" y="1138" fill="#8b949e" font-size="8">Bedrock error → 502 (job marked failed) · success → update job to in_progress · returns 202</text>
   <!-- Bedrock badge -->
@@ -449,13 +449,13 @@
 
   <rect x="1373" y="864" width="404" height="52" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
   <text x="1380" y="882" fill="#f85149" font-size="10" font-weight="bold">Step 5V-b: Validation Failed → 400</text>
-  <text x="1380" y="898" fill="#8b949e" font-size="9">bad duration, invalid image, mixed prompt+shots</text>
-  <text x="1380" y="910" fill="#8b949e" font-size="8">image auto-resized to 1280x720 · PNG or JPEG</text>
+  <text x="1380" y="898" fill="#8b949e" font-size="9">bad duration/resolution/aspect ratio, invalid keyframe</text>
+  <text x="1380" y="910" fill="#8b949e" font-size="8">512–4096px PNG/JPEG ≤25MB · end_image needs image</text>
 
   <rect x="1373" y="930" width="404" height="52" rx="4" fill="#1a1200" stroke="#e3b341" stroke-width="1.5"/>
   <text x="1380" y="948" fill="#e3b341" font-size="10" font-weight="bold">Step 5V-c: Budget Exceeded → 402</text>
   <text x="1380" y="964" fill="#8b949e" font-size="9">estimated cost exceeds remaining key budget</text>
-  <text x="1380" y="976" fill="#8b949e" font-size="8">Nova Reel $0.08/s · Ray2 $0.75-1.50/s</text>
+  <text x="1380" y="976" fill="#8b949e" font-size="8">Ray2 $0.75-1.50/s</text>
 
   <!-- Concurrent limit error box (step d) -->
   <rect x="1373" y="1014" width="404" height="52" rx="4" fill="#1a1200" stroke="#e3b341" stroke-width="1.5"/>
@@ -467,7 +467,7 @@
   <rect x="1193" y="1082" width="148" height="64" rx="4" fill="#0d1a12" stroke="#3fb950" stroke-width="1.5"/>
   <text x="1267" y="1102" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="bold">Bedrock Async</text>
   <text x="1267" y="1118" text-anchor="middle" fill="#8b949e" font-size="9">StartAsyncInvoke</text>
-  <text x="1267" y="1134" text-anchor="middle" fill="#8b949e" font-size="9">Nova Reel / Ray2</text>
+  <text x="1267" y="1134" text-anchor="middle" fill="#8b949e" font-size="9">Luma Ray2</text>
 
   <!-- Bedrock error box (step e) -->
   <rect x="1373" y="1086" width="404" height="52" rx="4" fill="#2a0808" stroke="#f85149" stroke-width="1.5"/>
@@ -534,7 +534,7 @@
   <rect x="1470" y="1278" width="148" height="64" rx="3" fill="#0d1a12" stroke="#3fb950" stroke-width="1"/>
   <text x="1544" y="1298" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="bold">S3 Bucket</text>
   <text x="1544" y="1314" text-anchor="middle" fill="#8b949e" font-size="8">rockport-video-*</text>
-  <text x="1544" y="1328" text-anchor="middle" fill="#8b949e" font-size="8">us-east-1 + us-west-2</text>
+  <text x="1544" y="1328" text-anchor="middle" fill="#8b949e" font-size="8">us-west-2</text>
 
   <!-- ═══════════════════════════════════════════════════════════ -->
   <!-- LEGEND (moved down) -->
@@ -564,7 +564,7 @@
   <text x="846" y="1411" fill="#e6edf3" font-size="9">PostgreSQL</text>
 
   <rect x="970" y="1402" width="10" height="10" rx="2" fill="#39d2c0"/>
-  <text x="986" y="1411" fill="#e6edf3" font-size="9">Video sidecar</text>
+  <text x="986" y="1411" fill="#e6edf3" font-size="9">Sidecar</text>
 
   <line x1="1100" y1="1407" x2="1140" y2="1407" stroke="#3fb950" stroke-width="2"/>
   <text x="1148" y="1411" fill="#e6edf3" font-size="9">request / response</text>
@@ -573,5 +573,5 @@
   <text x="1328" y="1411" fill="#e6edf3" font-size="9">error / control</text>
 
   <!-- Footer -->
-  <text x="900" y="1530" text-anchor="middle" fill="#8b949e" font-size="9" opacity="0.5">rockport · request data flow · cloudflare tunnel · litellm proxy · video sidecar · aws bedrock</text>
+  <text x="900" y="1530" text-anchor="middle" fill="#8b949e" font-size="9" opacity="0.5">rockport · request data flow · cloudflare tunnel · litellm proxy · sidecar · aws bedrock</text>
 </svg>

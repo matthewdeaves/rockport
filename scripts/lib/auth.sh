@@ -51,7 +51,28 @@ _resolve_role() {
       [[ "$arg" == "--instance" ]] && { echo "runtime-ops"; return 0; }
     done
   fi
+  # deploy --admin: applies that change an operator boundary policy document
+  # (aws_iam_policy.operator_*_boundary) need iam:CreatePolicyVersion, which the
+  # deploy boundary explicit-denies (Finding B). Run those under the admin MFA
+  # session, same as destroy.
+  if [[ "$subcmd" == "deploy" ]]; then
+    for arg in "$@"; do
+      [[ "$arg" == "--admin" ]] && { echo "admin"; return 0; }
+    done
+  fi
   echo "$role"
+}
+
+# Converts an ISO-8601 timestamp (as written by STS, e.g. 2026-09-12T11:00:00+00:00
+# or ...Z) to a Unix epoch. Portable across GNU date (Linux) and BSD date (macOS).
+_iso_to_epoch() {
+  local ts="$1"
+  # GNU date understands the raw string
+  date -d "$ts" +%s 2>/dev/null && return 0
+  # BSD date: normalise "Z" → "+0000" and "+00:00" → "+0000", drop fractional seconds
+  local norm
+  norm=$(printf '%s' "$ts" | sed -E 's/\.[0-9]+//; s/Z$/+0000/; s/([+-][0-9]{2}):([0-9]{2})$/\1\2/')
+  date -j -f '%Y-%m-%dT%H:%M:%S%z' "$norm" +%s 2>/dev/null
 }
 
 # Returns 0 if the AWS profile $1 has a usable session token whose expiry is
@@ -63,7 +84,7 @@ _session_valid() {
   expiration=$(aws configure get aws_session_expiration --profile "$profile" 2>/dev/null) || return 1
   [[ -z "$expiration" ]] && return 1
   local exp_epoch now_epoch
-  exp_epoch=$(date -d "$expiration" +%s 2>/dev/null) || return 1
+  exp_epoch=$(_iso_to_epoch "$expiration") || return 1
   now_epoch=$(date +%s)
   (( exp_epoch - now_epoch > 300 ))
 }
@@ -240,7 +261,7 @@ _cmd_auth_status() {
       expiration=$(aws configure get aws_session_expiration --profile "$profile" 2>/dev/null) || expiration=""
       if [[ -n "$expiration" ]]; then
         local exp_epoch now_epoch remaining
-        exp_epoch=$(date -d "$expiration" +%s 2>/dev/null) || exp_epoch=0
+        exp_epoch=$(_iso_to_epoch "$expiration") || exp_epoch=0
         now_epoch=$(date +%s)
         remaining=$(( exp_epoch - now_epoch ))
         if (( remaining > 0 )); then

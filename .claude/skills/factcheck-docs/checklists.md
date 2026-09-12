@@ -12,14 +12,14 @@ Use these checklists in Phase 2 to cross-reference every documentation claim aga
 - [ ] Configuration variables table — every variable exists in variables.tf, defaults match EXACTLY
 - [ ] Image generation model table — dimensions, constraints, defaults all correct per model
 - [ ] Image editing section — model names match config, endpoint path is correct, cost table accurate
-- [ ] Sidecar endpoint table — only lists endpoints that actually exist in image_api.py
-- [ ] Video generation — durations, costs, modes, model comparison table all accurate
+- [ ] Video generation — durations, costs, defaults, Ray2 table all accurate (no Nova Reel references)
+- [ ] Palette & style control — field table matches palette_api.py `PaletteRequest` defaults/limits; pass-through param lists match LiteLLM stability transformation
 - [ ] Security section — every claim matches actual systemd/terraform/WAF config
 - [ ] CI/CD section — matches actual workflow files
 - [ ] Smoke test description — cost estimate accurate, test count correct
 - [ ] Setup section — IAM policy names match actual policies created by init (3 deployer policies, not 1)
 - [ ] Setup section — admin vs deployer credential flow accurately described
-- [ ] Setup section — profile auto-selection behavior documented
+- [ ] Setup section — 017 auth flow documented (MFA enrolment, `auth --role`, `ROCKPORT_AUTH_DISABLED=1` bootstrap)
 - [ ] No dead links or references to removed features/endpoints
 
 ## CLAUDE.md
@@ -35,8 +35,6 @@ Use these checklists in Phase 2 to cross-reference every documentation claim aga
   - [ ] WAF description matches waf.tf expression EXACTLY
   - [ ] Memory limits match systemd MemoryMax values
   - [ ] Cost figures match actual Bedrock pricing
-  - [ ] Prompt validation rules match prompt_validation.py EXACTLY
-  - [ ] Resize modes match image_resize.py EXACTLY
 - [ ] Project Structure tree — includes example files (terraform.tfvars.example, .env.example)
 - [ ] Project Structure tree — includes all terraform/*.tf files that exist on disk
 - [ ] Project Structure tree — includes terraform/lambda/ directory and idle_shutdown.py
@@ -82,8 +80,8 @@ Use these checklists in Phase 2 to cross-reference every documentation claim aga
 - [ ] waf_allowed_paths matches every `not starts_with` and `ne` expression in terraform/waf.tf
 - [ ] tunnel_routes matches every ingress rule in terraform/tunnel.tf (path, backend, port, order)
 - [ ] endpoints.sidecar_video matches actual video_api.py @router endpoints
-- [ ] endpoints.sidecar_image matches actual image_api.py @router endpoints
 - [ ] endpoints.litellm_image includes /v1/images/generations and /v1/images/edits
+- [ ] endpoints.sidecar_image matches palette_api.py @router endpoints
 - [ ] known_risks are still accurate (not stale)
 - [ ] infrastructure.aws_region matches terraform.tfvars region
 

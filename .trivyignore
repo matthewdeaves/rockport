@@ -41,3 +41,7 @@ AVD-AWS-0162
 # that drifts from AWS's evolving API while gaining no real security benefit beyond
 # what the resource-scoped attached policy already provides.
 AVD-AWS-0345
+
+# SNS alerts topic carries only alarm names; CloudWatch alarms cannot publish to a topic
+# encrypted with the AWS-managed SNS key, and a CMK costs $1/mo for non-sensitive data
+AVD-AWS-0095

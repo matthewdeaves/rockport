@@ -13,6 +13,14 @@ locals {
     [var.region],
     ["eu-west-1", "eu-west-2", "eu-west-3", "eu-central-1", "eu-central-2", "eu-north-1", "eu-south-1", "eu-south-2", "us-east-1", "us-east-2", "us-west-1", "us-west-2"]
   ))
+
+  # Permissions boundary for every workload role Terraform creates (instance,
+  # idle-stop Lambda, DLM). Created by `rockport.sh init` from
+  # deployer-policies/workload-boundary.json. The deploy role may only create
+  # or modify roles that carry an approved boundary (iam-ssm.json +
+  # operator_deploy_boundary), so a compromised deploy session cannot mint a
+  # `rockport-*` role with broader rights than the boundary and PassRole it.
+  workload_boundary_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/RockportWorkloadBoundary"
 }
 
 # Data sources
@@ -42,7 +50,8 @@ data "aws_ssm_parameter" "al2023_ami" {
 # IAM
 
 resource "aws_iam_role" "rockport" {
-  name = "rockport-instance-role"
+  name                 = "rockport-instance-role"
+  permissions_boundary = local.workload_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -74,7 +83,6 @@ resource "aws_iam_role_policy" "bedrock_invoke" {
           for r in ["eu-west-1", "eu-west-2", "eu-west-3", "eu-central-1", "eu-central-2", "eu-north-1", "eu-south-1", "eu-south-2"] : [
             "arn:aws:bedrock:${r}::foundation-model/anthropic.claude-*",
             "arn:aws:bedrock:${r}::foundation-model/amazon.nova-*",
-            "arn:aws:bedrock:${r}::foundation-model/amazon.titan-*",
             "arn:aws:bedrock:${r}::foundation-model/deepseek.*",
             "arn:aws:bedrock:${r}::foundation-model/qwen.*",
             "arn:aws:bedrock:${r}::foundation-model/moonshotai.*",
@@ -95,7 +103,6 @@ resource "aws_iam_role_policy" "bedrock_invoke" {
             "arn:aws:bedrock:${r}::foundation-model/stability.*",
             "arn:aws:bedrock:${r}::foundation-model/luma.*",
             "arn:aws:bedrock:${r}::foundation-model/amazon.nova-*",
-            "arn:aws:bedrock:${r}::foundation-model/amazon.titan-*",
             "arn:aws:bedrock:${r}::foundation-model/meta.llama4*",
             "arn:aws:bedrock:${r}::foundation-model/mistral.*",
           ]
@@ -203,10 +210,7 @@ resource "aws_iam_role_policy" "bedrock_async_invoke" {
           "bedrock:GetAsyncInvoke"
         ]
         Resource = [
-          "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-*",
-          "arn:aws:bedrock:us-east-1:${data.aws_caller_identity.current.account_id}:async-invoke/*",
           "arn:aws:bedrock:us-west-2::foundation-model/luma.*",
-          "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-*",
           "arn:aws:bedrock:us-west-2:${data.aws_caller_identity.current.account_id}:async-invoke/*"
         ]
       },
@@ -233,18 +237,12 @@ resource "aws_iam_role_policy" "s3_video_bucket" {
           "s3:GetObject",
           "s3:HeadObject"
         ]
-        Resource = [
-          "${aws_s3_bucket.video.arn}/*",
-          "${aws_s3_bucket.video_us_west_2.arn}/*"
-        ]
+        Resource = ["${aws_s3_bucket.video_us_west_2.arn}/*"]
       },
       {
-        Effect = "Allow"
-        Action = "s3:ListBucket"
-        Resource = [
-          aws_s3_bucket.video.arn,
-          aws_s3_bucket.video_us_west_2.arn
-        ]
+        Effect   = "Allow"
+        Action   = "s3:ListBucket"
+        Resource = aws_s3_bucket.video_us_west_2.arn
       },
       {
         Sid    = "ArtifactsRead"
@@ -305,7 +303,6 @@ resource "aws_instance" "rockport" {
     cloudflared_version       = var.cloudflared_version
     cloudflared_sha256        = var.cloudflared_sha256
     artifacts_bucket          = aws_s3_bucket.artifacts.id
-    video_bucket_name         = aws_s3_bucket.video.id
     video_bucket_us_west_2    = aws_s3_bucket.video_us_west_2.id
     video_max_concurrent_jobs = var.video_max_concurrent_jobs
   }))
@@ -331,4 +328,13 @@ resource "aws_instance" "rockport" {
   tags = merge(local.common_tags, {
     Name = "rockport"
   })
+
+  # The AMI comes from the "latest AL2023" SSM parameter, which changes every few
+  # weeks. Without this, every `deploy` after an AMI release would destroy and
+  # recreate the instance — and PostgreSQL (virtual keys, spend logs, video jobs)
+  # lives on the root volume. Roll the AMI deliberately instead:
+  #   terraform apply -replace=aws_instance.rockport
+  lifecycle {
+    ignore_changes = [ami]
+  }
 }

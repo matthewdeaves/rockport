@@ -40,6 +40,10 @@ package_and_upload_artifact() {
     cp "$SCRIPT_DIR/../sidecar/requirements.lock" "$tmpdir/rockport-artifact/sidecar/"
   fi
 
+  # Shared LiteLLM install/upgrade script (used by bootstrap and upgrade --litellm)
+  mkdir -p "$tmpdir/rockport-artifact/scripts" || die "Failed to create artifact scripts dir"
+  cp "$SCRIPT_DIR/install-litellm.sh" "$tmpdir/rockport-artifact/scripts/" || die "Failed to copy install-litellm.sh"
+
   # Create tarball
   tar czf "$tmpdir/rockport-artifact.tar.gz" -C "$tmpdir" rockport-artifact/ \
     || die "Failed to create artifact tarball"
@@ -65,15 +69,8 @@ package_and_upload_artifact() {
   # Upload cloudflared binary to S3 as fallback for bootstrap
   # (GitHub CDN can return transient 404s during first boot)
   local cf_version cf_sha256
-  cf_version=$(grep '^cloudflared_version' "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null | sed 's/.*= *"//;s/"//' || true)
-  cf_sha256=$(grep '^cloudflared_sha256' "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null | sed 's/.*= *"//;s/"//' || true)
-  # Fall back to variable defaults if not in tfvars
-  if [[ -z "$cf_version" ]]; then
-    cf_version=$(grep -A3 'variable "cloudflared_version"' "$TERRAFORM_DIR/variables.tf" | grep default | sed 's/.*= *"//;s/"//' || true)
-  fi
-  if [[ -z "$cf_sha256" ]]; then
-    cf_sha256=$(grep -A3 'variable "cloudflared_sha256"' "$TERRAFORM_DIR/variables.tf" | grep default | sed 's/.*= *"//;s/"//' || true)
-  fi
+  cf_version=$(tf_var cloudflared_version)
+  cf_sha256=$(tf_var cloudflared_sha256)
   if [[ -n "$cf_version" ]]; then
     echo "  Downloading cloudflared $cf_version for S3 fallback..."
     if curl -fsSL --retry 3 --retry-delay 5 \
@@ -114,8 +111,26 @@ get_instance_id() {
   echo "$CACHED_INSTANCE_ID"
 }
 
+# Multi-line variant of ssm_run: each line of $1 becomes one entry in the
+# AWS-RunShellScript commands array (so quoting inside the script is untouched).
+ssm_run_script() {
+  local script="$1"
+  local timeout="${2:-300}"
+  local params_file
+  params_file=$(mktemp) || die "Failed to create temp file"
+  trap 'rm -f "$params_file"' RETURN
+  jq -n --arg script "$script" '{"commands": ($script | split("\n"))}' > "$params_file" \
+    || die "Failed to build SSM parameters"
+  _ssm_send_and_wait "file://$params_file" "$timeout"
+}
+
+# Single-command convenience wrapper (quotes in $1 are handled by jq, not by hand).
 ssm_run() {
-  local cmd_string="$1"
+  ssm_run_script "$1" "${2:-30}"
+}
+
+_ssm_send_and_wait() {
+  local parameters="$1"
   local timeout="${2:-30}"
   local instance_id region cmd_id
   instance_id="$(get_instance_id)"
@@ -124,7 +139,7 @@ ssm_run() {
   cmd_id=$(aws ssm send-command \
     --instance-ids "$instance_id" \
     --document-name "AWS-RunShellScript" \
-    --parameters "{\"commands\":[\"$cmd_string\"]}" \
+    --parameters "$parameters" \
     --timeout-seconds "$timeout" \
     --region "$region" \
     --query 'Command.CommandId' \
@@ -213,41 +228,36 @@ cmd_config_push() {
   local artifacts_bucket
   artifacts_bucket="$(get_artifacts_bucket)"
 
-  local params_file
-  params_file=$(mktemp) || die "Failed to create temp file"
-  trap 'rm -f "$params_file"' RETURN
-  # Stop sidecar, download artifact, extract, restart services
-  jq -n --arg bucket "$artifacts_bucket" --arg region "$region" \
-    '{"commands":["systemctl stop rockport-video 2>/dev/null || true && aws s3 cp s3://\($bucket)/deploy/rockport-artifact.tar.gz /tmp/rockport-artifact.tar.gz --region \($region) && rm -rf /tmp/rockport-artifact && tar xzf /tmp/rockport-artifact.tar.gz -C /tmp && cp /tmp/rockport-artifact/config/litellm-config.yaml /etc/litellm/config.yaml && chown litellm:litellm /etc/litellm/config.yaml && cp /tmp/rockport-artifact/sidecar/*.py /opt/rockport-video/ && chown -R litellm:litellm /opt/rockport-video && cp /tmp/rockport-artifact/config/litellm.service /etc/systemd/system/litellm.service && cp /tmp/rockport-artifact/config/cloudflared.service /etc/systemd/system/cloudflared.service && cp /tmp/rockport-artifact/config/rockport-video.service /etc/systemd/system/rockport-video.service && systemctl daemon-reload && rm -rf /tmp/rockport-artifact /tmp/rockport-artifact.tar.gz && systemctl restart litellm && for i in $(seq 1 60); do curl -sf http://127.0.0.1:4000/health/readiness >/dev/null 2>&1 && break; sleep 2; done && systemctl start rockport-video && echo Config and sidecar pushed and services restarted"]}' \
-    > "$params_file"
+  # Stop sidecar, download artifact, verify checksum, extract, install locked sidecar
+  # deps, restart services. Mirrors bootstrap.sh so config push cannot drift from a
+  # fresh deploy (deps included — previously only *.py was copied).
+  local remote_script
+  remote_script=$(cat <<'REMOTE'
+set -e
+A=/tmp/rockport-artifact
+systemctl stop rockport-video 2>/dev/null || true
+aws s3 cp "s3://__BUCKET__/deploy/rockport-artifact.tar.gz" "$A.tar.gz" --region __REGION__
+aws s3 cp "s3://__BUCKET__/deploy/rockport-artifact.tar.gz.sha256" "$A.tar.gz.sha256" --region __REGION__
+(cd /tmp && sha256sum -c rockport-artifact.tar.gz.sha256)
+rm -rf "$A" && tar xzf "$A.tar.gz" -C /tmp
+cp "$A/config/litellm-config.yaml" /etc/litellm/config.yaml && chown litellm:litellm /etc/litellm/config.yaml
+if [ -f "$A/sidecar/requirements.lock" ]; then pip3.11 install -q --require-hashes -r "$A/sidecar/requirements.lock"; fi
+cp "$A"/sidecar/*.py /opt/rockport-video/ && chown -R litellm:litellm /opt/rockport-video
+cp "$A/config/litellm.service" "$A/config/cloudflared.service" "$A/config/rockport-video.service" /etc/systemd/system/
+systemctl daemon-reload
+rm -rf "$A" "$A.tar.gz" "$A.tar.gz.sha256"
+systemctl restart litellm
+for i in $(seq 1 60); do curl -sf http://127.0.0.1:4000/health/readiness >/dev/null 2>&1 && break; sleep 2; done
+systemctl start rockport-video
+echo "Config and sidecar pushed and services restarted"
+REMOTE
+)
+  remote_script="${remote_script//__BUCKET__/$artifacts_bucket}"
+  remote_script="${remote_script//__REGION__/$region}"
 
-  local command_id
-  command_id=$(aws ssm send-command \
-    --instance-ids "$instance_id" \
-    --region "$region" \
-    --document-name "AWS-RunShellScript" \
-    --parameters "file://$params_file" \
-    --query "Command.CommandId" \
-    --output text) || {
-    echo "ERROR: Failed to send command via SSM" >&2
-    return 1
-  }
-
-  echo "Waiting for restart..."
-  if ! aws ssm wait command-executed \
-    --command-id "$command_id" \
-    --instance-id "$instance_id" \
-    --region "$region" 2>/dev/null; then
-    echo "WARNING: Wait timed out or command may have failed" >&2
-  fi
-
+  echo "Waiting for install + restart (up to 10 min)..."
   local result
-  result=$(aws ssm get-command-invocation \
-    --command-id "$command_id" \
-    --instance-id "$instance_id" \
-    --region "$region" \
-    --query "StandardOutputContent" \
-    --output text)
+  result=$(ssm_run_script "$remote_script" 600) || die "Config push failed on instance $instance_id"
   echo "$result"
 }
 
@@ -265,6 +275,41 @@ cmd_logs() {
 cmd_upgrade() {
   local instance_id
   instance_id="$(get_instance_id)"
+
+  if [[ "${1:-}" == "--litellm" ]]; then
+    local version="${2:-$(tf_var litellm_version)}"
+    [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "Invalid LiteLLM version: $version"
+    echo "Upgrading LiteLLM to $version on instance $instance_id (in place — DB is kept)..."
+    echo "This takes several minutes: pip install, prisma generate, prisma migrate deploy, restart."
+    # Same scripts/install-litellm.sh that bootstrap runs on first boot, delivered via the
+    # deploy artifact. Services are stopped before it runs so LiteLLM doesn't race migrate.
+    package_and_upload_artifact
+    local remote_script
+    remote_script=$(cat <<'REMOTE'
+set -e
+A=/tmp/rockport-artifact
+aws s3 cp "s3://__BUCKET__/deploy/rockport-artifact.tar.gz" "$A.tar.gz" --region __REGION__
+aws s3 cp "s3://__BUCKET__/deploy/rockport-artifact.tar.gz.sha256" "$A.tar.gz.sha256" --region __REGION__
+(cd /tmp && sha256sum -c rockport-artifact.tar.gz.sha256)
+rm -rf "$A" && tar xzf "$A.tar.gz" -C /tmp
+systemctl stop rockport-video 2>/dev/null || true
+systemctl stop litellm
+bash "$A/scripts/install-litellm.sh" __VERSION__
+rm -rf "$A" "$A.tar.gz" "$A.tar.gz.sha256"
+systemctl start litellm
+for i in $(seq 1 90); do curl -sf http://127.0.0.1:4000/health/readiness >/dev/null 2>&1 && break; sleep 2; done
+systemctl start rockport-video
+REMOTE
+)
+    remote_script="${remote_script//__BUCKET__/$(get_artifacts_bucket)}"
+    remote_script="${remote_script//__REGION__/$(get_region)}"
+    remote_script="${remote_script//__VERSION__/$version}"
+    local result
+    result=$(ssm_run_script "$remote_script" 900) || die "LiteLLM upgrade failed on instance $instance_id"
+    echo "$result"
+    return
+  fi
+
   echo "Restarting LiteLLM on instance $instance_id..."
   local result
   result=$(ssm_run "sudo systemctl restart litellm && (sudo systemctl restart rockport-video 2>/dev/null || true) && echo Services restarted successfully" 30) \

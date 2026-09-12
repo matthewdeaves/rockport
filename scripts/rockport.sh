@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # shellcheck source-path=SCRIPTDIR
 # (`source-path=SCRIPTDIR` tells shellcheck to resolve `source $SCRIPT_DIR/lib/*.sh`
 # directives relative to this file's directory, silencing SC1091 in CI.)
@@ -47,15 +47,12 @@ get_region() {
     echo "$CACHED_REGION"
     return
   fi
-  if [[ -f "$TERRAFORM_DIR/terraform.tfvars" ]]; then
-    local r
-    r=$(sed -n 's/^region[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null) && [[ -n "$r" ]] && {
-      CACHED_REGION="$r"
-      echo "$r"
-      return
-    }
-  fi
   local r
+  r=$(tf_var region) && [[ -n "$r" ]] && {
+    CACHED_REGION="$r"
+    echo "$r"
+    return
+  }
   r=$(cd "$TERRAFORM_DIR" && terraform output -raw region 2>/dev/null) && {
     CACHED_REGION="$r"
     echo "$r"
@@ -206,16 +203,20 @@ EOF
 
 cmd_deploy() {
   load_env
-  echo "Deploying infrastructure..."
-  local region bucket enable_guardrails=""
-  # Parse --guardrails flag
+  local region bucket enable_guardrails="" as_admin=""
+  # Parse flags
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --guardrails)    enable_guardrails="-var=enable_guardrails=true"; shift ;;
       --no-guardrails) enable_guardrails="-var=enable_guardrails=false"; shift ;;
+      --admin)         as_admin=1; shift ;;
       *) shift ;;
     esac
   done
+  # Boundary policy documents (iam-operator-roles.tf) can only be re-versioned by
+  # admin — the deploy role is denied iam:CreatePolicyVersion by design.
+  [[ -n "$as_admin" ]] && admin_mfa_session
+  echo "Deploying infrastructure${as_admin:+ (admin session)}..."
   region="$(get_region)"
   bucket="$(get_state_bucket)"
 
@@ -391,7 +392,7 @@ Commands:
   init                Interactive setup — creates terraform.tfvars and master key
   auth                Authenticate via MFA-gated STS [--role readonly|runtime-ops|deploy]
   auth status         Show cached operator-role sessions and time remaining
-  deploy              Run terraform apply [--guardrails] [--no-guardrails]
+  deploy              Run terraform apply [--guardrails] [--no-guardrails] [--admin: required when an operator boundary policy changes]
   status [--instance] Check service health and model list (--instance: includes in-VM stats; escalates to runtime-ops)
   models              List available models
   key create <name>   Create a new API key [--budget <amount>] [--claude-only]
@@ -407,7 +408,7 @@ Commands:
   monitor             Key status and recent requests [--live] [--interval N] [--count N]
   config push         Push local config to instance and restart
   logs                Stream LiteLLM logs (via SSM)
-  upgrade             Restart LiteLLM service
+  upgrade             Restart LiteLLM + sidecar; --litellm [ver] upgrades LiteLLM in place (keeps DB)
   start               Start a stopped instance (waits for healthy)
   stop                Stop the instance (waits for stopped)
   setup-claude        Create key and show Claude Code config
@@ -459,7 +460,7 @@ case "${1:-}" in
   logs)         cmd_logs ;;
   deploy)       cmd_deploy "${@:2}" ;;
   destroy)      cmd_destroy ;;
-  upgrade)      cmd_upgrade ;;
+  upgrade)      cmd_upgrade "${@:2}" ;;
   start)        cmd_start ;;
   stop)         cmd_stop ;;
   setup-claude) cmd_setup_claude ;;

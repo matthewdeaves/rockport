@@ -57,7 +57,7 @@ make_stub_aws() {
 set -uo pipefail
 
 REAL_AWS=""
-for p in /usr/local/bin/aws /usr/bin/aws "$HOME/.local/bin/aws"; do
+for p in /usr/local/bin/aws /opt/homebrew/bin/aws /usr/bin/aws "$HOME/.local/bin/aws"; do
   [ -x "$p" ] && REAL_AWS="$p" && break
 done
 if [ -z "$REAL_AWS" ]; then
@@ -173,17 +173,23 @@ assert_eq "resolve_role: unknown → readonly" "readonly" \
 # ============================================================================
 SB=$(mk_sandbox session-valid); make_stub_aws "$SB"; make_stub_terraform "$SB"
 
-future_30m=$(date -u -d '+30 minutes' '+%Y-%m-%dT%H:%M:%S+0000')
+# Portable "now + N minutes" in the ISO format STS emits (GNU date on Linux, BSD date on macOS).
+_ts_offset() {
+  date -u -d "$1 minutes" '+%Y-%m-%dT%H:%M:%S+0000' 2>/dev/null \
+    || date -u -v"$1"M '+%Y-%m-%dT%H:%M:%S+0000'
+}
+
+future_30m=$(_ts_offset +30)
 HOME="$SB/home" aws configure set aws_session_expiration "$future_30m" --profile rockport-readonly
 run_in_sandbox "$SB" '_session_valid rockport-readonly' >/dev/null
 assert_pass "_session_valid: future 30m valid" $?
 
-past=$(date -u -d '-1 hour' '+%Y-%m-%dT%H:%M:%S+0000')
+past=$(_ts_offset -60)
 HOME="$SB/home" aws configure set aws_session_expiration "$past" --profile rockport-readonly
 run_in_sandbox "$SB" '_session_valid rockport-readonly' >/dev/null
 assert_fail "_session_valid: expired session rejected" $?
 
-soon=$(date -u -d '+2 minutes' '+%Y-%m-%dT%H:%M:%S+0000')
+soon=$(_ts_offset +2)
 HOME="$SB/home" aws configure set aws_session_expiration "$soon" --profile rockport-readonly
 run_in_sandbox "$SB" '_session_valid rockport-readonly' >/dev/null
 assert_fail "_session_valid: <5min buffer rejected" $?
@@ -204,7 +210,7 @@ assert_fail "_session_valid: missing profile rejected" $?
 # ============================================================================
 SB=$(mk_sandbox assume-role-success); make_stub_aws "$SB"; make_stub_terraform "$SB"
 
-future=$(date -u -d '+1 hour' '+%Y-%m-%dT%H:%M:%S+0000')
+future=$(_ts_offset +60)
 ASSUME_OUTPUT=$(jq -nc --arg expiry "$future" '{
   Credentials: {
     AccessKeyId: "ASIA1234567890",
@@ -250,7 +256,7 @@ assert_fail "assume_role: surfaces sts failure" $?
 # ensure_session_valid_for_role — cached session reuse + bypass
 # ============================================================================
 SB=$(mk_sandbox cached-session); make_stub_aws "$SB"; make_stub_terraform "$SB"
-future=$(date -u -d '+50 minutes' '+%Y-%m-%dT%H:%M:%S+0000')
+future=$(_ts_offset +50)
 HOME="$SB/home" aws configure set aws_access_key_id     ASIACACHED --profile rockport-readonly
 HOME="$SB/home" aws configure set aws_secret_access_key wJSECRET   --profile rockport-readonly
 HOME="$SB/home" aws configure set aws_session_token     TOKEN      --profile rockport-readonly
@@ -292,10 +298,10 @@ assert_fail "ensure_session_valid_for_role: legacy fallback removed (phase 5)" $
 # _cmd_auth_status — shows a line per role with state
 # ============================================================================
 SB=$(mk_sandbox auth-status); make_stub_aws "$SB"; make_stub_terraform "$SB"
-future=$(date -u -d '+45 minutes' '+%Y-%m-%dT%H:%M:%S+0000')
+future=$(_ts_offset +45)
 HOME="$SB/home" aws configure set aws_session_expiration "$future" --profile rockport-readonly
 HOME="$SB/home" aws configure set region eu-west-2                  --profile rockport-readonly
-past=$(date -u -d '-1 hour' '+%Y-%m-%dT%H:%M:%S+0000')
+past=$(_ts_offset -60)
 HOME="$SB/home" aws configure set aws_session_expiration "$past"    --profile rockport-runtime-ops
 HOME="$SB/home" aws configure set region eu-west-2                  --profile rockport-runtime-ops
 

@@ -5,14 +5,11 @@
       "Sid": "IAMRolesAndProfiles",
       "Effect": "Allow",
       "Action": [
-        "iam:CreateRole",
         "iam:GetRole",
         "iam:DeleteRole",
         "iam:UpdateAssumeRolePolicy",
-        "iam:PutRolePolicy",
         "iam:GetRolePolicy",
         "iam:DeleteRolePolicy",
-        "iam:AttachRolePolicy",
         "iam:DetachRolePolicy",
         "iam:ListAttachedRolePolicies",
         "iam:ListRolePolicies",
@@ -29,6 +26,41 @@
         "arn:aws:iam::*:role/rockport*",
         "arn:aws:iam::*:role/dlm-lifecycle-*",
         "arn:aws:iam::*:instance-profile/rockport*"
+      ]
+    },
+    {
+      "Sid": "IAMRoleMutationRequiresBoundary",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:PutRolePolicy",
+        "iam:AttachRolePolicy",
+        "iam:PutRolePermissionsBoundary"
+      ],
+      "Resource": [
+        "arn:aws:iam::*:role/rockport*",
+        "arn:aws:iam::*:role/dlm-lifecycle-*"
+      ],
+      "Condition": {
+        "StringLike": {
+          "iam:PermissionsBoundary": [
+            "arn:aws:iam::*:policy/RockportWorkloadBoundary",
+            "arn:aws:iam::*:policy/RockportOperatorReadonlyBoundary",
+            "arn:aws:iam::*:policy/RockportOperatorRuntimeOpsBoundary",
+            "arn:aws:iam::*:policy/RockportOperatorDeployBoundary"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "DenyBoundaryRemoval",
+      "Effect": "Deny",
+      "Action": [
+        "iam:DeleteRolePermissionsBoundary"
+      ],
+      "Resource": [
+        "arn:aws:iam::*:role/rockport*",
+        "arn:aws:iam::*:role/dlm-lifecycle-*"
       ]
     },
     {

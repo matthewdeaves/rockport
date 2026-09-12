@@ -1,8 +1,11 @@
 """Rockport Video Generation Sidecar API.
 
-FastAPI service that proxies video generation requests to Amazon Bedrock
-video models (Nova Reel, Luma Ray2) via the async invoke API. Runs alongside
-LiteLLM on the same EC2 instance.
+FastAPI service that proxies video generation requests to Amazon Bedrock's
+Luma Ray2 model via the async invoke API. Runs alongside LiteLLM on the same
+EC2 instance. (Nova Reel support was removed ahead of its 2026-09-30 EOL.)
+
+Also mounts palette_api — palette-guided image generation that proxies to LiteLLM's
+Stability Style Guide model (see palette_api.py).
 
 All endpoints use def (not async def) so FastAPI runs them in a threadpool,
 avoiding event loop blocking from synchronous boto3 and psycopg2 calls.
@@ -28,9 +31,7 @@ from PIL import Image
 from pydantic import BaseModel, Field
 
 import db
-import image_api
-import image_resize
-import prompt_validation
+import palette_api
 
 # Limit Pillow decompression to accommodate Ray2's 4096x4096 max
 Image.MAX_IMAGE_PIXELS = 4096 * 4096 * 2
@@ -43,56 +44,33 @@ MAX_CONCURRENT_JOBS = int(os.environ.get("VIDEO_MAX_CONCURRENT_JOBS", "3"))
 
 # Per-region S3 buckets (Bedrock async invoke requires same-region bucket)
 VIDEO_BUCKETS = {
-    "us-east-1": os.environ.get("VIDEO_BUCKET", ""),
     "us-west-2": os.environ.get("VIDEO_BUCKET_US_WEST_2", ""),
 }
 
 # --- Video Model Registry ---
 
+DEFAULT_MODEL = "luma-ray2"
+
 VIDEO_MODELS = {
-    "nova-reel": {
-        "bedrock_model_id": "amazon.nova-reel-v1:1",
-        "region": "us-east-1",
-        "durations": list(range(6, 121, 6)),  # 6, 12, 18, ..., 120
-        "duration_must_be_multiple_of": 6,
-        "resolutions": None,  # fixed 1280x720
-        "aspect_ratios": None,  # fixed 16:9
-        "supports_multi_shot": True,
-        "supports_loop": False,
-        "supports_seed": True,
-        "supports_end_image": False,
-        "max_prompt_length": 512,
-        "max_shot_prompt_length": 512,
-        "cost_per_second": {"default": 0.08},
-        "image_exact_size": (1280, 720),
-        "image_min_size": None,
-        "image_max_size": None,
-        "image_max_bytes": 10 * 1024 * 1024,
-        "default_resolution": None,
-        "default_aspect_ratio": None,
-    },
     "luma-ray2": {
         "bedrock_model_id": "luma.ray-v2:0",
         "region": "us-west-2",
         "durations": [5, 9],
-        "duration_must_be_multiple_of": None,
         "resolutions": ["540p", "720p"],
         "aspect_ratios": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "9:21"],
-        "supports_multi_shot": False,
-        "supports_loop": True,
-        "supports_seed": False,
-        "supports_end_image": True,
         "max_prompt_length": 5000,
-        "max_shot_prompt_length": None,  # no multi-shot support
         "cost_per_second": {"540p": 0.75, "720p": 1.50},
-        "image_exact_size": None,
         "image_min_size": (512, 512),
         "image_max_size": (4096, 4096),
         "image_max_bytes": 25 * 1024 * 1024,
-        "default_resolution": "720p",
+        "default_resolution": "540p",  # cheapest; 720p opt-in
         "default_aspect_ratio": "16:9",
     },
 }
+
+# --- Throttle Detection ---
+
+THROTTLE_ERROR_CODES = ("ThrottlingException", "TooManyRequestsException", "ServiceQuotaExceededException")
 
 # --- Boto3 clients (initialized on startup, keyed by region) ---
 
@@ -105,8 +83,8 @@ async def lifespan(app: FastAPI):
     database_url = os.environ.get("DATABASE_URL", "")
     db.init_pool(database_url)
     db.ensure_tables()
-    # Initialize one Bedrock + S3 client per region used by video and image models
-    regions = {m["region"] for m in VIDEO_MODELS.values()} | {image_api.NOVA_CANVAS["region"]}
+    # Initialize one Bedrock + S3 client per region used by video models
+    regions = {m["region"] for m in VIDEO_MODELS.values()}
     for region in regions:
         bedrock_clients[region] = boto3.client("bedrock-runtime", region_name=region)
         s3_clients[region] = boto3.client("s3", region_name=region, config=BotoConfig(signature_version="s3v4"))
@@ -182,9 +160,24 @@ class BodySizeLimitMiddleware:
 
 app.add_middleware(BodySizeLimitMiddleware)
 
-app.include_router(image_api.router)
+app.include_router(palette_api.router)
 
 logger = logging.getLogger("rockport-video")
+
+
+def raise_if_throttled(exc: ClientError, error_ref: str, operation: str):
+    """Raise HTTP 429 if the ClientError is a Bedrock throttle/quota error.
+
+    Returns without raising if the error is not throttle-related.
+    """
+    error_code = exc.response.get("Error", {}).get("Code", "") if hasattr(exc, "response") else ""
+    if error_code in THROTTLE_ERROR_CODES:
+        error_msg = exc.response.get("Error", {}).get("Message", str(exc)) if hasattr(exc, "response") else str(exc)
+        logger.warning("%s throttled [ref=%s]: %s", operation, error_ref, error_msg)
+        raise HTTPException(status_code=429, headers={"Retry-After": "5"}, detail={
+            "error": {"type": "rate_limit_exceeded",
+                      "message": f"Rate limit exceeded. Please retry after the specified interval. Reference: {error_ref}"}
+        })
 
 
 # --- Auth ---
@@ -245,72 +238,18 @@ def is_claude_only_key(auth: dict) -> bool:
 
 # --- Request models ---
 
-class ShotRequest(BaseModel):
-    prompt: str = Field(..., min_length=1)
-    image: str | None = Field(default=None, max_length=14_000_000)
-
-
 class VideoGenerationRequest(BaseModel):
     model: str | None = None
-    prompt: str | None = Field(default=None, min_length=1)
-    mode: str | None = None
+    prompt: str = Field(..., min_length=1)
     duration: int | None = None
     image: str | None = Field(default=None, max_length=35_000_000)
     end_image: str | None = Field(default=None, max_length=35_000_000)
-    shots: list[ShotRequest] | None = None
-    seed: int | None = Field(default=None, ge=0, le=2_147_483_646)
     aspect_ratio: str | None = None
     resolution: str | None = None
     loop: bool | None = None
-    resize_mode: str | None = None
-    pad_color: str | None = None
 
 
 # --- Image validation ---
-
-def validate_image_nova_reel(data_uri: str, resize_mode: str = "scale", pad_color: str = "black") -> tuple[bytes, str, dict | None]:
-    """Validate a Nova Reel image: auto-resize to 1280x720 if needed, PNG or JPEG, max 10MB.
-
-    Returns (raw_bytes, format_str, resize_metadata) where:
-    - format_str is 'png' or 'jpeg'
-    - resize_metadata is a dict with original dimensions if resize was applied, or None
-    If the image has a fully-opaque alpha channel, it is stripped automatically.
-    """
-    max_bytes = VIDEO_MODELS["nova-reel"]["image_max_bytes"]
-    raw, img = _decode_image(data_uri, max_bytes)
-
-    # Auto-resize if not exactly 1280x720
-    resize_metadata = None
-    if img.size != (1280, 720):
-        raw, resize_metadata = image_resize.resize_image(raw, resize_mode, pad_color)
-        # Re-open the resized image for further validation
-        img = Image.open(io.BytesIO(raw))
-        img.load()
-        # Re-check size limit after resize
-        if len(raw) > max_bytes:
-            raise HTTPException(status_code=400, detail={
-                "error": {"type": "validation_error",
-                          "message": f"Image exceeds 10MB after resize ({len(raw)} bytes)"}
-            })
-
-    fmt = img.format
-    # Alpha channel handling (PNG only — JPEG never has alpha)
-    if img.mode in ("RGBA", "LA", "PA"):
-        alpha = img.getchannel("A")
-        min_alpha = alpha.getextrema()[0]
-        if min_alpha < 255:
-            raise HTTPException(status_code=400, detail={
-                "error": {"type": "validation_error",
-                          "message": f"Image contains transparent pixels (got {img.mode} mode "
-                                     f"with alpha < 255). Nova Reel requires fully opaque images."}
-            })
-        img = img.convert("RGB")
-        buf = io.BytesIO()
-        img.save(buf, format=fmt)
-        raw = buf.getvalue()
-
-    return raw, fmt.lower(), resize_metadata
-
 
 def validate_image_ray2(data_uri: str) -> tuple[bytes, str]:
     """Validate a Ray2 image: 512x512 to 4096x4096, PNG or JPEG, max 25MB.
@@ -373,12 +312,6 @@ def _decode_image(data_uri: str, max_bytes: int) -> tuple[bytes, Image.Image]:
     return raw, img
 
 
-def parse_nova_reel_image(data_uri: str, resize_mode: str = "scale", pad_color: str = "black") -> tuple[str, str, dict | None]:
-    """Parse and validate a Nova Reel image, returning (raw_base64, format_str, resize_metadata)."""
-    raw_bytes, fmt, resize_meta = validate_image_nova_reel(data_uri, resize_mode, pad_color)
-    return base64.b64encode(raw_bytes).decode("ascii"), fmt, resize_meta
-
-
 def parse_ray2_image(data_uri: str) -> tuple[str, str]:
     """Parse and validate a Ray2 image, returning (raw_base64, media_type)."""
     raw_bytes, fmt = validate_image_ray2(data_uri)
@@ -391,12 +324,8 @@ def parse_ray2_image(data_uri: str) -> tuple[str, str]:
 def calculate_cost(model_name: str, duration: int, resolution: str | None = None) -> float:
     """Calculate cost for a video job based on model and resolution."""
     model = VIDEO_MODELS[model_name]
-    pricing = model["cost_per_second"]
-    if "default" in pricing:
-        return duration * pricing["default"]
-    # Resolution-dependent pricing (Ray2)
     res = resolution or model["default_resolution"]
-    return duration * pricing.get(res, 0)
+    return duration * model["cost_per_second"].get(res, 0)
 
 
 # --- Endpoints ---
@@ -448,7 +377,7 @@ def health(auth: dict = Depends(authenticate)):
 
 @app.post("/v1/videos/generations", status_code=202)
 def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)):
-    """Submit a video generation job (single-shot or multi-shot)."""
+    """Submit a video generation job."""
     if is_claude_only_key(auth):
         raise HTTPException(status_code=403, detail={
             "error": {
@@ -461,7 +390,7 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
     key_hash = auth["key_hash"]
 
     # --- Resolve model ---
-    model_name = req.model or "nova-reel"
+    model_name = req.model or DEFAULT_MODEL
     if model_name not in VIDEO_MODELS:
         raise HTTPException(status_code=400, detail={
             "error": {"type": "validation_error",
@@ -469,210 +398,47 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
         })
     model = VIDEO_MODELS[model_name]
 
-    # --- Validate resize_mode and pad_color ---
-    resize_mode = req.resize_mode or "scale"
-    pad_color = req.pad_color or "black"
-    if resize_mode not in image_resize.VALID_MODES:
+    # --- Prompt length ---
+    if len(req.prompt) > model["max_prompt_length"]:
         raise HTTPException(status_code=400, detail={
             "error": {"type": "validation_error",
-                      "message": f"Invalid resize_mode '{resize_mode}'. Must be one of: {', '.join(sorted(image_resize.VALID_MODES))}"}
+                      "message": f"Prompt is {len(req.prompt)} characters; {model_name} allows a maximum of {model['max_prompt_length']}."}
         })
-    if pad_color not in image_resize.VALID_PAD_COLORS:
+
+    # --- Duration ---
+    duration = req.duration or model["durations"][0]
+    if duration not in model["durations"]:
         raise HTTPException(status_code=400, detail={
             "error": {"type": "validation_error",
-                      "message": f"Invalid pad_color '{pad_color}'. Must be 'black' or 'white'"}
+                      "message": f"Duration must be one of {model['durations']} seconds for {model_name} (got {duration})."}
         })
 
-    # --- Prompt length validation (per-model limits) ---
-    # Skip for multi-shot-automated which has its own 4000-char limit checked later
-    max_prompt = model["max_prompt_length"]
-    max_shot_prompt = model.get("max_shot_prompt_length")
-    if req.prompt and max_prompt and len(req.prompt) > max_prompt and req.mode != "multi-shot-automated":
+    # --- Resolution / aspect ratio ---
+    resolution = req.resolution or model["default_resolution"]
+    if resolution not in model["resolutions"]:
         raise HTTPException(status_code=400, detail={
             "error": {"type": "validation_error",
-                      "message": f"Prompt is {len(req.prompt)} characters; {model_name} allows a maximum of {max_prompt}."}
+                      "message": f"Resolution must be one of {model['resolutions']} for {model_name} (got {resolution})."}
         })
-    if req.shots and max_shot_prompt:
-        for i, shot in enumerate(req.shots):
-            if len(shot.prompt) > max_shot_prompt:
-                raise HTTPException(status_code=400, detail={
-                    "error": {"type": "validation_error",
-                              "message": f"Shot {i + 1} prompt is {len(shot.prompt)} characters; {model_name} allows a maximum of {max_shot_prompt} per shot."}
-                })
-
-    # --- Prompt content validation (Nova Reel only) ---
-    prompt_warnings: list[dict] = []
-    if model_name == "nova-reel":
-        if req.prompt:
-            error, warnings = prompt_validation.validate_nova_reel_prompt(req.prompt)
-            if error:
-                raise HTTPException(status_code=400, detail=error)
-            prompt_warnings.extend(warnings)
-        if req.shots:
-            for i, shot in enumerate(req.shots):
-                error, warnings = prompt_validation.validate_nova_reel_prompt(shot.prompt, shot_number=i + 1)
-                if error:
-                    raise HTTPException(status_code=400, detail=error)
-                prompt_warnings.extend(warnings)
-
-    # Track resize metadata for response
-    resize_applied_list = []
-    resize_applied_single = None
-
-    # --- Validate mode field ---
-    if req.mode and req.mode not in ("single-shot", "multi-shot", "multi-shot-automated"):
+    aspect_ratio = req.aspect_ratio or model["default_aspect_ratio"]
+    if aspect_ratio not in model["aspect_ratios"]:
         raise HTTPException(status_code=400, detail={
             "error": {"type": "validation_error",
-                      "message": f"Invalid mode '{req.mode}'. Must be one of: single-shot, multi-shot, multi-shot-automated"}
+                      "message": f"Aspect ratio must be one of {model['aspect_ratios']} for {model_name} (got {req.aspect_ratio})."}
         })
 
-    # --- Determine mode and validate ---
-    if req.mode == "multi-shot-automated":
-        if not req.prompt:
-            raise HTTPException(status_code=400, detail={
-                "error": {"type": "validation_error",
-                          "message": "multi-shot-automated mode requires a 'prompt' field."}
-            })
-        if req.shots:
-            raise HTTPException(status_code=400, detail={
-                "error": {"type": "validation_error",
-                          "message": "Cannot provide 'shots' with multi-shot-automated mode. Use 'prompt' only."}
-            })
-        if not model["supports_multi_shot"]:
-            raise HTTPException(status_code=400, detail={
-                "error": {"type": "validation_error",
-                          "message": f"multi-shot-automated mode is not supported by {model_name}. Use nova-reel."}
-            })
-    elif req.prompt and req.shots:
+    # --- Keyframe images (start + optional end) ---
+    parsed_image: tuple[str, str] | None = None
+    parsed_end_image: tuple[str, str] | None = None
+    if req.end_image and not req.image:
         raise HTTPException(status_code=400, detail={
             "error": {"type": "validation_error",
-                      "message": "Cannot provide both 'prompt' and 'shots'. Use one mode."}
+                      "message": "end_image requires a start image ('image') as well."}
         })
-    if not req.prompt and not req.shots:
-        raise HTTPException(status_code=400, detail={
-            "error": {"type": "validation_error",
-                      "message": "Must provide either 'prompt' (single-shot) or 'shots' (multi-shot)."}
-        })
-
-    # --- Multi-shot automated ---
-    if req.mode == "multi-shot-automated":
-        mode = "multi_shot_automated"
-        # Automated multi-shot: prompt up to 4000 chars, duration 12-120s
-        if len(req.prompt) > 4000:
-            raise HTTPException(status_code=400, detail={
-                "error": {"type": "validation_error",
-                          "message": f"Prompt is {len(req.prompt)} characters; multi-shot-automated allows a maximum of 4000."}
-            })
-        duration = req.duration or 12
-        if duration < 12 or duration > 120:
-            raise HTTPException(status_code=400, detail={
-                "error": {"type": "validation_error",
-                          "message": f"Duration must be 12-120 seconds for multi-shot-automated (got {duration})."}
-            })
-        if model["duration_must_be_multiple_of"] and duration % model["duration_must_be_multiple_of"] != 0:
-            mult = model["duration_must_be_multiple_of"]
-            raise HTTPException(status_code=400, detail={
-                "error": {"type": "validation_error",
-                          "message": f"Duration must be a multiple of {mult} for {model_name} (got {duration})."}
-            })
-        num_shots = 0
-        prompt_store = req.prompt
-        resolution = None
-
-    # --- Multi-shot validation ---
-    elif req.shots:
-        if not model["supports_multi_shot"]:
-            raise HTTPException(status_code=400, detail={
-                "error": {"type": "validation_error",
-                          "message": f"Multi-shot mode is not supported by {model_name}. Use nova-reel instead."}
-            })
-        mode = "multi_shot"
-        num_shots = len(req.shots)
-        if num_shots < 2 or num_shots > 20:
-            raise HTTPException(status_code=400, detail={
-                "error": {"type": "validation_error",
-                          "message": f"Multi-shot requires 2-20 shots (got {num_shots})."}
-            })
-        duration = 6 * num_shots
-        parsed_images: dict[int, tuple[str, str]] = {}
-        resize_applied_list: list[dict | None] = []
-        for i, shot in enumerate(req.shots):
-            if shot.image:
-                raw_b64, fmt, resize_meta = parse_nova_reel_image(shot.image, resize_mode, pad_color)
-                parsed_images[i] = (raw_b64, fmt)
-                resize_applied_list.append(resize_meta)
-            else:
-                resize_applied_list.append(None)
-        prompt_store = json.dumps([s.prompt for s in req.shots])
-        resolution = None
-    else:
-        mode = "single_shot"
-        num_shots = 1
-        duration = req.duration or (model["durations"][0] if model["durations"] else 6)
-
-        # Duration validation
-        if duration not in model["durations"]:
-            if model["duration_must_be_multiple_of"]:
-                low, high = model["durations"][0], model["durations"][-1]
-                mult = model["duration_must_be_multiple_of"]
-                raise HTTPException(status_code=400, detail={
-                    "error": {"type": "validation_error",
-                              "message": f"Duration must be {low}-{high} seconds and a multiple of {mult} (got {duration})."}
-                })
-            else:
-                raise HTTPException(status_code=400, detail={
-                    "error": {"type": "validation_error",
-                              "message": f"Duration must be one of {model['durations']} seconds for {model_name} (got {duration})."}
-                })
-
-        # Ray2-specific: aspect_ratio, resolution
-        resolution = None
-        if model["resolutions"]:
-            resolution = req.resolution or model["default_resolution"]
-            if resolution not in model["resolutions"]:
-                raise HTTPException(status_code=400, detail={
-                    "error": {"type": "validation_error",
-                              "message": f"Resolution must be one of {model['resolutions']} for {model_name} (got {resolution})."}
-                })
-        if model["aspect_ratios"]:
-            aspect_ratio = req.aspect_ratio or model["default_aspect_ratio"]
-            if aspect_ratio not in model["aspect_ratios"]:
-                raise HTTPException(status_code=400, detail={
-                    "error": {"type": "validation_error",
-                              "message": f"Aspect ratio must be one of {model['aspect_ratios']} for {model_name} (got {req.aspect_ratio})."}
-                })
-        else:
-            aspect_ratio = None
-
-        # end_image validation
-        if req.end_image and not model["supports_end_image"]:
-            raise HTTPException(status_code=400, detail={
-                "error": {"type": "validation_error",
-                          "message": f"End image (end_image) is not supported by {model_name}. Use luma-ray2 instead."}
-            })
-
-        # Image validation (model-specific)
-        parsed_image: tuple[str, str] | None = None
-        parsed_end_image: tuple[str, str] | None = None
-
-        resize_applied_single = None
-        if model_name == "nova-reel":
-            if req.image:
-                if duration != 6:
-                    raise HTTPException(status_code=400, detail={
-                        "error": {"type": "validation_error",
-                                  "message": "Nova Reel image-to-video requires exactly 6 seconds. "
-                                             "Remove 'duration' or set it to 6."}
-                    })
-                raw_b64, fmt, resize_applied_single = parse_nova_reel_image(req.image, resize_mode, pad_color)
-                parsed_image = (raw_b64, fmt)
-        elif model_name == "luma-ray2":
-            if req.image:
-                parsed_image = parse_ray2_image(req.image)
-            if req.end_image:
-                parsed_end_image = parse_ray2_image(req.end_image)
-
-        prompt_store = req.prompt
+    if req.image:
+        parsed_image = parse_ray2_image(req.image)
+    if req.end_image:
+        parsed_end_image = parse_ray2_image(req.end_image)
 
     estimated_cost = calculate_cost(model_name, duration, resolution)
 
@@ -699,9 +465,11 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
             api_key_hash=key_hash,
             max_concurrent=MAX_CONCURRENT_JOBS,
             model=model_name,
-            mode=mode,
-            prompt=prompt_store,
-            num_shots=num_shots,
+            # mode/num_shots are fixed now that multi-shot (Nova Reel) is gone; the
+            # columns stay so historical rows keep their shape
+            mode="single_shot",
+            prompt=req.prompt,
+            num_shots=1,
             duration_seconds=duration,
             cost=estimated_cost,
             resolution=resolution,
@@ -728,14 +496,8 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
     bucket = VIDEO_BUCKETS.get(region, "")
     s3_output_uri = f"s3://{bucket}/jobs/{job_id}/"
 
-    if model_name == "nova-reel" and mode == "multi_shot_automated":
-        model_input = _build_nova_reel_automated_payload(req.prompt, duration, req.seed)
-    elif model_name == "nova-reel":
-        model_input = _build_nova_reel_payload(req, mode, duration, parsed_images if req.shots else {},
-                                                parsed_image if not req.shots else None)
-    elif model_name == "luma-ray2":
-        model_input = _build_ray2_payload(req.prompt, duration, aspect_ratio, resolution,
-                                           req.loop, parsed_image, parsed_end_image)
+    model_input = _build_ray2_payload(req.prompt, duration, aspect_ratio, resolution,
+                                       req.loop, parsed_image, parsed_end_image)
 
     # --- Call Bedrock (slot already reserved) ---
     client = bedrock_clients[region]
@@ -748,9 +510,9 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
     except ClientError as exc:
         error_ref = str(uuid.uuid4())[:8]
         error_code = exc.response.get("Error", {}).get("Code", "") if hasattr(exc, "response") else ""
-        if error_code in image_api.THROTTLE_ERROR_CODES:
+        if error_code in THROTTLE_ERROR_CODES:
             db.mark_job_failed(job_id, f"Bedrock rate limit exceeded (ref: {error_ref})")
-            image_api.raise_if_throttled(exc, error_ref, "Bedrock start_async_invoke")
+            raise_if_throttled(exc, error_ref, "Bedrock start_async_invoke")
         error_msg = exc.response.get("Error", {}).get("Message", str(exc)) if hasattr(exc, "response") else str(exc)
         logger.error("Bedrock start_async_invoke failed [ref=%s]: %s", error_ref, error_msg)
         db.mark_job_failed(job_id, f"Bedrock invocation failed (ref: {error_ref})")
@@ -762,72 +524,7 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
     invocation_arn = response["invocationArn"]
     db.update_job_arn(job_id, invocation_arn)
     job["status"] = "in_progress"
-
-    # Add resize metadata to response
-    if mode == "multi_shot":
-        job["resize_applied"] = resize_applied_list if any(r for r in resize_applied_list) else None
-    else:
-        job["resize_applied"] = resize_applied_single
-
-    if prompt_warnings:
-        job["warnings"] = prompt_warnings
-
     return job
-
-
-def _build_nova_reel_payload(req, mode, duration, parsed_images, parsed_image):
-    """Build Nova Reel modelInput payload."""
-    if mode == "multi_shot":
-        shots_payload = []
-        for i, shot in enumerate(req.shots):
-            s = {"text": shot.prompt}
-            if i in parsed_images:
-                raw_b64, fmt = parsed_images[i]
-                s["image"] = {"format": fmt, "source": {"bytes": raw_b64}}
-            shots_payload.append(s)
-        model_input = {
-            "taskType": "MULTI_SHOT_MANUAL",
-            "multiShotManualParams": {"shots": shots_payload},
-            "videoGenerationConfig": {
-                "fps": 24,
-                "dimension": "1280x720",
-            },
-        }
-    else:
-        text_params = {"text": req.prompt}
-        if parsed_image:
-            raw_b64, fmt = parsed_image
-            text_params["images"] = [{"format": fmt, "source": {"bytes": raw_b64}}]
-        model_input = {
-            "taskType": "TEXT_VIDEO",
-            "textToVideoParams": text_params,
-            "videoGenerationConfig": {
-                "fps": 24,
-                "durationSeconds": duration,
-                "dimension": "1280x720",
-            },
-        }
-
-    if req.seed is not None:
-        model_input["videoGenerationConfig"]["seed"] = req.seed
-
-    return model_input
-
-
-def _build_nova_reel_automated_payload(prompt: str, duration: int, seed: int | None) -> dict:
-    """Build Nova Reel MULTI_SHOT_AUTOMATED modelInput payload."""
-    model_input = {
-        "taskType": "MULTI_SHOT_AUTOMATED",
-        "multiShotAutomatedParams": {"text": prompt},
-        "videoGenerationConfig": {
-            "fps": 24,
-            "durationSeconds": duration,
-            "dimension": "1280x720",
-        },
-    }
-    if seed is not None:
-        model_input["videoGenerationConfig"]["seed"] = seed
-    return model_input
 
 
 def _build_ray2_payload(prompt, duration, aspect_ratio, resolution, loop, parsed_image, parsed_end_image):
@@ -886,9 +583,15 @@ def get_video_status(job_id: str, auth: dict = Depends(authenticate)):
         row = db.get_job_internals(job_id)
         if row:
             invocation_arn, duration_seconds, mode, created_at, job_model, job_resolution = row
-            model = VIDEO_MODELS.get(job_model, VIDEO_MODELS["nova-reel"])
-            region = model["region"]
-            client = bedrock_clients.get(region)
+            model = VIDEO_MODELS.get(job_model)
+            if model is None:
+                # Job from a retired model (e.g. Nova Reel) — cannot be polled any more
+                db.try_fail_job(job_id, f"Model '{job_model}' is no longer available")
+                job["status"] = "failed"
+                job["cost"] = 0
+                job["error"] = f"Model '{job_model}' is no longer available"
+                return job
+            client = bedrock_clients.get(model["region"])
             if client:
                 try:
                     bedrock_resp = client.get_async_invoke(invocationArn=invocation_arn)
@@ -924,7 +627,7 @@ def get_video_status(job_id: str, auth: dict = Depends(authenticate)):
                     # Surface throttling to the client; silently ignore other errors
                     # since this is a polling endpoint and the client will retry naturally
                     error_ref = str(uuid.uuid4())[:8]
-                    image_api.raise_if_throttled(exc, error_ref, "Bedrock get_async_invoke")
+                    raise_if_throttled(exc, error_ref, "Bedrock get_async_invoke")
 
     # Generate presigned URL for completed jobs
     if job["status"] == "completed" and job.get("s3_uri"):
@@ -932,14 +635,15 @@ def get_video_status(job_id: str, auth: dict = Depends(authenticate)):
         bucket = s3_uri.split("/")[2]
         key_prefix = "/".join(s3_uri.split("/")[3:])
 
-        # Determine correct S3 client from bucket name
-        s3 = None
-        for region, client in s3_clients.items():
-            if VIDEO_BUCKETS.get(region) == bucket:
-                s3 = client
-                break
-        if not s3:
-            s3 = list(s3_clients.values())[0]  # fallback
+        # Determine correct S3 client from bucket name. A bucket we no longer know
+        # about belongs to a retired model (Nova Reel, us-east-1) — its output is gone.
+        s3 = next((client for region, client in s3_clients.items() if VIDEO_BUCKETS.get(region) == bucket), None)
+        if s3 is None:
+            db.mark_expired(job_id)
+            job["status"] = "expired"
+            job["error"] = "Video output bucket no longer exists (model retired)"
+            job.pop("s3_uri", None)
+            return job
 
         try:
             resp = s3.list_objects_v2(Bucket=bucket, Prefix=key_prefix, MaxKeys=10)
@@ -965,7 +669,7 @@ def get_video_status(job_id: str, auth: dict = Depends(authenticate)):
             # Surface throttling to the client; silently ignore other errors
             # since this is a polling endpoint and the client will retry naturally
             error_ref = str(uuid.uuid4())[:8]
-            image_api.raise_if_throttled(exc, error_ref, "S3 presigned URL generation")
+            raise_if_throttled(exc, error_ref, "S3 presigned URL generation")
 
     job.pop("s3_uri", None)
     return job

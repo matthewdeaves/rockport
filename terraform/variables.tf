@@ -72,19 +72,19 @@ variable "budget_alert_email" {
 variable "litellm_version" {
   description = "LiteLLM version to install"
   type        = string
-  default     = "1.83.7"
+  default     = "1.100.1"
 }
 
 variable "cloudflared_version" {
   description = "Cloudflared version to install (pinned for stability)"
   type        = string
-  default     = "2026.3.0"
+  default     = "2026.9.1"
 }
 
 variable "cloudflared_sha256" {
   description = "SHA256 hash of cloudflared-linux-amd64 binary (update when changing cloudflared_version)"
   type        = string
-  default     = "4a9e50e6d6d798e90fcd01933151a90bf7edd99a0a55c28ad18f2e16263a5c30"
+  default     = "03f1f25d1cc93b9ad6c60569d44060bc4f17ed97075760ed8cfca4b12dcd68cc"
 }
 
 variable "bedrock_daily_budget" {

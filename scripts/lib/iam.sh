@@ -113,6 +113,11 @@ ensure_deployer_access() {
   # RockportDeployerAssumeRoles is the policy that attaches to the deployer
   # USER (phase 2 onwards) and grants MFA-conditioned sts:AssumeRole on the
   # three operator roles.
+  #
+  # RockportWorkloadBoundary is the permissions boundary Terraform attaches to
+  # every workload role it creates (instance, idle-stop Lambda, DLM). The
+  # deploy role may only create/modify roles that carry an approved boundary,
+  # which closes the CreateRole+PutRolePolicy+PassRole escalation path.
   local policy_names=(
     "RockportDeployerCompute"
     "RockportDeployerIamSsm"
@@ -120,6 +125,7 @@ ensure_deployer_access() {
     "RockportOperatorReadonly"
     "RockportOperatorRuntimeOps"
     "RockportDeployerAssumeRoles"
+    "RockportWorkloadBoundary"
   )
   local policy_files=(
     "$policy_dir/compute.json"
@@ -128,6 +134,7 @@ ensure_deployer_access() {
     "$policy_dir/readonly.json"
     "$policy_dir/runtime-ops.json"
     "$policy_dir/assume-roles.json"
+    "$policy_dir/workload-boundary.json"
   )
 
   for i in "${!policy_names[@]}"; do

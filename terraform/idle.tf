@@ -26,11 +26,15 @@ resource "aws_lambda_function" "idle_shutdown" {
   }
 
   tags = local.common_tags
+
+  # Log group is managed here (with retention); Lambda must not create its own.
+  depends_on = [aws_cloudwatch_log_group.idle_shutdown]
 }
 
 resource "aws_iam_role" "idle_shutdown" {
-  count = var.enable_idle_shutdown ? 1 : 0
-  name  = "rockport-idle-shutdown"
+  count                = var.enable_idle_shutdown ? 1 : 0
+  name                 = "rockport-idle-shutdown"
+  permissions_boundary = local.workload_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -70,7 +74,6 @@ resource "aws_iam_role_policy" "idle_shutdown" {
       {
         Effect = "Allow"
         Action = [
-          "logs:CreateLogGroup",
           "logs:CreateLogStream",
           "logs:PutLogEvents"
         ]
@@ -124,6 +127,7 @@ resource "aws_cloudwatch_metric_alarm" "idle_shutdown_errors" {
   threshold           = 1
   comparison_operator = "GreaterThanOrEqualToThreshold"
   treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
 
   tags = local.common_tags
 }
