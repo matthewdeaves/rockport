@@ -82,33 +82,14 @@ cmd_key_create() {
 
     # Default Claude Code to Sonnet 5 (cheapest current-gen, 1M context); users can
     # still pick Opus per session with /model — cost-first by default, bigger on request.
+    # CF-Access headers are only included when the service token is configured.
     local settings_file="$CONFIG_DIR/claude-code-settings-${name}.json"
-    if [[ -n "$cf_id_k" && -n "$cf_secret_k" ]]; then
-      cat > "$settings_file" <<EOF
-{
-  "model": "claude-sonnet-5",
-  "env": {
-    "ANTHROPIC_BASE_URL": "$url",
-    "ANTHROPIC_AUTH_TOKEN": "$key"
-  },
-  "apiKeyHelper": "echo $key",
-  "defaultHeaders": {
-    "CF-Access-Client-Id": "$cf_id_k",
-    "CF-Access-Client-Secret": "$cf_secret_k"
-  }
-}
-EOF
-    else
-      cat > "$settings_file" <<EOF
-{
-  "model": "claude-sonnet-5",
-  "env": {
-    "ANTHROPIC_BASE_URL": "$url",
-    "ANTHROPIC_AUTH_TOKEN": "$key"
-  }
-}
-EOF
-    fi
+    jq -n --arg url "$url" --arg key "$key" --arg cf_id "$cf_id_k" --arg cf_secret "$cf_secret_k" '
+      {model: "claude-sonnet-5", env: {ANTHROPIC_BASE_URL: $url, ANTHROPIC_AUTH_TOKEN: $key}}
+      + (if $cf_id != "" and $cf_secret != "" then
+           {apiKeyHelper: ("echo " + $key),
+            defaultHeaders: {"CF-Access-Client-Id": $cf_id, "CF-Access-Client-Secret": $cf_secret}}
+         else {} end)' > "$settings_file" || die "Failed to write $settings_file"
     echo
     echo "Settings file: $settings_file"
     echo "Copy to ~/.claude/settings.json to use with Claude Code"

@@ -4,6 +4,20 @@
 
 CACHED_MASTER_KEY=""
 
+# Value of a Terraform string variable as the repo sees it: terraform.tfvars
+# override, else the `default` in variables.tf. Empty if neither sets it.
+tf_var() {
+  local name="$1" v=""
+  if [[ -f "$TERRAFORM_DIR/terraform.tfvars" ]]; then
+    v=$(sed -n "s/^${name}[[:space:]]*=[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null)
+  fi
+  if [[ -z "$v" ]]; then
+    v=$(awk "/^variable \"${name}\"/,/^}/" "$TERRAFORM_DIR/variables.tf" 2>/dev/null \
+      | sed -n 's/^[[:space:]]*default[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p')
+  fi
+  echo "$v"
+}
+
 get_master_key() {
   if [[ -n "$CACHED_MASTER_KEY" ]]; then
     echo "$CACHED_MASTER_KEY"

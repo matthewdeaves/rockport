@@ -40,6 +40,10 @@ package_and_upload_artifact() {
     cp "$SCRIPT_DIR/../sidecar/requirements.lock" "$tmpdir/rockport-artifact/sidecar/"
   fi
 
+  # Shared LiteLLM install/upgrade script (used by bootstrap and upgrade --litellm)
+  mkdir -p "$tmpdir/rockport-artifact/scripts" || die "Failed to create artifact scripts dir"
+  cp "$SCRIPT_DIR/install-litellm.sh" "$tmpdir/rockport-artifact/scripts/" || die "Failed to copy install-litellm.sh"
+
   # Create tarball
   tar czf "$tmpdir/rockport-artifact.tar.gz" -C "$tmpdir" rockport-artifact/ \
     || die "Failed to create artifact tarball"
@@ -65,15 +69,8 @@ package_and_upload_artifact() {
   # Upload cloudflared binary to S3 as fallback for bootstrap
   # (GitHub CDN can return transient 404s during first boot)
   local cf_version cf_sha256
-  cf_version=$(grep '^cloudflared_version' "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null | sed 's/.*= *"//;s/"//' || true)
-  cf_sha256=$(grep '^cloudflared_sha256' "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null | sed 's/.*= *"//;s/"//' || true)
-  # Fall back to variable defaults if not in tfvars
-  if [[ -z "$cf_version" ]]; then
-    cf_version=$(grep -A3 'variable "cloudflared_version"' "$TERRAFORM_DIR/variables.tf" | grep default | sed 's/.*= *"//;s/"//' || true)
-  fi
-  if [[ -z "$cf_sha256" ]]; then
-    cf_sha256=$(grep -A3 'variable "cloudflared_sha256"' "$TERRAFORM_DIR/variables.tf" | grep default | sed 's/.*= *"//;s/"//' || true)
-  fi
+  cf_version=$(tf_var cloudflared_version)
+  cf_sha256=$(tf_var cloudflared_sha256)
   if [[ -n "$cf_version" ]]; then
     echo "  Downloading cloudflared $cf_version for S3 fallback..."
     if curl -fsSL --retry 3 --retry-delay 5 \
@@ -127,10 +124,9 @@ ssm_run_script() {
   _ssm_send_and_wait "file://$params_file" "$timeout"
 }
 
+# Single-command convenience wrapper (quotes in $1 are handled by jq, not by hand).
 ssm_run() {
-  local cmd_string="$1"
-  local timeout="${2:-30}"
-  _ssm_send_and_wait "{\"commands\":[\"$cmd_string\"]}" "$timeout"
+  ssm_run_script "$1" "${2:-30}"
 }
 
 _ssm_send_and_wait() {
@@ -276,52 +272,37 @@ cmd_logs() {
     --parameters '{"command":["sudo journalctl -u litellm -n 100 -f"]}'
 }
 
-# Resolve the LiteLLM version the repo expects: terraform.tfvars override, else the
-# default in variables.tf. Keeps `upgrade --litellm` in lock-step with what a fresh
-# deploy would install.
-get_litellm_version() {
-  local v=""
-  if [[ -f "$TERRAFORM_DIR/terraform.tfvars" ]]; then
-    v=$(sed -n 's/^litellm_version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null)
-  fi
-  if [[ -z "$v" ]]; then
-    v=$(awk '/^variable "litellm_version"/,/^}/' "$TERRAFORM_DIR/variables.tf" \
-      | sed -n 's/^[[:space:]]*default[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p')
-  fi
-  [[ -n "$v" ]] || die "Could not determine litellm_version from terraform.tfvars or variables.tf"
-  echo "$v"
-}
-
 cmd_upgrade() {
   local instance_id
   instance_id="$(get_instance_id)"
 
   if [[ "${1:-}" == "--litellm" ]]; then
-    local version="${2:-$(get_litellm_version)}"
+    local version="${2:-$(tf_var litellm_version)}"
     [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "Invalid LiteLLM version: $version"
     echo "Upgrading LiteLLM to $version on instance $instance_id (in place — DB is kept)..."
     echo "This takes several minutes: pip install, prisma generate, prisma migrate deploy, restart."
-    # Mirrors the LiteLLM/prisma section of bootstrap.sh exactly. Services are stopped
-    # before migrate so LiteLLM doesn't race the schema change.
+    # Same scripts/install-litellm.sh that bootstrap runs on first boot, delivered via the
+    # deploy artifact. Services are stopped before it runs so LiteLLM doesn't race migrate.
+    package_and_upload_artifact
     local remote_script
     remote_script=$(cat <<'REMOTE'
 set -e
-SP=/usr/local/lib/python3.11/site-packages
-pip3.11 install -q "litellm[proxy]==__VERSION__" "prisma==0.11.0"
-chown -R litellm:litellm "$SP/prisma" "$SP/litellm_proxy_extras/migrations"
-sudo -u litellm prisma generate --schema "$SP/litellm/proxy/schema.prisma"
-mkdir -p "$SP/litellm/proxy/prisma"
-ln -sfn "$SP/litellm_proxy_extras/migrations" "$SP/litellm/proxy/prisma/migrations"
+A=/tmp/rockport-artifact
+aws s3 cp "s3://__BUCKET__/deploy/rockport-artifact.tar.gz" "$A.tar.gz" --region __REGION__
+aws s3 cp "s3://__BUCKET__/deploy/rockport-artifact.tar.gz.sha256" "$A.tar.gz.sha256" --region __REGION__
+(cd /tmp && sha256sum -c rockport-artifact.tar.gz.sha256)
+rm -rf "$A" && tar xzf "$A.tar.gz" -C /tmp
 systemctl stop rockport-video 2>/dev/null || true
 systemctl stop litellm
-DBURL=$(sed -n 's/^DATABASE_URL=//p' /etc/litellm/env)
-sudo -u litellm DATABASE_URL="$DBURL" prisma migrate deploy --schema "$SP/litellm/proxy/schema.prisma"
+bash "$A/scripts/install-litellm.sh" __VERSION__
+rm -rf "$A" "$A.tar.gz" "$A.tar.gz.sha256"
 systemctl start litellm
 for i in $(seq 1 90); do curl -sf http://127.0.0.1:4000/health/readiness >/dev/null 2>&1 && break; sleep 2; done
 systemctl start rockport-video
-echo "LiteLLM $(pip3.11 show litellm 2>/dev/null | sed -n 's/^Version: //p') running"
 REMOTE
 )
+    remote_script="${remote_script//__BUCKET__/$(get_artifacts_bucket)}"
+    remote_script="${remote_script//__REGION__/$(get_region)}"
     remote_script="${remote_script//__VERSION__/$version}"
     local result
     result=$(ssm_run_script "$remote_script" 900) || die "LiteLLM upgrade failed on instance $instance_id"

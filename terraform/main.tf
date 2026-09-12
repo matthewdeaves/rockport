@@ -292,7 +292,7 @@ resource "aws_instance" "rockport" {
   ami                    = data.aws_ssm_parameter.al2023_ami.value
   instance_type          = var.instance_type
   iam_instance_profile   = aws_iam_instance_profile.rockport.name
-  subnet_id              = sort(data.aws_subnets.default.ids)[0]
+  subnet_id              = data.aws_subnets.default.ids[0]
   vpc_security_group_ids = [aws_security_group.rockport.id]
 
   user_data_base64 = base64gzip(templatefile("${path.module}/../scripts/bootstrap.sh", {
@@ -334,9 +334,7 @@ resource "aws_instance" "rockport" {
   # recreate the instance — and PostgreSQL (virtual keys, spend logs, video jobs)
   # lives on the root volume. Roll the AMI deliberately instead:
   #   terraform apply -replace=aws_instance.rockport
-  # subnet_id is ForceNew too; an existing instance may sit in whichever default
-  # subnet was picked at creation, so don't let the sorted choice replace it.
   lifecycle {
-    ignore_changes = [ami, subnet_id]
+    ignore_changes = [ami]
   }
 }

@@ -47,15 +47,12 @@ get_region() {
     echo "$CACHED_REGION"
     return
   fi
-  if [[ -f "$TERRAFORM_DIR/terraform.tfvars" ]]; then
-    local r
-    r=$(sed -n 's/^region[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null) && [[ -n "$r" ]] && {
-      CACHED_REGION="$r"
-      echo "$r"
-      return
-    }
-  fi
   local r
+  r=$(tf_var region) && [[ -n "$r" ]] && {
+    CACHED_REGION="$r"
+    echo "$r"
+    return
+  }
   r=$(cd "$TERRAFORM_DIR" && terraform output -raw region 2>/dev/null) && {
     CACHED_REGION="$r"
     echo "$r"

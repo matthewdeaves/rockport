@@ -440,10 +440,6 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
     if req.end_image:
         parsed_end_image = parse_ray2_image(req.end_image)
 
-    mode = "single_shot"
-    num_shots = 1
-    prompt_store = req.prompt
-
     estimated_cost = calculate_cost(model_name, duration, resolution)
 
     # --- Budget enforcement ---
@@ -469,9 +465,11 @@ def create_video(req: VideoGenerationRequest, auth: dict = Depends(authenticate)
             api_key_hash=key_hash,
             max_concurrent=MAX_CONCURRENT_JOBS,
             model=model_name,
-            mode=mode,
-            prompt=prompt_store,
-            num_shots=num_shots,
+            # mode/num_shots are fixed now that multi-shot (Nova Reel) is gone; the
+            # columns stay so historical rows keep their shape
+            mode="single_shot",
+            prompt=req.prompt,
+            num_shots=1,
             duration_seconds=duration,
             cost=estimated_cost,
             resolution=resolution,
@@ -592,9 +590,8 @@ def get_video_status(job_id: str, auth: dict = Depends(authenticate)):
                 job["status"] = "failed"
                 job["cost"] = 0
                 job["error"] = f"Model '{job_model}' is no longer available"
-                model = {"region": None}
-            region = model["region"]
-            client = bedrock_clients.get(region)
+                return job
+            client = bedrock_clients.get(model["region"])
             if client:
                 try:
                     bedrock_resp = client.get_async_invoke(invocationArn=invocation_arn)
