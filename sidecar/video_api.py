@@ -4,6 +4,9 @@ FastAPI service that proxies video generation requests to Amazon Bedrock's
 Luma Ray2 model via the async invoke API. Runs alongside LiteLLM on the same
 EC2 instance. (Nova Reel support was removed ahead of its 2026-09-30 EOL.)
 
+Also mounts palette_api — palette-guided image generation that proxies to LiteLLM's
+Stability Style Guide model (see palette_api.py).
+
 All endpoints use def (not async def) so FastAPI runs them in a threadpool,
 avoiding event loop blocking from synchronous boto3 and psycopg2 calls.
 """
@@ -28,6 +31,7 @@ from PIL import Image
 from pydantic import BaseModel, Field
 
 import db
+import palette_api
 
 # Limit Pillow decompression to accommodate Ray2's 4096x4096 max
 Image.MAX_IMAGE_PIXELS = 4096 * 4096 * 2
@@ -155,6 +159,8 @@ class BodySizeLimitMiddleware:
 
 
 app.add_middleware(BodySizeLimitMiddleware)
+
+app.include_router(palette_api.router)
 
 logger = logging.getLogger("rockport-video")
 

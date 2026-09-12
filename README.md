@@ -14,6 +14,7 @@ OpenAI-compatible LiteLLM proxy on EC2 that routes any application to Bedrock mo
 - Anthropic (Opus 5, Sonnet 5, Opus 4.8/4.7/4.6, Sonnet 4.6, Haiku 4.5), DeepSeek V3.2, Qwen3 Coder 480B, Kimi K2.5, Nova Pro/Lite/Micro, Nova 2 Lite, Llama 4 Scout/Maverick, Mistral Large 3, Ministral 8B, GPT-OSS 120B/20B on Bedrock
 - Image generation via OpenAI-compatible `/v1/images/generations` (Stable Image Core, Stable Image Ultra, SD3.5 Large)
 - Image editing via `/v1/images/edits` — 13 Stability AI operations (structure, sketch, style transfer, upscale, inpaint, erase, search & recolor, and more) via LiteLLM native
+- Palette & style control: style reference (`--sref`-style) via Stability Style Guide, hex colour palettes via the sidecar `/v1/images/palette` endpoint
 - Video generation via `/v1/videos/generations` (Luma Ray2 — async jobs with presigned S3 URLs)
 - Virtual API keys with per-key budgets, rate limits, and model restrictions
 - Zero inbound security group rules — all traffic flows through Cloudflare Tunnel
@@ -265,6 +266,62 @@ curl -X POST https://<your-domain>/v1/images/edits \
 ```
 
 Response contains `data[0].b64_json` with the base64-encoded image. LiteLLM handles auth, budget enforcement, and spend tracking natively.
+
+#### Palette & style control
+
+Bedrock has no surviving image model that takes a hex colour palette directly (Nova Canvas was the only one). What every model *does* support is passed straight through — LiteLLM forwards any extra top-level field on `/v1/images/generations` and the documented edit parameters on `/v1/images/edits` to Bedrock unchanged.
+
+| Want to… | Model | Parameters |
+|---|---|---|
+| Match the style of a reference image (≈ Midjourney `--sref`) | `stability-style-guide` via `/v1/images/edits` | `image` (reference), `prompt`, `fidelity` 0–1 (default 0.5, higher = closer to reference), `negative_prompt`, `aspect_ratio`, `seed` |
+| Stick to a hex colour palette | `POST /v1/images/palette` (sidecar, see below) | `colors`, `weights`, `fidelity`, `negative_prompt`, `aspect_ratio`, `seed`, `layout`, `augment_prompt` |
+| Restyle an existing image with another image's look | `stability-style-transfer` via `/v1/images/edits` | `image` (target), `style_image` (reference), `style_strength`, `composition_fidelity`, `change_strength`, `prompt`, `negative_prompt`, `seed` |
+| Recolour a region of an existing image | `stability-search-recolor` via `/v1/images/edits` | `image`, `select_prompt` ("the car"), `prompt` ("teal"), `negative_prompt`, `grow_mask`, `seed` |
+| Steer colours in plain text-to-image | `stable-image-core` / `stable-image-ultra` / `sd3.5-large` via `/v1/images/generations` | `negative_prompt`, `seed` (reproducibility), `aspect_ratio`; Ultra also `image` + `strength` 0–1 for image-to-image |
+
+Style reference (`--sref` equivalent):
+
+```bash
+curl -X POST https://<your-domain>/v1/images/edits \
+  -H "Authorization: Bearer $KEY" \
+  -F "model=stability-style-guide" \
+  -F "image=@reference.png" \
+  -F "prompt=a lighthouse at dusk" \
+  -F "fidelity=0.8" \
+  -F "negative_prompt=neon, text" \
+  -F "seed=7"
+```
+
+Hex colour palette — the sidecar renders your colours into a 1024×1024 swatch, appends the nearest CSS colour names to the prompt (so the text pushes the same way the reference does), and submits a `stability-style-guide` request through LiteLLM with your key, so auth, budget and spend tracking behave exactly like a direct call:
+
+```bash
+curl -X POST https://<your-domain>/v1/images/palette \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "a lighthouse at dusk",
+    "colors": ["#1e3a5f", "#f4d35e", "#ee964b"],
+    "weights": [2, 1, 1],
+    "fidelity": 0.7,
+    "negative_prompt": "neon",
+    "aspect_ratio": "16:9",
+    "seed": 7
+  }'
+```
+
+| Field | Default | Notes |
+|---|---|---|
+| `colors` | required | 1–8 `#RGB` / `#RRGGBB` values |
+| `weights` | equal | Relative stripe widths, one per colour, all > 0 |
+| `fidelity` | `0.5` | 0–1, how strongly the swatch constrains the result |
+| `layout` | `stripes` | `stripes` (weighted vertical bands) or `blocks` (equal grid cells) |
+| `augment_prompt` | `true` | Append "Colour palette limited to: navy, gold, …" to the prompt |
+| `aspect_ratio` | `1:1` | Same enum as Stability text-to-image |
+| `negative_prompt`, `seed` | — | Forwarded unchanged |
+
+The response is the normal `data[0].b64_json` payload plus a `palette` object echoing the normalised colours, the CSS names used, the final prompt, and `swatch_b64` (the reference image that was sent) so you can inspect or reuse it. Costs the same as one `stability-style-guide` call ($0.04). Keys created with `--claude-only` are rejected by LiteLLM.
+
+> Untested against a live account as of 2026-09-12 — built from the Bedrock/Stability docs and LiteLLM 1.100.1 source. Style Guide picks up texture and composition as well as colour from its reference, so expect to tune `fidelity` (lower if results look "striped", higher if the palette drifts).
 
 ### Video generation
 

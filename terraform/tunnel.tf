@@ -33,6 +33,12 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "rockport" {
         service  = "http://localhost:4000"
       },
       {
+        # Palette-guided generation (sidecar renders a swatch, proxies to LiteLLM style-guide)
+        hostname = var.domain
+        path     = "/v1/images/palette*"
+        service  = "http://localhost:4001"
+      },
+      {
         hostname = var.domain
         service  = "http://localhost:4000"
       },

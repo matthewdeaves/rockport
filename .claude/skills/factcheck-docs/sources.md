@@ -27,6 +27,7 @@ Read ALL of these:
 
 Read these files:
 - `sidecar/video_api.py` — extract every endpoint, model registry (`VIDEO_MODELS`), validation rules, defaults, concurrent job limits
+- `sidecar/palette_api.py` — extract the `/v1/images/palette` request fields, defaults (fidelity, layout, aspect_ratio), limits (MAX_COLORS), and the upstream model it proxies to
 - `sidecar/db.py` — extract what tables are used
 - `sidecar/requirements.txt` — list of dependencies
 

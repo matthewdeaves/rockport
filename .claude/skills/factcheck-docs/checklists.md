@@ -13,6 +13,7 @@ Use these checklists in Phase 2 to cross-reference every documentation claim aga
 - [ ] Image generation model table — dimensions, constraints, defaults all correct per model
 - [ ] Image editing section — model names match config, endpoint path is correct, cost table accurate
 - [ ] Video generation — durations, costs, defaults, Ray2 table all accurate (no Nova Reel references)
+- [ ] Palette & style control — field table matches palette_api.py `PaletteRequest` defaults/limits; pass-through param lists match LiteLLM stability transformation
 - [ ] Security section — every claim matches actual systemd/terraform/WAF config
 - [ ] CI/CD section — matches actual workflow files
 - [ ] Smoke test description — cost estimate accurate, test count correct
@@ -80,6 +81,7 @@ Use these checklists in Phase 2 to cross-reference every documentation claim aga
 - [ ] tunnel_routes matches every ingress rule in terraform/tunnel.tf (path, backend, port, order)
 - [ ] endpoints.sidecar_video matches actual video_api.py @router endpoints
 - [ ] endpoints.litellm_image includes /v1/images/generations and /v1/images/edits
+- [ ] endpoints.sidecar_image matches palette_api.py @router endpoints
 - [ ] known_risks are still accurate (not stale)
 - [ ] infrastructure.aws_region matches terraform.tfvars region
 

@@ -267,8 +267,43 @@ REMOVED_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/imag
   --max-time 10 2>/dev/null)
 check_code "Removed sidecar path → 403/404/405 (HTTP $REMOVED_CODE)" "$REMOVED_CODE" "403" "404" "405"
 
-# 20. Model list contains LiteLLM image models
-echo "20. LiteLLM image models"
+# --- Palette & style control (free — validation errors only, nothing reaches Bedrock) ---
+
+# 20. Palette endpoint: bad hex rejected by sidecar (proves tunnel route + validation)
+echo "20. Palette endpoint validation"
+PAL_BAD_BODY=$(curl -s -X POST "$BASE_URL/v1/images/palette" \
+  -H "Authorization: Bearer $VALID_KEY" \
+  -H "Content-Type: application/json" \
+  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
+  -d '{"prompt":"a lighthouse","colors":["not-hex"]}' \
+  --max-time 10 2>/dev/null)
+check "Palette rejects invalid hex (sidecar validation_error)" jq -e '.detail.error.type == "validation_error"' <<< "$PAL_BAD_BODY"
+
+# 21. Palette endpoint: unauthenticated → 401 before anything is rendered
+echo "21. Palette endpoint auth"
+PAL_AUTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/palette" \
+  -H "Content-Type: application/json" \
+  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
+  -d '{"prompt":"a lighthouse","colors":["#1e3a5f"]}' \
+  --max-time 10 2>/dev/null)
+check_code "Palette without key rejected (HTTP $PAL_AUTH_CODE)" "$PAL_AUTH_CODE" "401" "403"
+
+# 22. Style-guide passthrough: fidelity/seed/negative_prompt reach LiteLLM (bad image → 400/422/500, not a routing 404)
+echo "22. Style-guide param passthrough"
+SG_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/edits" \
+  -H "Authorization: Bearer $VALID_KEY" \
+  -F "model=stability-style-guide" \
+  -F "image=@/dev/null" \
+  -F "prompt=a lighthouse" \
+  -F "fidelity=0.8" \
+  -F "seed=7" \
+  -F "negative_prompt=neon" \
+  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
+  --max-time 10 2>/dev/null)
+check_code "Style-guide with fidelity/seed/negative_prompt reaches LiteLLM (HTTP $SG_CODE)" "$SG_CODE" "400" "422" "500"
+
+# 23. Model list contains LiteLLM image models
+echo "23. LiteLLM image models"
 check "Model list contains stable-image-ultra" grep -q "stable-image-ultra" <<< "$MODELS"
 check "Model list contains stable-image-core" grep -q "stable-image-core" <<< "$MODELS"
 check "Model list contains stability-inpaint" grep -q "stability-inpaint" <<< "$MODELS"
