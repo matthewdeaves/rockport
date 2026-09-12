@@ -32,8 +32,9 @@ resource "aws_lambda_function" "idle_shutdown" {
 }
 
 resource "aws_iam_role" "idle_shutdown" {
-  count = var.enable_idle_shutdown ? 1 : 0
-  name  = "rockport-idle-shutdown"
+  count                = var.enable_idle_shutdown ? 1 : 0
+  name                 = "rockport-idle-shutdown"
+  permissions_boundary = local.workload_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

@@ -112,18 +112,40 @@ data "aws_iam_policy_document" "operator_deploy_boundary" {
     resources = ["*"]
   }
 
+  # Role creation and policy attachment are only allowed when the target role
+  # carries one of the approved permissions boundaries. Without this, the deploy
+  # role could CreateRole rockport-x + PutRolePolicy "*:*" + PassRole it to a
+  # Lambda/EC2 and escalate past every other control here.
+  statement {
+    sid    = "AllowIAMRoleMutationWithBoundary"
+    effect = "Allow"
+    actions = [
+      "iam:CreateRole",
+      "iam:PutRolePolicy",
+      "iam:AttachRolePolicy",
+      "iam:PutRolePermissionsBoundary",
+    ]
+    resources = ["*"]
+
+    condition {
+      test     = "StringLike"
+      variable = "iam:PermissionsBoundary"
+      values = [
+        local.workload_boundary_arn,
+        "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/RockportOperator*Boundary",
+      ]
+    }
+  }
+
   statement {
     sid    = "AllowIAMRoleAndProfileMutation"
     effect = "Allow"
     actions = [
-      "iam:CreateRole",
       "iam:GetRole",
       "iam:DeleteRole",
       "iam:UpdateAssumeRolePolicy",
-      "iam:PutRolePolicy",
       "iam:GetRolePolicy",
       "iam:DeleteRolePolicy",
-      "iam:AttachRolePolicy",
       "iam:DetachRolePolicy",
       "iam:ListAttachedRolePolicies",
       "iam:ListRolePolicies",
@@ -154,6 +176,7 @@ data "aws_iam_policy_document" "operator_deploy_boundary" {
     sid    = "DenyIAMPolicyAndUserMutation"
     effect = "Deny"
     actions = [
+      "iam:DeleteRolePermissionsBoundary",
       "iam:CreatePolicy",
       "iam:DeletePolicy",
       "iam:CreatePolicyVersion",

@@ -1,0 +1,35 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "WorkloadServices",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:*",
+        "s3:*",
+        "ssm:*",
+        "ssmmessages:*",
+        "ec2messages:*",
+        "ec2:*",
+        "cloudwatch:*",
+        "logs:*",
+        "kms:Decrypt",
+        "aws-marketplace:Subscribe",
+        "aws-marketplace:ViewSubscriptions",
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyIAMAndOrgControl",
+      "Effect": "Deny",
+      "Action": [
+        "iam:*",
+        "sts:AssumeRole",
+        "organizations:*",
+        "account:*"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
