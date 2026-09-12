@@ -142,9 +142,9 @@
   <rect x="523" y="104" width="108" height="84" rx="4" fill="#1a1327" stroke="#d2a8ff" stroke-width="1.5"/>
   <text x="577" y="122" text-anchor="middle" fill="#d2a8ff" font-size="10" font-weight="bold">cloudflared</text>
   <text x="577" y="140" text-anchor="middle" fill="#8b949e" font-size="9">recv via tunnel</text>
-  <text x="577" y="155" text-anchor="middle" fill="#8b949e" font-size="9">/v1/videos*,images/* (not gen/edits) → :4001</text>
-  <text x="577" y="169" text-anchor="middle" fill="#8b949e" font-size="9">all else → :4000</text>
-  <text x="577" y="183" text-anchor="middle" fill="#58a6ff" font-size="8">path-based routing</text>
+  <text x="577" y="153" text-anchor="middle" fill="#8b949e" font-size="8">/v1/videos* → :4001</text>
+  <text x="577" y="165" text-anchor="middle" fill="#8b949e" font-size="8">/v1/images/palette* → :4001</text>
+  <text x="577" y="177" text-anchor="middle" fill="#8b949e" font-size="8">all else → :4000</text>
 
   <!-- ═══════════════════════════════════════════════════════════ -->
   <!-- STEP 5: LITELLM PROXY — sub-steps stacked vertically -->
@@ -378,12 +378,12 @@
   <!-- Step badge -->
   <circle cx="535" cy="775" r="14" fill="#39d2c0"/>
   <text x="535" y="780" text-anchor="middle" fill="#0d1117" font-size="9" font-weight="bold">5V</text>
-  <text x="700" y="780" text-anchor="start" fill="#39d2c0" font-size="10" font-weight="bold">Video Sidecar Processing (alternate path from Step 4 when /v1/videos*)</text>
+  <text x="700" y="780" text-anchor="start" fill="#39d2c0" font-size="10" font-weight="bold">Sidecar Processing (alternate path from Step 4 when /v1/videos*; /v1/images/palette* renders a swatch and re-enters Step 5 as stability-style-guide)</text>
 
   <!-- 4→5V: cloudflared → Video Sidecar (downward arrow from step 4 box) -->
   <path d="M 577 188 L 577 770" stroke="#d2a8ff" stroke-width="2" marker-end="url(#ah-purple)"/>
   <text x="584" y="480" fill="#d2a8ff" font-size="8">:4001</text>
-  <text x="584" y="494" fill="#d2a8ff" font-size="8">/v1/videos*</text>
+  <text x="584" y="494" fill="#d2a8ff" font-size="8">/v1/videos* · /v1/images/palette*</text>
 
   <!-- 5V-a: Auth via LiteLLM  y=798..862 -->
   <rect x="523" y="798" width="640" height="64" rx="4" fill="#0a1a1a" stroke="#39d2c0" stroke-width="1"/>
@@ -564,7 +564,7 @@
   <text x="846" y="1411" fill="#e6edf3" font-size="9">PostgreSQL</text>
 
   <rect x="970" y="1402" width="10" height="10" rx="2" fill="#39d2c0"/>
-  <text x="986" y="1411" fill="#e6edf3" font-size="9">Video sidecar</text>
+  <text x="986" y="1411" fill="#e6edf3" font-size="9">Sidecar</text>
 
   <line x1="1100" y1="1407" x2="1140" y2="1407" stroke="#3fb950" stroke-width="2"/>
   <text x="1148" y="1411" fill="#e6edf3" font-size="9">request / response</text>
@@ -573,5 +573,5 @@
   <text x="1328" y="1411" fill="#e6edf3" font-size="9">error / control</text>
 
   <!-- Footer -->
-  <text x="900" y="1530" text-anchor="middle" fill="#8b949e" font-size="9" opacity="0.5">rockport · request data flow · cloudflare tunnel · litellm proxy · video sidecar · aws bedrock</text>
+  <text x="900" y="1530" text-anchor="middle" fill="#8b949e" font-size="9" opacity="0.5">rockport · request data flow · cloudflare tunnel · litellm proxy · sidecar · aws bedrock</text>
 </svg>
