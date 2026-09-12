@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
@@ -93,10 +93,10 @@ check_code "Valid key accepted (200)" "$HTTP_CODE" "200"
 # 4. Model list contains expected aliases
 echo "4. Model list"
 MODELS=$(curl -s "$BASE_URL/v1/models" -H "Authorization: Bearer $VALID_KEY" "${CF_ARGS[@]+"${CF_ARGS[@]}"}" --max-time 10)
+check "Model list contains claude-opus-5" grep -q "claude-opus-5" <<< "$MODELS"
+check "Model list contains claude-sonnet-5" grep -q "claude-sonnet-5" <<< "$MODELS"
 check "Model list contains claude-sonnet-4-6" grep -q "claude-sonnet-4-6" <<< "$MODELS"
 check "Model list contains nova-pro" grep -q "nova-pro" <<< "$MODELS"
-check "Model list contains nova-canvas" grep -q "nova-canvas" <<< "$MODELS"
-check "Model list contains titan-image-v2" grep -q "titan-image-v2" <<< "$MODELS"
 check "Model list contains llama4-scout" grep -q "llama4-scout" <<< "$MODELS"
 check "Model list contains llama4-maverick" grep -q "llama4-maverick" <<< "$MODELS"
 check "Model list contains nova-2-lite" grep -q "nova-2-lite" <<< "$MODELS"
@@ -111,7 +111,7 @@ STREAM_RESPONSE=$(curl -s -X POST "$BASE_URL/v1/chat/completions" \
   -H "Authorization: Bearer $VALID_KEY" \
   -H "Content-Type: application/json" \
   "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{"model":"claude-sonnet-4-6","max_tokens":10,"messages":[{"role":"user","content":"Say hi"}],"stream":true}' \
+  -d '{"model":"claude-sonnet-5","max_tokens":10,"messages":[{"role":"user","content":"Say hi"}],"stream":true}' \
   --max-time 60 2>/dev/null)
 check "Streaming response received" grep -q "data:" <<< "$STREAM_RESPONSE"
 
@@ -125,13 +125,13 @@ NOVA2_RESPONSE=$(curl -s -X POST "$BASE_URL/v1/chat/completions" \
   --max-time 60 2>/dev/null)
 check "Nova 2 Lite streaming response received" grep -q "data:" <<< "$NOVA2_RESPONSE"
 
-# 6. Image generation via LiteLLM (~$0.04)
+# 6. Image generation via LiteLLM (~$0.04, Stable Image Core is the cheapest text-to-image model)
 echo "6. Image generation (LiteLLM route)"
 IMAGE_RESPONSE=$(curl -s -X POST "$BASE_URL/v1/images/generations" \
   -H "Authorization: Bearer $VALID_KEY" \
   -H "Content-Type: application/json" \
   "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{"model":"nova-canvas","prompt":"a solid red circle on white background","n":1,"size":"512x512"}' \
+  -d '{"model":"stable-image-core","prompt":"a solid red circle on white background","n":1}' \
   --max-time 60 2>/dev/null)
 check "Image generation returns b64_json" grep -q "b64_json" <<< "$IMAGE_RESPONSE"
 
@@ -142,7 +142,6 @@ echo "7. Video sidecar health"
 VIDEO_HEALTH_BODY=$(curl -s "$BASE_URL/v1/videos/health" \
   -H "Authorization: Bearer $VALID_KEY" "${CF_ARGS[@]+"${CF_ARGS[@]}"}" --max-time 10 2>/dev/null)
 check "Video sidecar healthy" grep -q "healthy" <<< "$VIDEO_HEALTH_BODY"
-check "Health includes nova-reel" jq -e '.models["nova-reel"]' <<< "$VIDEO_HEALTH_BODY"
 check "Health includes luma-ray2" jq -e '.models["luma-ray2"]' <<< "$VIDEO_HEALTH_BODY"
 
 # 8. Video auth rejection
@@ -160,7 +159,7 @@ VIDEO_BAD_MODEL_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL
   -H "Authorization: Bearer $VALID_KEY" \
   -H "Content-Type: application/json" \
   "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{"model":"nonexistent","prompt":"Armoured knight walking steadily forward in side profile, arms swinging naturally, static shot","duration":6}' \
+  -d '{"model":"nonexistent","prompt":"Armoured knight walking steadily forward","duration":5}' \
   --max-time 10 2>/dev/null)
 check_code "Unknown video model rejected (HTTP $VIDEO_BAD_MODEL_CODE)" "$VIDEO_BAD_MODEL_CODE" "400"
 
@@ -170,7 +169,7 @@ VIDEO_DUR_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/vi
   -H "Authorization: Bearer $VALID_KEY" \
   -H "Content-Type: application/json" \
   "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{"model":"nova-reel","prompt":"Armoured knight walking steadily forward in side profile, arms swinging naturally, static shot","duration":7}' \
+  -d '{"model":"luma-ray2","prompt":"Armoured knight walking steadily forward","duration":7}' \
   --max-time 10 2>/dev/null)
 check_code "Invalid duration rejected (HTTP $VIDEO_DUR_CODE)" "$VIDEO_DUR_CODE" "400"
 
@@ -180,76 +179,52 @@ VIDEO_LIST_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/v1/videos/ge
   -H "Authorization: Bearer $VALID_KEY" "${CF_ARGS[@]+"${CF_ARGS[@]}"}" --max-time 10 2>/dev/null)
 check_code "Video list returns 200 (HTTP $VIDEO_LIST_CODE)" "$VIDEO_LIST_CODE" "200"
 
-# --- Prompt Validation (free — all rejected before Bedrock) ---
+# --- Ray2 parameter validation (free — all rejected before Bedrock) ---
 
-# 12. Negation word rejection
-echo "12. Prompt validation — negation"
-NEGATION_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/videos/generations" \
+# 12. Invalid resolution rejected
+echo "12. Ray2 resolution validation"
+RES_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/videos/generations" \
   -H "Authorization: Bearer $VALID_KEY" \
   -H "Content-Type: application/json" \
   "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{"model":"nova-reel","prompt":"A knight walking forward through a dark castle courtyard, no sword visible in the scene, static shot","duration":6}' \
+  -d '{"model":"luma-ray2","prompt":"A knight walking forward","duration":5,"resolution":"1080p"}' \
   --max-time 10 2>/dev/null)
-check_code "Negation word 'no' rejected (HTTP $NEGATION_CODE)" "$NEGATION_CODE" "400"
+check_code "Invalid resolution rejected (HTTP $RES_CODE)" "$RES_CODE" "400"
 
-# 13. Camera keyword mid-prompt is now a warning, not a rejection (free — invalid duration)
-echo "13. Prompt validation — camera position (middle is warning, not rejection)"
-CAMERA_MID_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/videos/generations" \
+# 13. Invalid aspect ratio rejected
+echo "13. Ray2 aspect ratio validation"
+AR_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/videos/generations" \
   -H "Authorization: Bearer $VALID_KEY" \
   -H "Content-Type: application/json" \
   "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{"model":"nova-reel","prompt":"Armoured knight walking forward, dolly forward, with castle walls and torchlight in background","duration":7}' \
+  -d '{"model":"luma-ray2","prompt":"A knight walking forward","duration":5,"aspect_ratio":"2:1"}' \
   --max-time 10 2>/dev/null)
-# Should get 400 for duration (not prompt) — means camera keyword didn't block
-check_code "Camera mid-prompt passes validation (fails on duration instead)" "$CAMERA_MID_CODE" "400"
+check_code "Invalid aspect ratio rejected (HTTP $AR_CODE)" "$AR_CODE" "400"
 
-# 14. Camera keyword at start allowed (free — uses invalid duration to fail AFTER prompt validation passes)
-echo "14. Prompt validation — camera position (start allowed)"
-CAMERA_START_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/videos/generations" \
+# 14. end_image without start image rejected
+echo "14. Ray2 end_image requires image"
+ENDIMG_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/videos/generations" \
   -H "Authorization: Bearer $VALID_KEY" \
   -H "Content-Type: application/json" \
   "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{"model":"nova-reel","prompt":"Dolly forward through a misty forest, golden light filtering through ancient trees, leaves drifting gently","duration":7}' \
+  -d '{"model":"luma-ray2","prompt":"A knight walking forward","duration":5,"end_image":"data:image/png;base64,AAAA"}' \
   --max-time 10 2>/dev/null)
-# Should get 400 for duration (not prompt) — means prompt validation passed
-check_code "Camera at start passes validation (fails on duration instead)" "$CAMERA_START_CODE" "400"
+check_code "end_image without image rejected (HTTP $ENDIMG_CODE)" "$ENDIMG_CODE" "400"
 
-# 15. Contracted negation rejection
-echo "15. Prompt validation — contracted negation"
-CONTRACTION_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/videos/generations" \
+# 15. Default model is luma-ray2 (omit model; invalid duration proves it resolved to Ray2's 5/9s rule)
+echo "15. Default video model"
+DEFAULT_BODY=$(curl -s -X POST "$BASE_URL/v1/videos/generations" \
   -H "Authorization: Bearer $VALID_KEY" \
   -H "Content-Type: application/json" \
   "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d "{\"model\":\"nova-reel\",\"prompt\":\"The warrior can't be stopped, moving through the dark battlefield scene, static shot\",\"duration\":6}" \
+  -d '{"prompt":"A knight walking forward","duration":7}' \
   --max-time 10 2>/dev/null)
-check_code "Contracted negation \"can't\" rejected (HTTP $CONTRACTION_CODE)" "$CONTRACTION_CODE" "400"
-
-# 16. Valid prompt accepted (free — uses invalid duration to fail AFTER prompt validation passes)
-echo "16. Prompt validation — valid prompt passes"
-VALID_PROMPT_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/videos/generations" \
-  -H "Authorization: Bearer $VALID_KEY" \
-  -H "Content-Type: application/json" \
-  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{"model":"nova-reel","prompt":"Armoured knight walking steadily forward in side profile, arms swinging in opposition to legs, weight shifting with each step, static shot","duration":7}' \
-  --max-time 10 2>/dev/null)
-# Should get 400 for duration (not prompt) — means prompt validation passed
-check_code "Valid prompt passes validation (fails on duration instead)" "$VALID_PROMPT_CODE" "400"
-
-# 17. Ray2 not subject to prompt validation (free — uses validation error to avoid real job)
-echo "17. Prompt validation — Ray2 bypass"
-RAY2_BODY=$(curl -s -X POST "$BASE_URL/v1/videos/generations" \
-  -H "Authorization: Bearer $VALID_KEY" \
-  -H "Content-Type: application/json" \
-  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{"model":"luma-ray2","prompt":"A knight walking forward, no sword visible","duration":7}' \
-  --max-time 10 2>/dev/null)
-# Should get 400 for invalid duration (not prompt validation) — proves prompt validation was skipped
-check "Ray2 skips prompt validation (fails on duration instead)" jq -e '.detail.error.type == "validation_error"' <<< "$RAY2_BODY"
+check "Default model resolves to luma-ray2" grep -q "luma-ray2" <<< "$DEFAULT_BODY"
 
 # --- Image Endpoint Routing (free — validation errors) ---
 
-# 18. Image edits routes to LiteLLM (Stability AI via /v1/images/edits)
-echo "18. Image edits routes to LiteLLM"
+# 16. Image edits routes to LiteLLM (Stability AI via /v1/images/edits)
+echo "16. Image edits routes to LiteLLM"
 EDIT_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/edits" \
   -H "Authorization: Bearer $VALID_KEY" \
   -F "model=stability-remove-background" \
@@ -258,40 +233,22 @@ EDIT_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/
   --max-time 10 2>/dev/null)
 check_code "Image edits → LiteLLM (expect 400 validation, HTTP $EDIT_CODE)" "$EDIT_CODE" "400" "422" "500"
 
-# 19. Image variations endpoint reachable (validation error = routing works)
-echo "19. Image variations endpoint"
-IMGVAR_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/variations" \
-  -H "Authorization: Bearer $VALID_KEY" \
-  -H "Content-Type: application/json" \
-  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{"images":["invalid"],"prompt":"test prompt with enough characters to pass"}' \
-  --max-time 10 2>/dev/null)
-check_code "Variations reachable, rejects bad input (HTTP $IMGVAR_CODE)" "$IMGVAR_CODE" "400" "422"
-
-# 20. Background removal endpoint reachable
-echo "20. Background removal endpoint"
-IMGBG_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/background-removal" \
-  -H "Authorization: Bearer $VALID_KEY" \
-  -H "Content-Type: application/json" \
-  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{"image":"invalid"}' \
-  --max-time 10 2>/dev/null)
-check_code "Background removal reachable (HTTP $IMGBG_CODE)" "$IMGBG_CODE" "400" "422"
-
-# 21. Outpaint endpoint reachable
-echo "21. Outpaint endpoint"
-IMGOUT_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/outpaint" \
-  -H "Authorization: Bearer $VALID_KEY" \
-  -H "Content-Type: application/json" \
-  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{"image":"invalid","prompt":"test","mask_prompt":"subject"}' \
-  --max-time 10 2>/dev/null)
-check_code "Outpaint reachable (HTTP $IMGOUT_CODE)" "$IMGOUT_CODE" "400" "422"
+# 17. Retired Nova Canvas sidecar paths are no longer routed (WAF blocks /v1/images/* except generations/edits)
+echo "17. Retired sidecar image paths"
+for retired in variations background-removal outpaint; do
+  RETIRED_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/$retired" \
+    -H "Authorization: Bearer $VALID_KEY" \
+    -H "Content-Type: application/json" \
+    "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
+    -d '{"image":"invalid"}' \
+    --max-time 10 2>/dev/null)
+  check_code "/v1/images/$retired blocked (HTTP $RETIRED_CODE)" "$RETIRED_CODE" "403" "404" "405"
+done
 
 # --- Stability AI via LiteLLM /v1/images/edits ---
 
-# 22. Stability AI inpaint via LiteLLM (free — bad input triggers validation error)
-echo "22. Stability AI inpaint via LiteLLM"
+# 18. Stability AI inpaint via LiteLLM (free — bad input triggers validation error)
+echo "18. Stability AI inpaint via LiteLLM"
 INPAINT_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/edits" \
   -H "Authorization: Bearer $VALID_KEY" \
   -F "model=stability-inpaint" \
@@ -300,44 +257,23 @@ INPAINT_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/imag
   --max-time 10 2>/dev/null)
 check_code "Inpaint via LiteLLM (expect 400/422/500, HTTP $INPAINT_CODE)" "$INPAINT_CODE" "400" "422" "500"
 
-# 23. Removed sidecar path returns 404
-echo "23. Removed sidecar path returns 404"
+# 19. Removed sidecar path returns 404
+echo "19. Removed sidecar path returns 404"
 REMOVED_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/structure" \
   -H "Authorization: Bearer $VALID_KEY" \
   -H "Content-Type: application/json" \
   "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
   -d '{"image":"invalid","prompt":"test"}' \
   --max-time 10 2>/dev/null)
-check_code "Removed sidecar path → 404/405 (HTTP $REMOVED_CODE)" "$REMOVED_CODE" "404" "405"
+check_code "Removed sidecar path → 403/404/405 (HTTP $REMOVED_CODE)" "$REMOVED_CODE" "403" "404" "405"
 
-# 24. Model list contains LiteLLM image models
-echo "24. LiteLLM image models"
+# 20. Model list contains LiteLLM image models
+echo "20. LiteLLM image models"
 check "Model list contains stable-image-ultra" grep -q "stable-image-ultra" <<< "$MODELS"
 check "Model list contains stable-image-core" grep -q "stable-image-core" <<< "$MODELS"
 check "Model list contains stability-inpaint" grep -q "stability-inpaint" <<< "$MODELS"
 check "Model list contains stability-upscale" grep -q "stability-upscale" <<< "$MODELS"
 check "Model list contains stability-structure" grep -q "stability-structure" <<< "$MODELS"
-
-# 25. Nova Canvas style preset pass-through (free — invalid size triggers 400 before Bedrock)
-echo "25. Nova Canvas style preset"
-STYLE_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/images/generations" \
-  -H "Authorization: Bearer $VALID_KEY" \
-  -H "Content-Type: application/json" \
-  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{"model":"nova-canvas","prompt":"a red circle","n":1,"size":"99x99","textToImageParams":{"style":"PHOTOREALISM"}}' \
-  --max-time 30 2>/dev/null)
-check_code "Style preset routed correctly (HTTP $STYLE_CODE)" "$STYLE_CODE" "400" "422"
-
-# 26. Automated multi-shot video validation (free — invalid duration)
-echo "26. Automated multi-shot video"
-AUTO_MS_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/videos/generations" \
-  -H "Authorization: Bearer $VALID_KEY" \
-  -H "Content-Type: application/json" \
-  "${CF_ARGS[@]+"${CF_ARGS[@]}"}" \
-  -d '{"model":"nova-reel","mode":"multi-shot-automated","prompt":"A knight walks through a medieval castle courtyard, exploring the stone walls and wooden doors","duration":7}' \
-  --max-time 10 2>/dev/null)
-check_code "Automated multi-shot validates duration (HTTP $AUTO_MS_CODE)" "$AUTO_MS_CODE" "400"
-
 
 # Summary
 echo

@@ -286,7 +286,8 @@ sudo -u postgres psql -d litellm -c "
   CREATE INDEX IF NOT EXISTS idx_video_jobs_status ON rockport_video_jobs (status);
   CREATE INDEX IF NOT EXISTS idx_video_jobs_created_at ON rockport_video_jobs (created_at);
   ALTER TABLE rockport_video_jobs OWNER TO litellm_user;
-  ALTER TABLE rockport_video_jobs ADD COLUMN IF NOT EXISTS model VARCHAR(30) NOT NULL DEFAULT 'nova-reel';
+  ALTER TABLE rockport_video_jobs ADD COLUMN IF NOT EXISTS model VARCHAR(30) NOT NULL DEFAULT 'luma-ray2';
+  ALTER TABLE rockport_video_jobs ALTER COLUMN model SET DEFAULT 'luma-ray2';
   ALTER TABLE rockport_video_jobs ADD COLUMN IF NOT EXISTS resolution VARCHAR(10);
   ALTER TABLE rockport_video_jobs ALTER COLUMN invocation_arn DROP NOT NULL;
   ALTER TABLE rockport_video_jobs ALTER COLUMN status SET DEFAULT 'pending';
@@ -297,7 +298,6 @@ echo "Video jobs table ready."
 (
   umask 077
   cat >> /etc/litellm/env <<VIDENVEOF
-VIDEO_BUCKET=${video_bucket_name}
 VIDEO_BUCKET_US_WEST_2=${video_bucket_us_west_2}
 VIDEO_MAX_CONCURRENT_JOBS=${video_max_concurrent_jobs}
 VIDENVEOF

@@ -82,7 +82,7 @@ Known symptom-to-cause mappings for Rockport infrastructure. Organized by sympto
 **Causes:**
 1. Bedrock async invoke failed silently (IAM issue)
 2. S3 bucket permissions (Bedrock needs PutObject on the video bucket)
-3. Region mismatch (Nova Reel needs us-east-1 bucket, Ray2 needs us-west-2)
+3. Region mismatch (Ray2 needs the us-west-2 bucket)
 **Check:** Sidecar logs for Bedrock error, check IAM role policies
 
 ### Video job stuck in in_progress
@@ -95,10 +95,10 @@ Known symptom-to-cause mappings for Rockport infrastructure. Organized by sympto
 **Cause:** Per-key limit (default 3) exceeded. Jobs may be stuck or legitimately running
 **Check:** Query the video jobs table for active jobs for that key
 
-### Image endpoint 404
-**Symptoms:** `/v1/images/variations` or similar returns 404
-**Cause:** Request going to LiteLLM (:4000) instead of sidecar (:4001). Check tunnel routing in `terraform/tunnel.tf`
-**Note:** `/v1/images/generations` and `/v1/images/edits` intentionally route to LiteLLM. Only `/v1/images/*` (other paths) routes to sidecar
+### Image endpoint 403/404
+**Symptoms:** `/v1/images/variations`, `/v1/images/background-removal` or `/v1/images/outpaint` returns 403 or 404
+**Cause:** These Nova Canvas sidecar endpoints were removed in the 2026-09 refresh (Nova Canvas EOL 2026-09-30). The WAF blocks them at the edge. Only `/v1/images/generations` and `/v1/images/edits` exist, both served by LiteLLM
+**Fix:** Use the Stability AI edit models via `/v1/images/edits` (`stability-remove-background`, `stability-outpaint`, etc.)
 
 ### --claude-only key blocked (403)
 **Symptoms:** Image or video request returns 403 "restricted to Anthropic models"
@@ -206,7 +206,7 @@ Known symptom-to-cause mappings for Rockport infrastructure. Organized by sympto
 **Check:** `./scripts/rockport.sh spend today` to see breakdown by key and model
 **Common causes:**
 1. Runaway automation (Claude Code in a loop)
-2. Video generation (expensive: $0.08/s Nova Reel, $0.75-1.50/s Ray2)
+2. Video generation (expensive: $0.75/s at 540p, $1.50/s at 720p for Ray2)
 3. Idle shutdown not working (instance running 24/7)
 **Fix:** Revoke the offending key if needed, check idle shutdown Lambda logs
 

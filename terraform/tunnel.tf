@@ -33,12 +33,6 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "rockport" {
         service  = "http://localhost:4000"
       },
       {
-        # Nova Canvas sidecar endpoints: variations, background-removal, outpaint
-        hostname = var.domain
-        path     = "/v1/images/*"
-        service  = "http://localhost:4001"
-      },
-      {
         hostname = var.domain
         service  = "http://localhost:4000"
       },

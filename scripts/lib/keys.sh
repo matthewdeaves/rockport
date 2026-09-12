@@ -80,10 +80,13 @@ cmd_key_create() {
     local cf_id_k="$CACHED_CF_CLIENT_ID"
     local cf_secret_k="$CACHED_CF_CLIENT_SECRET"
 
+    # Default Claude Code to Sonnet 5 (cheapest current-gen, 1M context); users can
+    # still pick Opus per session with /model — cost-first by default, bigger on request.
     local settings_file="$CONFIG_DIR/claude-code-settings-${name}.json"
     if [[ -n "$cf_id_k" && -n "$cf_secret_k" ]]; then
       cat > "$settings_file" <<EOF
 {
+  "model": "claude-sonnet-5",
   "env": {
     "ANTHROPIC_BASE_URL": "$url",
     "ANTHROPIC_AUTH_TOKEN": "$key"
@@ -98,6 +101,7 @@ EOF
     else
       cat > "$settings_file" <<EOF
 {
+  "model": "claude-sonnet-5",
   "env": {
     "ANTHROPIC_BASE_URL": "$url",
     "ANTHROPIC_AUTH_TOKEN": "$key"

@@ -24,7 +24,7 @@ cmd_status() {
   response=$(api_call GET "/health") || { echo "Could not reach health endpoint."; return 1; }
 
   # Image model names that fail LiteLLM's built-in health probe (it sends max_tokens which they reject)
-  local image_model_pattern="nova-canvas|sd3-5-large|titan-image|stable-image-ultra|stable-image-core"
+  local image_model_pattern="sd3-5-large|stable-image-ultra|stable-image-core"
   # image_edit models have no health check handler in LiteLLM (PR #21524 pending)
   # These use us.stability.* cross-region inference profile IDs
   local image_edit_pattern="us\.stability\.stable-image-control|us\.stability\.stable-style-transfer|us\.stability\.stable-image-remove|us\.stability\.stable-image-search|us\.stability\.stable-conservative|us\.stability\.stable-image-style|us\.stability\.stable-image-inpaint|us\.stability\.stable-image-erase|us\.stability\.stable-creative|us\.stability\.stable-fast|us\.stability\.stable-outpaint"
@@ -75,17 +75,14 @@ cmd_status() {
       [[ -z "$bedrock_model" ]] && continue
       local litellm_name=""
       case "$bedrock_model" in
-        *nova-canvas*)       litellm_name="nova-canvas" ;;
-        *titan-image*)       litellm_name="titan-image-v2" ;;
         *sd3-5-large*)       litellm_name="sd3.5-large" ;;
         *stable-image-ultra*)  litellm_name="stable-image-ultra" ;;
         *stable-image-core*)   litellm_name="stable-image-core" ;;
         *)                   litellm_name="" ;;
       esac
       if [[ -n "$litellm_name" ]]; then
-        # Use smallest valid size per model to minimize cost
+        # Use smallest valid size to minimize cost
         local probe_size="512x512"
-        [[ "$litellm_name" == "nova-canvas" ]] && probe_size="320x320"
         local probe_code
         probe_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$url/v1/images/generations" \
           -H "Authorization: Bearer $key" \

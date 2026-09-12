@@ -26,10 +26,7 @@ Read ALL of these:
 ## 3. Sidecar code
 
 Read these files:
-- `sidecar/image_api.py` — extract every `@router.post` path, every Pydantic model class, every Bedrock model ID and region used, every helper function that still exists
-- `sidecar/video_api.py` — extract every endpoint, model support, validation rules, concurrent job limits
-- `sidecar/prompt_validation.py` — extract exact validation rules (negation words, camera keywords, min length)
-- `sidecar/image_resize.py` — extract resize modes and constraints
+- `sidecar/video_api.py` — extract every endpoint, model registry (`VIDEO_MODELS`), validation rules, defaults, concurrent job limits
 - `sidecar/db.py` — extract what tables are used
 - `sidecar/requirements.txt` — list of dependencies
 
