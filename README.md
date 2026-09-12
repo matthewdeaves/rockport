@@ -92,7 +92,7 @@ Again, `init` will create the `rockport-deployer` user and `rockport` CLI profil
 
 This is an interactive setup that:
 - Prompts for your AWS region, domain, Cloudflare IDs, and budget alert email
-- Creates 6 scoped IAM policies: 3 deployer (compute, IAM/SSM, monitoring/storage) + 2 operator (readonly, runtime-ops) + 1 AssumeRole policy
+- Creates 7 scoped IAM policies: 3 deployer (compute, IAM/SSM, monitoring/storage) + 2 operator (readonly, runtime-ops) + 1 AssumeRole policy
 - Creates a `rockport-deployer` IAM user with access keys
 - Generates a master API key and stores it in SSM Parameter Store
 - Creates an S3 bucket for Terraform state
@@ -144,7 +144,7 @@ Launch Claude Code. The generated settings default to `claude-sonnet-5`; pick Op
 
 ```bash
 ./scripts/rockport.sh init                          # Interactive setup
-./scripts/rockport.sh deploy                        # Run terraform apply
+./scripts/rockport.sh deploy                        # Run terraform apply [--admin when an operator boundary policy changes]
 ./scripts/rockport.sh status                        # Health check + model list
 ./scripts/rockport.sh models                        # List available models
 ./scripts/rockport.sh key create <name> [--budget N] [--claude-only] # Create API key
@@ -327,7 +327,7 @@ curl https://<your-domain>/v1/videos/generations/job_abc123 \
   -H "Authorization: Bearer $KEY"
 ```
 
-A completed job returns a presigned S3 URL (expires after 1 hour):
+A completed job returns a presigned S3 URL (expires after 1 hour). Once the file is gone (7-day bucket lifecycle, or the model's bucket was retired) the job reports `"status": "expired"` with an `error` message.
 
 ```json
 {"id": "job_abc123", "status": "completed", "mode": "single_shot", "duration": 5, "cost": 3.75, "url": "https://...s3.amazonaws.com/...", "url_expires_at": "..."}
