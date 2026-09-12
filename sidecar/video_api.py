@@ -638,14 +638,15 @@ def get_video_status(job_id: str, auth: dict = Depends(authenticate)):
         bucket = s3_uri.split("/")[2]
         key_prefix = "/".join(s3_uri.split("/")[3:])
 
-        # Determine correct S3 client from bucket name
-        s3 = None
-        for region, client in s3_clients.items():
-            if VIDEO_BUCKETS.get(region) == bucket:
-                s3 = client
-                break
-        if not s3:
-            s3 = list(s3_clients.values())[0]  # fallback
+        # Determine correct S3 client from bucket name. A bucket we no longer know
+        # about belongs to a retired model (Nova Reel, us-east-1) — its output is gone.
+        s3 = next((client for region, client in s3_clients.items() if VIDEO_BUCKETS.get(region) == bucket), None)
+        if s3 is None:
+            db.mark_expired(job_id)
+            job["status"] = "expired"
+            job["error"] = "Video output bucket no longer exists (model retired)"
+            job.pop("s3_uri", None)
+            return job
 
         try:
             resp = s3.list_objects_v2(Bucket=bucket, Prefix=key_prefix, MaxKeys=10)

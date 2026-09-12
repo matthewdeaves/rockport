@@ -58,7 +58,10 @@
       "Action": [
         "iam:DeleteRolePermissionsBoundary"
       ],
-      "Resource": "*"
+      "Resource": [
+        "arn:aws:iam::*:role/rockport*",
+        "arn:aws:iam::*:role/dlm-lifecycle-*"
+      ]
     },
     {
       "Sid": "IAMReadOnlyForDeployer",

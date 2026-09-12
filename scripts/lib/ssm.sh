@@ -232,9 +232,6 @@ cmd_config_push() {
   local artifacts_bucket
   artifacts_bucket="$(get_artifacts_bucket)"
 
-  local params_file
-  params_file=$(mktemp) || die "Failed to create temp file"
-  trap 'rm -f "$params_file"' RETURN
   # Stop sidecar, download artifact, verify checksum, extract, install locked sidecar
   # deps, restart services. Mirrors bootstrap.sh so config push cannot drift from a
   # fresh deploy (deps included — previously only *.py was copied).
@@ -261,35 +258,10 @@ REMOTE
 )
   remote_script="${remote_script//__BUCKET__/$artifacts_bucket}"
   remote_script="${remote_script//__REGION__/$region}"
-  jq -n --arg script "$remote_script" '{"commands": ($script | split("\n"))}' > "$params_file"
 
-  local command_id
-  command_id=$(aws ssm send-command \
-    --instance-ids "$instance_id" \
-    --region "$region" \
-    --document-name "AWS-RunShellScript" \
-    --parameters "file://$params_file" \
-    --query "Command.CommandId" \
-    --output text) || {
-    echo "ERROR: Failed to send command via SSM" >&2
-    return 1
-  }
-
-  echo "Waiting for restart..."
-  if ! aws ssm wait command-executed \
-    --command-id "$command_id" \
-    --instance-id "$instance_id" \
-    --region "$region" 2>/dev/null; then
-    echo "WARNING: Wait timed out or command may have failed" >&2
-  fi
-
+  echo "Waiting for install + restart (up to 10 min)..."
   local result
-  result=$(aws ssm get-command-invocation \
-    --command-id "$command_id" \
-    --instance-id "$instance_id" \
-    --region "$region" \
-    --query "StandardOutputContent" \
-    --output text)
+  result=$(ssm_run_script "$remote_script" 600) || die "Config push failed on instance $instance_id"
   echo "$result"
 }
 

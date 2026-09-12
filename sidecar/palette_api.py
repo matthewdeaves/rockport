@@ -126,8 +126,8 @@ def palette_generation(req: PaletteRequest, authorization: str = Header(None)):
     if req.weights is not None:
         if len(req.weights) != len(colors):
             raise _validation_error("weights must have one entry per colour.")
-        if any(w <= 0 for w in req.weights):
-            raise _validation_error("weights must all be positive.")
+        if any(not math.isfinite(w) or w <= 0 for w in req.weights):
+            raise _validation_error("weights must all be positive finite numbers.")
         weights = req.weights
     else:
         weights = [1.0] * len(colors)

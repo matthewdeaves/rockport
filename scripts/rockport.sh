@@ -206,16 +206,20 @@ EOF
 
 cmd_deploy() {
   load_env
-  echo "Deploying infrastructure..."
-  local region bucket enable_guardrails=""
-  # Parse --guardrails flag
+  local region bucket enable_guardrails="" as_admin=""
+  # Parse flags
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --guardrails)    enable_guardrails="-var=enable_guardrails=true"; shift ;;
       --no-guardrails) enable_guardrails="-var=enable_guardrails=false"; shift ;;
+      --admin)         as_admin=1; shift ;;
       *) shift ;;
     esac
   done
+  # Boundary policy documents (iam-operator-roles.tf) can only be re-versioned by
+  # admin — the deploy role is denied iam:CreatePolicyVersion by design.
+  [[ -n "$as_admin" ]] && admin_mfa_session
+  echo "Deploying infrastructure${as_admin:+ (admin session)}..."
   region="$(get_region)"
   bucket="$(get_state_bucket)"
 
@@ -391,7 +395,7 @@ Commands:
   init                Interactive setup — creates terraform.tfvars and master key
   auth                Authenticate via MFA-gated STS [--role readonly|runtime-ops|deploy]
   auth status         Show cached operator-role sessions and time remaining
-  deploy              Run terraform apply [--guardrails] [--no-guardrails]
+  deploy              Run terraform apply [--guardrails] [--no-guardrails] [--admin: required when an operator boundary policy changes]
   status [--instance] Check service health and model list (--instance: includes in-VM stats; escalates to runtime-ops)
   models              List available models
   key create <name>   Create a new API key [--budget <amount>] [--claude-only]

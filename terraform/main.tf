@@ -334,7 +334,9 @@ resource "aws_instance" "rockport" {
   # recreate the instance — and PostgreSQL (virtual keys, spend logs, video jobs)
   # lives on the root volume. Roll the AMI deliberately instead:
   #   terraform apply -replace=aws_instance.rockport
+  # subnet_id is ForceNew too; an existing instance may sit in whichever default
+  # subnet was picked at creation, so don't let the sorted choice replace it.
   lifecycle {
-    ignore_changes = [ami]
+    ignore_changes = [ami, subnet_id]
   }
 }

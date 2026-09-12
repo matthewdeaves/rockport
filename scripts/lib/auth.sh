@@ -51,6 +51,15 @@ _resolve_role() {
       [[ "$arg" == "--instance" ]] && { echo "runtime-ops"; return 0; }
     done
   fi
+  # deploy --admin: applies that change an operator boundary policy document
+  # (aws_iam_policy.operator_*_boundary) need iam:CreatePolicyVersion, which the
+  # deploy boundary explicit-denies (Finding B). Run those under the admin MFA
+  # session, same as destroy.
+  if [[ "$subcmd" == "deploy" ]]; then
+    for arg in "$@"; do
+      [[ "$arg" == "--admin" ]] && { echo "admin"; return 0; }
+    done
+  fi
   echo "$role"
 }
 
