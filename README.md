@@ -92,7 +92,7 @@ Again, `init` will create the `rockport-deployer` user and `rockport` CLI profil
 
 This is an interactive setup that:
 - Prompts for your AWS region, domain, Cloudflare IDs, and budget alert email
-- Creates 7 scoped IAM policies: 3 deployer (compute, IAM/SSM, monitoring/storage) + 2 operator (readonly, runtime-ops) + 1 AssumeRole policy
+- Creates 7 scoped IAM policies: 3 deployer (compute, IAM/SSM, monitoring/storage) + 2 operator (readonly, runtime-ops) + 1 AssumeRole policy + 1 workload boundary
 - Creates a `rockport-deployer` IAM user with access keys
 - Generates a master API key and stores it in SSM Parameter Store
 - Creates an S3 bucket for Terraform state
